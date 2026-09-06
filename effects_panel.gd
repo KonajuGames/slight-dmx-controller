@@ -7,9 +7,10 @@ extends VBoxContainer
 
 signal effects_changed
 
-## Set by the shell: func(role: String, universe: int) -> Array of
-## { "u": int, "ch": int }.
+## Set by the shell: func(role, universe, group) -> Array of {u, ch}.
 var resolve_targets_cb := Callable()
+## Set by the shell: func() -> Array[String] of fixture-group names.
+var group_names_provider := Callable()
 
 const ROLE_CHOICES := [
 	"DIMMER", "RED", "GREEN", "BLUE", "WHITE", "AMBER", "UV", "PAN", "TILT",
@@ -20,6 +21,8 @@ var name_edit: LineEdit
 var run_check: CheckButton
 var role_option: OptionButton
 var universe_option: OptionButton
+var group_option: OptionButton
+var base_option: OptionButton
 var wave_option: OptionButton
 var bpm_spin: SpinBox
 var size_spin: SpinBox
@@ -86,12 +89,25 @@ func _ready() -> void:
 	universe_option.item_selected.connect(func(i: int): _set_field("universe", i - 1))
 	grid.add_child(universe_option)
 
+	grid.add_child(_lbl("Group"))
+	group_option = OptionButton.new()
+	group_option.item_selected.connect(func(i: int):
+		_set_field("group", "" if i == 0 else group_option.get_item_text(i)))
+	grid.add_child(group_option)
+
 	grid.add_child(_lbl("Waveform"))
 	wave_option = OptionButton.new()
 	for w in WaveEffect.WAVEFORMS:
 		wave_option.add_item(w)
 	wave_option.item_selected.connect(func(i: int): _set_field("waveform", i))
 	grid.add_child(wave_option)
+
+	grid.add_child(_lbl("Base"))
+	base_option = OptionButton.new()
+	for b in WaveEffect.BASE_MODES:
+		base_option.add_item(b)
+	base_option.item_selected.connect(func(i: int): _set_field("base_mode", i))
+	grid.add_child(base_option)
 
 	grid.add_child(_lbl("Rate (BPM)"))
 	bpm_spin = _num(1, 1200, 1, 60)
@@ -132,6 +148,7 @@ func _ready() -> void:
 	add_child(status_label)
 
 	refresh_universe_options()
+	refresh_group_options()
 	_refresh()
 
 
@@ -183,6 +200,33 @@ func refresh_universe_options() -> void:
 		universe_option.selected = keep
 
 
+## Rebuilt by the shell whenever the fixture groups change.
+func refresh_group_options() -> void:
+	group_option.clear()
+	group_option.add_item("(use universe)")
+	if group_names_provider.is_valid():
+		for n in group_names_provider.call():
+			group_option.add_item(String(n))
+	var e := _current()
+	if e != null:
+		_select_group(e.group)
+	_update_group_state()
+
+
+func _select_group(gname: String) -> void:
+	group_option.selected = 0
+	if gname == "":
+		return
+	for i in range(1, group_option.item_count):
+		if group_option.get_item_text(i) == gname:
+			group_option.selected = i
+			return
+
+
+func _update_group_state() -> void:
+	universe_option.disabled = group_option.selected > 0
+
+
 # ----------------------------------------------------------------- ACTIONS --
 
 func _new_effect() -> void:
@@ -212,7 +256,7 @@ func _rebuild_targets() -> void:
 	var e := _current()
 	if e == null or not resolve_targets_cb.is_valid():
 		return
-	e.set_targets(resolve_targets_cb.call(e.role, e.universe))
+	e.set_targets(resolve_targets_cb.call(e.role, e.universe, e.group))
 	targets_label.text = "%d target channel(s)." % e.target_count()
 
 
@@ -225,7 +269,8 @@ func _on_run_toggled(on: bool) -> void:
 	if on:
 		_rebuild_targets()
 		if e.target_count() == 0:
-			status_label.text = "No %s channels patched for that universe." % e.role
+			var where := "group '%s'" % e.group if e.group != "" else "that universe"
+			status_label.text = "No %s channels patched in %s." % [e.role, where]
 			_syncing = true
 			run_check.button_pressed = false
 			_syncing = false
@@ -253,8 +298,10 @@ func _set_field(field: String, v) -> void:
 	if e == null:
 		return
 	e.set(field, v)
-	if field == "role" or field == "universe":
+	if field == "role" or field == "universe" or field == "group":
 		_rebuild_targets()
+	if field == "group":
+		_update_group_state()
 	_refresh_list_row(_sel())
 	effects_changed.emit()
 
@@ -268,6 +315,8 @@ func _on_effect_selected(idx: int) -> void:
 	run_check.button_pressed = e.running
 	role_option.selected = maxi(ROLE_CHOICES.find(e.role), 0)
 	universe_option.selected = clampi(e.universe + 1, 0, universe_option.item_count - 1)
+	_select_group(e.group)
+	base_option.selected = e.base_mode
 	wave_option.selected = e.waveform
 	bpm_spin.value = e.bpm
 	size_spin.value = e.size
@@ -275,16 +324,18 @@ func _on_effect_selected(idx: int) -> void:
 	fan_spin.value = e.fan_deg
 	phase_spin.value = e.phase_deg
 	_syncing = false
+	_update_group_state()
 	targets_label.text = "%d target channel(s)." % e.target_count()
 
 
 # ---------------------------------------------------------------- REFRESH --
 
 func _row_text(e: WaveEffect) -> String:
-	var uni := "all" if e.universe < 0 else "U%d" % (e.universe + 1)
-	return "%s%s  %s %s  %.0f BPM  (%s)" % [
+	var scope := e.group if e.group != "" else ("all" if e.universe < 0 else "U%d" % (e.universe + 1))
+	var pk := "  pickup" if e.base_mode == WaveEffect.BASE_PICKUP else ""
+	return "%s%s  %s %s  %.0f BPM  (%s)%s" % [
 		"> " if e.running else "  ", e.name,
-		WaveEffect.WAVEFORMS[e.waveform], e.role, e.bpm, uni]
+		WaveEffect.WAVEFORMS[e.waveform], e.role, e.bpm, scope, pk]
 
 
 func _refresh_list_row(i: int) -> void:

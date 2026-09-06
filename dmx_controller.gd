@@ -16,6 +16,9 @@ const PROFILES_DIR := "user://fixture_profiles"
 var available_profiles: Array[FixtureProfile] = []
 var _builtin_ids := {}  # profile ids that come from code (can't be file-deleted)
 
+## Fixture groups: [{ "name": String, "members": Array of [u, fixture_id] }].
+var groups: Array = []
+
 var _panels: Array[UniversePanel] = []
 var _refresh_timer: Timer
 
@@ -24,6 +27,7 @@ var universe_tabs: TabContainer
 var cue_panel: CueListPanel
 var chase_panel: ChaseListPanel
 var fx_panel: EffectsPanel
+var groups_panel: GroupsPanel
 var master_slider: HSlider
 var sending_toggle: CheckButton
 var add_uni_btn: Button
@@ -67,12 +71,27 @@ func _ready() -> void:
 	playback_tabs.add_child(cue_panel)
 	chase_panel = ChaseListPanel.new()
 	playback_tabs.add_child(chase_panel)
+
+	groups_panel = GroupsPanel.new()
+	groups_panel.groups = groups
+	groups_panel.fixtures_provider = _list_patched_fixtures
+
 	fx_panel = EffectsPanel.new()
 	fx_panel.resolve_targets_cb = _resolve_fx_targets
+	fx_panel.group_names_provider = _group_names
 	playback_tabs.add_child(fx_panel)
+	playback_tabs.add_child(groups_panel)
 	playback_tabs.set_tab_title(0, "Cues")
 	playback_tabs.set_tab_title(1, "Chases")
 	playback_tabs.set_tab_title(2, "Effects")
+	playback_tabs.set_tab_title(3, "Groups")
+
+	groups_panel.groups_changed.connect(fx_panel.refresh_group_options)
+	playback_tabs.tab_changed.connect(func(i: int):
+		if i == 3:
+			groups_panel.sync_to_patch()
+		elif i == 2:
+			fx_panel.refresh_group_options())
 
 	universe_tabs = TabContainer.new()
 	universe_tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -175,6 +194,7 @@ func _add_universe_tab(sender: ArtNetUniverse) -> UniversePanel:
 	panel.sender = sender
 	panel.available_profiles = available_profiles
 	panel.profile_action_cb = _on_profile_action
+	panel.patch_changed.connect(_on_patch_changed)
 	universe_tabs.add_child(panel)
 	_panels.append(panel)
 	_refresh_tab_titles()
@@ -206,6 +226,17 @@ func _on_remove_universe() -> void:
 	panel.queue_free()
 	_panels.remove_at(idx)
 
+	# fix up group members: drop the removed universe, shift higher ones down
+	for g in groups:
+		var mm: Array = []
+		for m in g["members"]:
+			var mu := int(m[0])
+			if mu == idx:
+				continue
+			mm.append([mu - 1 if mu > idx else mu, int(m[1])])
+		g["members"] = mm
+	groups_panel.sync_to_patch()
+
 	_refresh_tab_titles()
 	_update_universe_buttons()
 	fx_panel.refresh_universe_options()
@@ -226,14 +257,26 @@ func _sync_tabs_to_universes() -> void:
 
 
 ## Resolve an effect's channel targets from the live patch: every patched
-## fixture (in the chosen universe, or all) that has a channel with `role`
-## contributes that channel. `universe` -1 means all universes.
-func _resolve_fx_targets(role: String, universe: int) -> Array:
+## fixture that has a channel with `role` contributes that channel. When
+## `group` names a fixture group, only its members count; otherwise
+## `universe` filters (-1 = all universes).
+func _resolve_fx_targets(role: String, universe: int, group: String = "") -> Array:
+	var member_set := {}
+	var use_group := false
+	if group != "":
+		for g in groups:
+			if String(g["name"]) == group:
+				use_group = true
+				for m in g["members"]:
+					member_set["%d/%d" % [int(m[0]), int(m[1])]] = true
+
 	var out: Array = []
 	for ui in range(_panels.size()):
-		if universe != -1 and universe != ui:
+		if not use_group and universe != -1 and universe != ui:
 			continue
 		for fixture in _panels[ui].patched_fixtures:
+			if use_group and not member_set.has("%d/%d" % [ui, int(fixture["id"])]):
+				continue
 			var profile: FixtureProfile = fixture["profile"]
 			var chans: Array = profile.channels_for_mode(int(fixture.get("mode", 0)))
 			var start: int = fixture["start"]
@@ -241,6 +284,75 @@ func _resolve_fx_targets(role: String, universe: int) -> Array:
 				if String(chans[li]["role"]) == role:
 					out.append({"u": ui, "ch": start + li})
 	return out
+
+
+func _group_names() -> Array:
+	var out: Array = []
+	for g in groups:
+		out.append(String(g["name"]))
+	return out
+
+
+## Every patched fixture as { u, id, label } for the groups checklist.
+func _list_patched_fixtures() -> Array:
+	var out: Array = []
+	for ui in range(_panels.size()):
+		for fx in _panels[ui].patched_fixtures:
+			var prof: FixtureProfile = fx["profile"]
+			var start: int = fx["start"]
+			var count := prof.channel_count(int(fx.get("mode", 0)))
+			out.append({
+				"u": ui, "id": int(fx["id"]),
+				"label": "U%d · %s (ch %d-%d)" % [ui + 1, fx["name"], start + 1, start + count],
+			})
+	return out
+
+
+func _fixture_index(u: int, id: int) -> int:
+	if u < 0 or u >= _panels.size():
+		return -1
+	var pf: Array = _panels[u].patched_fixtures
+	for i in range(pf.size()):
+		if int(pf[i]["id"]) == id:
+			return i
+	return -1
+
+
+func _on_patch_changed() -> void:
+	if groups_panel:
+		groups_panel.sync_to_patch()
+
+
+## Groups saved with members as [universe, patch-index] so they survive a
+## save/load even though fixture ids are session-local.
+func _groups_to_dict() -> Dictionary:
+	var arr: Array = []
+	for g in groups:
+		var mem: Array = []
+		for m in g["members"]:
+			var idx := _fixture_index(int(m[0]), int(m[1]))
+			if idx != -1:
+				mem.append([int(m[0]), idx])
+		arr.append({"name": String(g["name"]), "members": mem})
+	return {"groups": arr}
+
+
+func _groups_from_dict(d) -> void:
+	groups.clear()
+	if not (d is Dictionary):
+		return
+	for g in d.get("groups", []):
+		if not (g is Dictionary):
+			continue
+		var mem: Array = []
+		for m in g.get("members", []):
+			if not (m is Array) or m.size() < 2:
+				continue
+			var u := int(m[0])
+			var idx := int(m[1])
+			if u >= 0 and u < _panels.size() and idx >= 0 and idx < _panels[u].patched_fixtures.size():
+				mem.append([u, int(_panels[u].patched_fixtures[idx]["id"])])
+		groups.append({"name": String(g.get("name", "Group")), "members": mem})
 
 
 func _refresh_tab_titles() -> void:
@@ -487,13 +599,14 @@ func _refresh_all_profile_options(select_new: bool) -> void:
 # ------------------------------------------------------------ SHOW FILES --
 
 ## A show file is every universe's connection settings + fixture patch,
-## plus the cue list, chases and effects.
+## plus the cue list, chases, effects and fixture groups.
 func _on_save_show() -> void:
 	var data := {
 		"universes": [],
 		"cues": cue_panel.to_dict(),
 		"chases": chase_panel.to_dict(),
 		"effects": fx_panel.to_dict(),
+		"groups": _groups_to_dict(),
 	}
 	for p in _panels:
 		data["universes"].append(p.patch_dict())
@@ -538,9 +651,12 @@ func _on_load_show() -> void:
 	var doc: Dictionary = parsed if parsed is Dictionary else {}
 	cue_panel.from_dict(doc.get("cues", {}))
 	chase_panel.from_dict(doc.get("chases", {}))
+	_groups_from_dict(doc.get("groups", {}))   # fills the shared `groups`
+	groups_panel.sync_to_patch()
 	fx_panel.from_dict(doc.get("effects", {}))
-	status_label.text = "Show loaded (%d universes, %d cues, %d chases, %d effects)." % [
-		n, cue_panel.cues.size(), Fx.chases.size(), Fx.effects.size()]
+	fx_panel.refresh_group_options()
+	status_label.text = "Show loaded (%d universes, %d cues, %d chases, %d effects, %d groups)." % [
+		n, cue_panel.cues.size(), Fx.chases.size(), Fx.effects.size(), groups.size()]
 
 
 # ---------------------------------------------------------------- PRESETS --
@@ -638,6 +754,26 @@ func _format_ranges(arr: Array) -> String:
 		if i < parts.size() - 1:
 			joined += ", "
 	return joined
+
+
+## Copy `image` (and any missing `color`) from `originals` onto same-label
+## slots in `edited` — the ranges text field can't carry base64 gobo art,
+## so this keeps it across an edit as long as the slot name is unchanged.
+func _carry_slot_images(edited: Array, originals: Array) -> void:
+	if originals.is_empty():
+		return
+	for slot in edited:
+		if String(slot.get("image", "")) != "":
+			continue
+		var want := String(slot.get("label", "")).strip_edges().to_lower()
+		for orig in originals:
+			if String(orig.get("image", "")) == "":
+				continue
+			if String(orig.get("label", "")).strip_edges().to_lower() == want:
+				slot["image"] = orig["image"]
+				if String(slot.get("color", "")) == "":
+					slot["color"] = orig.get("color", "")
+				break
 
 
 ## Popup for creating or editing a fixture profile: a name, one or more
@@ -793,6 +929,9 @@ func _open_profile_dialog(existing: FixtureProfile = null) -> void:
 			"name_edit": ch_name, "role_option": role_opt,
 			"def_spin": def_spin, "min_spin": min_spin, "max_spin": max_spin,
 			"fine_check": fine_check, "ranges_edit": ranges_edit, "row": row,
+			# the ranges field is text-only; keep the originals so slot
+			# images (imported gobo art) survive an edit, matched by label.
+			"orig_ranges": (data.get("ranges", []) as Array).duplicate(true),
 		}
 		channel_rows.append(entry)
 		remove_row_btn.pressed.connect(func():
@@ -804,6 +943,8 @@ func _open_profile_dialog(existing: FixtureProfile = null) -> void:
 		var chans: Array = []
 		for entry in channel_rows:
 			var role_idx: int = entry["role_option"].selected
+			var new_ranges := _parse_ranges_text(entry["ranges_edit"].text)
+			_carry_slot_images(new_ranges, entry.get("orig_ranges", []))
 			chans.append({
 				"name": entry["name_edit"].text,
 				"role": FixtureProfile.ROLES[role_idx] if role_idx >= 0 else "GENERIC",
@@ -811,7 +952,7 @@ func _open_profile_dialog(existing: FixtureProfile = null) -> void:
 				"min": int(entry["min_spin"].value),
 				"max": int(entry["max_spin"].value),
 				"fine": entry["fine_check"].button_pressed,
-				"ranges": _parse_ranges_text(entry["ranges_edit"].text),
+				"ranges": new_ranges,
 			})
 		modes_data[mode_idx]["channels"] = chans
 

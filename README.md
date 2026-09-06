@@ -22,7 +22,7 @@ so no native plugin or GDExtension is required.
 - `main.tscn` — a single root `Control` node with the GUI script attached.
 - `dmx_controller.gd` — the shell: a top bar (grand master, Sending,
   add/remove universe, whole-show + preset save/load) above a split
-  view — playback tabs (Cues / Chases / Effects) on the left, one
+  view — playback tabs (Cues / Chases / Effects / Groups) on the left, one
   universe tab each on the right — plus the shared fixture-profile list
   and the profile new/edit/delete flow.
 - `universe_panel.gd` — the `UniversePanel` class: one universe's tab —
@@ -36,7 +36,10 @@ so no native plugin or GDExtension is required.
 - `chase.gd` / `chase_list_panel.gd` — the `Chase` class and its tab: a
   tempo-cycled list of captured steps with crossfade and direction.
 - `wave_effect.gd` / `effects_panel.gd` — the `WaveEffect` class and its
-  tab: a waveform on one channel role, fanned across the fixtures.
+  tab: a waveform on one channel role, fanned across the fixtures, in
+  Absolute or Pickup (base-value) mode.
+- `groups_panel.gd` — the Groups tab: named sets of patched fixtures an
+  effect can target instead of a whole universe.
 - `fixture_import.gd` — the `FixtureImport` class: reads GDTF (`.gdtf`
   ZIP) and Open Fixture Library (`.json`) definitions into
   `FixtureProfile` (best-effort role mapping, with a warnings list).
@@ -72,14 +75,14 @@ Global controls live in the top bar:
   `{channel: value}` preset still loads, into universe 1. A preset wider
   than the current show adds the missing universes.
 
-## Playback: cues, chases, effects
+## Playback: cues, chases, effects, groups
 
-The left-hand side is a set of playback tabs. All three composite on top
-of the base output that the fixture controls write: **cues** *replace*
-the base as they crossfade in; **chases** and **effects** run as a live
+The left-hand side is a set of playback tabs. They composite on top of
+the base output that the fixture controls write: **cues** *replace* the
+base as they crossfade in; **chases** and **effects** run as a live
 **override layer** on top (highest-takes-precedence between them), so a
 chase or effect can run over a standing cue and stops cleanly without
-disturbing it.
+disturbing it. **Groups** are just fixture selections that effects use.
 
 ### Cue list
 
@@ -118,21 +121,34 @@ cycled at a tempo.
 
 ### Effects
 
-An **effect** is a waveform on one channel **role**, applied to every
-patched fixture that carries it.
+An **effect** is a waveform on one channel **role**, applied across a set
+of patched fixtures that carry it.
 
-- **Role** (Dimmer, Red/Green/Blue, White, Amber, UV, Pan, Tilt) and
-  **Universe** (all, or one) pick the target channels from the live
-  patch — press **Rebuild targets from patch** after re-patching.
+- **Role** (Dimmer, Red/Green/Blue, White, Amber, UV, Pan, Tilt) picks
+  which channel. **Universe** (all, or one) or **Group** (see below)
+  picks which fixtures — the target channels are read from the live
+  patch, so press **Rebuild targets from patch** after re-patching.
+- **Base**: *Absolute* swings around **Center**; *Pickup* swings around
+  each channel's **live value** — the level the fixture control or the
+  running cue is holding — so the effect adds movement on top of the
+  programmed look instead of replacing it, and follows it as it changes.
 - **Waveform**: sine, triangle, sawtooth, square, or random.
-- **Rate (BPM)**, **Size** (peak-to-peak swing), **Center** (midpoint
-  level), **Fan (deg)** spreads the phase across the fixture list (a
-  chase-across-the-rig), **Phase (deg)** offsets the whole effect — run a
-  Pan and a Tilt sine 90° apart for a circle.
+- **Rate (BPM)**, **Size** (peak-to-peak swing), **Fan (deg)** spreads
+  the phase across the fixture list (a chase-across-the-rig), **Phase
+  (deg)** offsets the whole effect — run a Pan and a Tilt sine 90° apart
+  for a circle.
 - **Run** starts it.
 
-Chases and effects are saved inside the show file. **Blackout All**,
-loading a preset, or loading a show stops every chase and effect.
+### Groups
+
+The **Groups** tab holds named sets of patched fixtures. Pick one in an
+effect's **Group** box to run the effect on just those fixtures (in
+patch order, which sets the fan sequence) instead of a whole universe.
+Tick fixtures in/out with the checklist; **Sync to patch** refreshes it
+after you add or remove fixtures.
+
+Chases, effects and groups are saved inside the show file. **Blackout
+All**, loading a preset, or loading a show stops every chase and effect.
 
 ## Fixture profiles
 
@@ -159,7 +175,7 @@ Each channel in a profile carries more than a role:
   Fine, ...).
 - **ranges** — named value slots for wheels (gobo, colour), e.g.
   `0-9 Open, 10-19 Red, 20-29 Orange`, each with an optional swatch
-  colour.
+  colour or (from a GDTF import) an embedded picture.
 
 Profiles can also have **multiple modes** (personalities) — the same
 fixture as an 8-channel and a 14-channel layout, say. Pick the mode in
@@ -173,11 +189,12 @@ Fixture**. Its panel appears below with the right controls automatically:
   slider that splits across the two DMX channels on output.
 - A channel with named ranges becomes a slot dropdown plus a trim slider
   (they stay in sync — moving the slider re-selects the slot it lands in).
-  Each item carries a little icon: a colour swatch for a `COLOR_WHEEL`
-  channel (from an explicit colour, or guessed from the slot name), and a
-  schematic pattern for a `GOBO` channel (open ring, dots, spokes, bars,
-  rings, cross, breakup — by slot position). The collapsed dropdown shows
-  the current slot's icon.
+  Each item carries a little icon: an imported picture if the slot has
+  one (e.g. gobo art from a GDTF), otherwise a colour swatch for a
+  `COLOR_WHEEL` channel (from an explicit colour, or guessed from the
+  slot name) or a schematic pattern for a `GOBO` channel (open ring,
+  dots, spokes, bars, rings, cross, breakup — by slot position). The
+  collapsed dropdown shows the current slot's icon.
 - Every other channel gets its own small slider, clamped to min/max.
 - A fixture with colour/white channels but **no DIMMER channel of its
   own** also gets a **virtual dimmer**: a per-fixture intensity master
@@ -213,7 +230,10 @@ custom profile:
 - **GDTF** — a `.gdtf` file (a ZIP holding `description.xml`) from
   [gdtf-share.com](https://gdtf-share.com) or a manufacturer. All DMX
   modes are imported; `Offset` pairs become 16-bit channels; wheel slots
-  become named ranges with swatch colours (CIE `x,y,Y` → sRGB).
+  become named ranges with swatch colours (CIE `x,y,Y` → sRGB). If the
+  archive carries gobo artwork (`wheels/<MediaFileName>.png`), each
+  picture is downscaled and embedded in the profile, and shows in that
+  channel's dropdown in place of the drawn pattern.
 - **Open Fixture Library** — a single-fixture `.json` from the
   "Download as JSON" button on
   [open-fixture-library.org](https://open-fixture-library.org) (or a raw
@@ -289,11 +309,11 @@ packets to a physical DMX512 signal for your fixtures.
   per-mode channel lists with roles, defaults, min/max, 16-bit fine
   pairs, and named value ranges with swatch/gobo icons; the GUI
   generates purpose-built controls per fixture (including a virtual
-  dimmer), and GDTF / Open Fixture Library definitions can be imported.
-  Room to grow: real gobo artwork from a GDTF's embedded images, GDTF
-  physical/geometry data, a bundled fixture library.
+  dimmer), and GDTF / Open Fixture Library definitions can be imported
+  (with GDTF gobo artwork). Room to grow: GDTF physical / geometry data,
+  a bundled fixture library, an online GDTF-Share / OFL browser.
 - **Playback**: cues do split-time crossfades; chases cycle captured
-  steps at a tempo; effects run waveforms on a role across the rig. Room
-  to grow: cue-to-cue auto-follow / wait times, a fade progress bar,
-  effect groups / base-value pickups, MIDI or OSC GO triggers, cue
-  tracking (only store what a cue changes).
+  steps at a tempo; effects run waveforms (absolute or base-value
+  pickup) on a role across a universe or a fixture group. Room to grow:
+  cue-to-cue auto-follow / wait times, a fade progress bar, MIDI or OSC
+  GO triggers, cue tracking (only store what a cue changes).

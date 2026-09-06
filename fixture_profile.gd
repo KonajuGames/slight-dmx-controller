@@ -75,11 +75,13 @@ static func _normalize_channel(c: Dictionary) -> Dictionary:
 		var label := String(r.get("label", ""))
 		if label == "":
 			label = "%d-%d" % [rlo, rhi]
-		# Optional swatch colour (HTML hex or named); the GUI also derives
-		# one from the label for colour-wheel slots when this is blank.
+		# Optional swatch colour (HTML hex or named; the GUI also derives
+		# one from the label for colour-wheel slots when blank) and an
+		# optional base64 PNG (imported gobo artwork).
 		ch["ranges"].append({
 			"lo": rlo, "hi": rhi, "label": label,
 			"color": String(r.get("color", "")),
+			"image": String(r.get("image", "")),
 		})
 
 	return ch

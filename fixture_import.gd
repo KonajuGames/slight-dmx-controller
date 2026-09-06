@@ -129,11 +129,24 @@ static func _from_gdtf_path(path: String) -> Dictionary:
 		zip.close()
 		return {"error": "No description.xml inside the .gdtf archive."}
 	var xml := zip.read_file("description.xml")
+
+	# Case-insensitive reader for embedded media (gobo images live in
+	# "wheels/<MediaFileName>.png" per the GDTF spec).
+	var lut := {}
+	for n in zip.get_files():
+		lut[n.to_lower()] = n
+	var reader := func(want: String) -> PackedByteArray:
+		var key: String = want.to_lower()
+		if lut.has(key):
+			return zip.read_file(lut[key])
+		return PackedByteArray()
+
+	var result := from_gdtf_xml(xml, reader)
 	zip.close()
-	return from_gdtf_xml(xml)
+	return result
 
 
-static func from_gdtf_xml(xml: PackedByteArray) -> Dictionary:
+static func from_gdtf_xml(xml: PackedByteArray, media_reader := Callable()) -> Dictionary:
 	var root := _parse_xml(xml)
 	var ft = _kid(_kid(root, "GDTF"), "FixtureType")
 	if ft == null:
@@ -144,7 +157,7 @@ static func from_gdtf_xml(xml: PackedByteArray) -> Dictionary:
 	var model := String(ft["attrs"].get("LongName", ft["attrs"].get("Name", "GDTF Fixture")))
 	var fixture_name := (maker + " " + model).strip_edges() if maker != "" else model
 
-	var wheels := _gdtf_wheels(ft)
+	var wheels := _gdtf_wheels(ft, media_reader, warnings)
 
 	var modes_node = _kid(ft, "DMXModes")
 	var mode_nodes := _kids(modes_node, "DMXMode")
@@ -160,7 +173,7 @@ static func from_gdtf_xml(xml: PackedByteArray) -> Dictionary:
 	return {"profile": profile, "warnings": warnings}
 
 
-static func _gdtf_wheels(ft) -> Dictionary:
+static func _gdtf_wheels(ft, media_reader: Callable, warnings: Array) -> Dictionary:
 	var out := {}
 	var wheels_node = _kid(ft, "Wheels")
 	if wheels_node == null:
@@ -168,12 +181,38 @@ static func _gdtf_wheels(ft) -> Dictionary:
 	for w in _kids(wheels_node, "Wheel"):
 		var slots: Array = []
 		for s in _kids(w, "Slot"):
+			var media := String(s["attrs"].get("MediaFileName", "")).strip_edges()
+			var image := ""
+			if media != "" and media_reader.is_valid():
+				image = _load_media_b64(media, media_reader)
+				if image == "":
+					warnings.append("Gobo image '%s' not found or unreadable" % media)
 			slots.append({
 				"name": String(s["attrs"].get("Name", "")),
 				"color": _cie_to_hex(String(s["attrs"].get("Color", ""))),
+				"image": image,
 			})
 		out[String(w["attrs"].get("Name", ""))] = slots
 	return out
+
+
+## Load "wheels/<media>.png" from the archive, downscale to 64 px, and
+## return it base64-encoded (so it travels inside the profile JSON).
+static func _load_media_b64(media: String, reader: Callable) -> String:
+	for cand in ["wheels/%s.png" % media, "%s.png" % media, "wheels/%s" % media]:
+		var bytes: PackedByteArray = reader.call(cand)
+		if bytes.is_empty():
+			continue
+		var img := Image.new()
+		if img.load_png_from_buffer(bytes) != OK:
+			continue
+		var big := maxi(img.get_width(), img.get_height())
+		if big > 64:
+			var sc := 64.0 / float(big)
+			img.resize(maxi(1, int(img.get_width() * sc)), maxi(1, int(img.get_height() * sc)),
+				Image.INTERPOLATE_BILINEAR)
+		return Marshalls.raw_to_base64(img.save_png_to_buffer())
+	return ""
 
 
 static func _dmx_int(v: String) -> int:
@@ -196,6 +235,21 @@ static func _gdtf_default(dc, funcs: Array) -> int:
 		return 0
 	var d := String(chosen["attrs"].get("Default", "0/1"))
 	return _dmx_int(d)
+
+
+## Pick the wheel slot a ChannelFunction refers to: explicit
+## WheelSlotIndex, else a name match, else positional.
+static func _match_wheel_slot(slots: Array, cf, label: String, fi: int) -> Dictionary:
+	var wsi := int(cf["attrs"].get("WheelSlotIndex", "0"))
+	if wsi >= 1 and wsi <= slots.size():
+		return slots[wsi - 1]
+	var low := label.to_lower()
+	for s in slots:
+		if String(s.get("name", "")).to_lower() == low:
+			return s
+	if fi >= 0 and fi < slots.size():
+		return slots[fi]
+	return {}
 
 
 static func _gdtf_mode(mn, wheels: Dictionary, warnings: Array) -> Dictionary:
@@ -236,23 +290,28 @@ static func _gdtf_mode(mn, wheels: Dictionary, warnings: Array) -> Dictionary:
 
 		var ranges: Array = []
 		if funcs.size() > 1 or role == "COLOR_WHEEL" or role == "GOBO":
+			var lc_wheel := ""
+			for lc in _kids(dc, "LogicalChannel"):
+				if lc["attrs"].has("Wheel"):
+					lc_wheel = String(lc["attrs"]["Wheel"])
 			for fi in range(funcs.size()):
 				var cf = funcs[fi]
 				var lo := _dmx_int(String(cf["attrs"].get("DMXFrom", "0/1")))
 				var hi := 255
 				if fi + 1 < funcs.size():
 					hi = maxi(lo, _dmx_int(String(funcs[fi + 1]["attrs"].get("DMXFrom", "255/1"))) - 1)
+				var label := String(cf["attrs"].get("Name", "%d-%d" % [lo, hi]))
 				var color := ""
-				var wname := String(cf["attrs"].get("Wheel", ""))
+				var image := ""
+				var wname := String(cf["attrs"].get("Wheel", lc_wheel))
 				if wname != "" and wheels.has(wname):
-					var wsi := int(cf["attrs"].get("WheelSlotIndex", "0"))
 					var ws: Array = wheels[wname]
-					if wsi >= 1 and wsi <= ws.size():
-						color = String(ws[wsi - 1].get("color", ""))
+					var slot: Dictionary = _match_wheel_slot(ws, cf, label, fi)
+					color = String(slot.get("color", ""))
+					image = String(slot.get("image", ""))
 				ranges.append({
-					"lo": lo, "hi": hi,
-					"label": String(cf["attrs"].get("Name", "%d-%d" % [lo, hi])),
-					"color": color,
+					"lo": lo, "hi": hi, "label": label,
+					"color": color, "image": image,
 				})
 
 		slots[offs[0]] = {

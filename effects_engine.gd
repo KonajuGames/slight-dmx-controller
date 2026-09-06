@@ -22,8 +22,9 @@ func _process(delta: float) -> void:
 
 ## One override map { channel -> value } per universe slot, HTP-merged
 ## across every running chase and effect. `n` is the current universe
-## count. Untouched channels are simply absent (base passes through).
-func compose(n: int) -> Array:
+## count; `bases` (per-universe DMX buffers) feeds Pickup-mode effects.
+## Untouched channels are simply absent (base passes through).
+func compose(n: int, bases: Array = []) -> Array:
 	var layers: Array = []
 	for i in range(n):
 		layers.append({})
@@ -32,7 +33,7 @@ func compose(n: int) -> Array:
 			c.write_into(layers)
 	for e in effects:
 		if e.running:
-			e.write_into(layers)
+			e.write_into(layers, bases)
 	return layers
 
 

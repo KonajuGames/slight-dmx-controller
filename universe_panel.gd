@@ -14,6 +14,10 @@ const CHANNEL_MAX := 512
 ## Channel roles the per-fixture virtual dimmer scales.
 const INTENSITY_ROLES := ["RED", "GREEN", "BLUE", "WHITE", "AMBER", "UV"]
 
+## Emitted when a fixture is added or removed by the user (so the shell
+## can refresh fixture-group membership).
+signal patch_changed
+
 var sender: ArtNetUniverse
 var available_profiles: Array = []       # shared reference, owned by the shell
 ## Shell handler: func(action: String, profile) where action is
@@ -89,6 +93,14 @@ const _ICON_SIZE := 22
 ## The dropdown icon for one range slot, or null for a plain text item.
 func _slot_icon(role: String, r: Dictionary, index: int) -> Texture2D:
 	var explicit := String(r.get("color", ""))
+
+	# A real imported picture (e.g. a GDTF gobo) beats anything drawn.
+	var img_b64 := String(r.get("image", ""))
+	if img_b64 != "":
+		var tex := _decode_slot_image(img_b64)
+		if tex:
+			return tex
+
 	if role == "GOBO":
 		var lbl := String(r["label"]).to_lower()
 		var is_open := "open" in lbl or "none" in lbl or "no gobo" in lbl
@@ -96,6 +108,48 @@ func _slot_icon(role: String, r: Dictionary, index: int) -> Texture2D:
 	if role == "COLOR_WHEEL" or explicit != "":
 		return _swatch_texture(_slot_color(String(r["label"]), explicit))
 	return null
+
+
+## Decode a base64 PNG into an icon-sized, circular-masked texture.
+func _decode_slot_image(b64: String) -> Texture2D:
+	var bytes := Marshalls.base64_to_raw(b64)
+	if bytes.is_empty():
+		return null
+	var src := Image.new()
+	if src.load_png_from_buffer(bytes) != OK:
+		return null
+
+	var s := _ICON_SIZE
+	var fitted := src
+	var big := maxi(src.get_width(), src.get_height())
+	if big != s:
+		var sc := float(s) / float(maxi(big, 1))
+		fitted = src.duplicate()
+		fitted.resize(maxi(1, int(src.get_width() * sc)), maxi(1, int(src.get_height() * sc)),
+			Image.INTERPOLATE_BILINEAR)
+	if fitted.get_format() != Image.FORMAT_RGBA8:
+		fitted.convert(Image.FORMAT_RGBA8)
+
+	var out := Image.create_empty(s, s, false, Image.FORMAT_RGBA8)
+	out.fill(Color(0, 0, 0, 0))
+	var ox := (s - fitted.get_width()) / 2
+	var oy := (s - fitted.get_height()) / 2
+	var c := (s - 1) / 2.0
+	var rad := c - 0.5
+	for y in range(fitted.get_height()):
+		for x in range(fitted.get_width()):
+			var px := ox + x
+			var py := oy + y
+			if px < 0 or py < 0 or px >= s or py >= s:
+				continue
+			var col := fitted.get_pixel(x, y)
+			var d := Vector2(px - c, py - c).length()
+			if d > rad:
+				col.a = 0.0
+			elif d > rad - 1.2:
+				col.a *= rad - d
+			out.set_pixel(px, py, col)
+	return ImageTexture.create_from_image(out)
 
 
 ## Resolve a swatch colour: an explicit HTML/named colour if given, else
@@ -387,6 +441,7 @@ func _on_add_fixture_pressed() -> void:
 	# next Add Fixture click patches right after it, with no overlap.
 	var next_start := start + profile.channel_count(mode) + 1
 	fixture_start_spin.value = min(next_start, fixture_start_spin.max_value)
+	patch_changed.emit()
 
 
 func _on_remove_fixture(fixture_id: int) -> void:
@@ -395,6 +450,7 @@ func _on_remove_fixture(fixture_id: int) -> void:
 			patched_fixtures.remove_at(i)
 			break
 	_refresh_fixtures_vbox()
+	patch_changed.emit()
 
 
 func _refresh_fixtures_vbox() -> void:

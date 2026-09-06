@@ -84,7 +84,10 @@ func set_universe_count(n: int) -> void:
 
 
 func send_all() -> void:
-	var layers: Array = Fx.compose(universes.size())
+	var bases: Array = []
+	for u in universes:
+		bases.append(u.dmx_data)
+	var layers: Array = Fx.compose(universes.size(), bases)
 	for i in range(universes.size()):
 		var ov: Dictionary = layers[i] if i < layers.size() else {}
 		universes[i].send(master, ov)
