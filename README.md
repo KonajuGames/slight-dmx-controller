@@ -7,27 +7,36 @@ so no native plugin or GDExtension is required.
 
 ## What's included
 
-- `project.godot` — project config, registers `artnet_sender.gd` as the
-  `ArtNet` autoload singleton.
+- `project.godot` — project config, registers `artnet_sender.gd` and
+  `effects_engine.gd` as the `ArtNet` and `Fx` autoload singletons.
 - `artnet_universe.gd` — the `ArtNetUniverse` class: one universe's
   512-channel buffer plus its own UDP socket and target. Builds and sends
-  `ArtDMX` packets, optionally scaled by the grand master.
+  `ArtDMX` packets — effect/chase overrides applied first, then the grand
+  master scale.
 - `artnet_sender.gd` — the `ArtNet` autoload: manages one `ArtNetUniverse`
-  per universe slot (up to 8), a global grand master, and `send_all()`.
+  per universe slot (up to 8), the grand master, the cue crossfade
+  engine, and `send_all()` (which composites the `Fx` layer).
+- `effects_engine.gd` — the `Fx` autoload: runs the chases and waveform
+  effects and composites their combined output into a per-universe
+  override layer.
 - `main.tscn` — a single root `Control` node with the GUI script attached.
 - `dmx_controller.gd` — the shell: a top bar (grand master, Sending,
-  add/remove universe, whole-show + preset save/load) above a
-  `TabContainer` with one universe panel per tab, plus the shared
-  fixture-profile list and the New Profile dialog.
+  add/remove universe, whole-show + preset save/load) above a split
+  view — playback tabs (Cues / Chases / Effects) on the left, one
+  universe tab each on the right — plus the shared fixture-profile list
+  and the New Profile dialog.
 - `universe_panel.gd` — the `UniversePanel` class: one universe's tab —
   its connection settings, quick RGB row, blackout/full, and fixture
   patch with purpose-built per-fixture controls.
 - `cue.gd` — the `Cue` class: a stored look (every universe's non-zero
   channels) plus split fade-in / fade-out times; captures from and
   renders back to the live buffers.
-- `cue_list_panel.gd` — the `CueListPanel` class: the playback side —
-  an ordered cue list with GO / Back / Halt, record / update / delete,
-  and the crossfade engine driven from `ArtNet`.
+- `cue_list_panel.gd` — the `CueListPanel` class: an ordered cue list
+  with GO / Back / Halt, record / update / delete.
+- `chase.gd` / `chase_list_panel.gd` — the `Chase` class and its tab: a
+  tempo-cycled list of captured steps with crossfade and direction.
+- `wave_effect.gd` / `effects_panel.gd` — the `WaveEffect` class and its
+  tab: a waveform on one channel role, fanned across the fixtures.
 - `fixture_profile.gd` — the `FixtureProfile` class: one or more DMX
   *modes*, each an ordered channel list. Every channel has a role
   (`DIMMER`, `RED`, `PAN`, ...) plus a default/home value, min/max
@@ -60,11 +69,19 @@ Global controls live in the top bar:
   `{channel: value}` preset still loads, into universe 1. A preset wider
   than the current show adds the missing universes.
 
-## Cue list
+## Playback: cues, chases, effects
 
-The left-hand panel is the playback side of the console — an ordered list
-of **cues**, each a stored look plus fade timing. Stepping through them
-crossfades the whole rig.
+The left-hand side is a set of playback tabs. All three composite on top
+of the base output that the fixture controls write: **cues** *replace*
+the base as they crossfade in; **chases** and **effects** run as a live
+**override layer** on top (highest-takes-precedence between them), so a
+chase or effect can run over a standing cue and stops cleanly without
+disturbing it.
+
+### Cue list
+
+An ordered list of **cues**, each a stored look plus fade timing.
+Stepping through them crossfades the whole rig.
 
 - **Record Cue** captures the current live output of *every* universe as
   a new cue (inserted after the selected one, or at the end). So dial a
@@ -84,6 +101,35 @@ crossfades the whole rig.
 While a fade is running it owns the output — moving a fixture control
 mid-fade is overwritten until the fade lands. **Blackout All**, loading a
 preset, or loading a show cancels any running fade.
+
+### Chases
+
+A **chase** is an ordered list of **steps** (captured looks, like cues)
+cycled at a tempo.
+
+- **New Chase**, then dial a look and **Record Step**; repeat.
+- **Tempo (BPM)** sets the step rate; **Crossfade (%)** is how much of
+  each step is spent fading in from the previous one (0 = hard snap);
+  **Direction** is forward / backward / bounce.
+- **Run** starts it. Several chases can run at once.
+
+### Effects
+
+An **effect** is a waveform on one channel **role**, applied to every
+patched fixture that carries it.
+
+- **Role** (Dimmer, Red/Green/Blue, White, Amber, UV, Pan, Tilt) and
+  **Universe** (all, or one) pick the target channels from the live
+  patch — press **Rebuild targets from patch** after re-patching.
+- **Waveform**: sine, triangle, sawtooth, square, or random.
+- **Rate (BPM)**, **Size** (peak-to-peak swing), **Center** (midpoint
+  level), **Fan (deg)** spreads the phase across the fixture list (a
+  chase-across-the-rig), **Phase (deg)** offsets the whole effect — run a
+  Pan and a Tilt sine 90° apart for a circle.
+- **Run** starts it.
+
+Chases and effects are saved inside the show file. **Blackout All**,
+loading a preset, or loading a show stops every chase and effect.
 
 ## Fixture profiles
 
@@ -167,7 +213,8 @@ controls rather than a live readout of the buffer.
    30 times a second while **Sending** is checked, matching how real DMX
    gear expects a continuous refresh stream rather than one-off packets.
 5. Dial a look, click **Record Cue**, repeat for a few looks, then step
-   the show with **GO** (or the spacebar).
+   the show with **GO** (or the spacebar). The **Chases** and **Effects**
+   tabs add tempo-cycled steps and waveform effects that run on top.
 
 The window is freely resizable (down to 720×480). Toolbars, the
 connection/patch rows, and each fixture's bank of sliders are laid out in
@@ -206,7 +253,8 @@ packets to a physical DMX512 signal for your fixtures.
   controls per fixture (including a virtual dimmer for fixtures with no
   dimmer channel). Room to grow: colour-wheel/gobo *images* in the
   dropdown, importing GDTF / Open Fixture Library definitions.
-- **Cues/timeline**: the cue list (`cue.gd`, `cue_list_panel.gd`) does
-  split-time crossfades across every universe. Room to grow: cue-to-cue
-  auto-follow / wait times, a fade progress bar, effects/chases, MIDI or
-  OSC GO triggers, tracking (only store what a cue changes).
+- **Playback**: cues do split-time crossfades; chases cycle captured
+  steps at a tempo; effects run waveforms on a role across the rig. Room
+  to grow: cue-to-cue auto-follow / wait times, a fade progress bar,
+  effect groups / base-value pickups, MIDI or OSC GO triggers, cue
+  tracking (only store what a cue changes).

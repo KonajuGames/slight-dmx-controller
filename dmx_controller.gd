@@ -21,6 +21,8 @@ var _refresh_timer: Timer
 # UI refs
 var universe_tabs: TabContainer
 var cue_panel: CueListPanel
+var chase_panel: ChaseListPanel
+var fx_panel: EffectsPanel
 var master_slider: HSlider
 var sending_toggle: CheckButton
 var add_uni_btn: Button
@@ -50,14 +52,26 @@ func _ready() -> void:
 	main_vbox.add_child(_build_top_bar())
 	main_vbox.add_child(HSeparator.new())
 
-	# Cue list on the left, universe tabs on the right.
+	# Playback (cues / chases / effects) on the left, universe tabs right.
 	var split := HSplitContainer.new()
 	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	split.split_offset = 320
+	split.split_offset = 340
 	main_vbox.add_child(split)
 
+	var playback_tabs := TabContainer.new()
+	playback_tabs.custom_minimum_size = Vector2(300, 0)
+	split.add_child(playback_tabs)
+
 	cue_panel = CueListPanel.new()
-	split.add_child(cue_panel)
+	playback_tabs.add_child(cue_panel)
+	chase_panel = ChaseListPanel.new()
+	playback_tabs.add_child(chase_panel)
+	fx_panel = EffectsPanel.new()
+	fx_panel.resolve_targets_cb = _resolve_fx_targets
+	playback_tabs.add_child(fx_panel)
+	playback_tabs.set_tab_title(0, "Cues")
+	playback_tabs.set_tab_title(1, "Chases")
+	playback_tabs.set_tab_title(2, "Effects")
 
 	universe_tabs = TabContainer.new()
 	universe_tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -68,6 +82,7 @@ func _ready() -> void:
 	# ArtNet always starts with one universe slot; give it a tab.
 	_add_universe_tab(ArtNet.get_universe(0))
 	_update_universe_buttons()
+	fx_panel.refresh_universe_options()
 
 	_refresh_timer = Timer.new()
 	add_child(_refresh_timer)
@@ -173,6 +188,7 @@ func _on_add_universe() -> void:
 	_add_universe_tab(u)
 	universe_tabs.current_tab = _panels.size() - 1
 	_update_universe_buttons()
+	fx_panel.refresh_universe_options()
 	status_label.text = "Added universe %d." % _panels.size()
 
 
@@ -191,6 +207,7 @@ func _on_remove_universe() -> void:
 
 	_refresh_tab_titles()
 	_update_universe_buttons()
+	fx_panel.refresh_universe_options()
 	status_label.text = "Removed a universe (%d left)." % _panels.size()
 
 
@@ -204,6 +221,25 @@ func _sync_tabs_to_universes() -> void:
 		_panels.pop_back()
 	_refresh_tab_titles()
 	_update_universe_buttons()
+	fx_panel.refresh_universe_options()
+
+
+## Resolve an effect's channel targets from the live patch: every patched
+## fixture (in the chosen universe, or all) that has a channel with `role`
+## contributes that channel. `universe` -1 means all universes.
+func _resolve_fx_targets(role: String, universe: int) -> Array:
+	var out: Array = []
+	for ui in range(_panels.size()):
+		if universe != -1 and universe != ui:
+			continue
+		for fixture in _panels[ui].patched_fixtures:
+			var profile: FixtureProfile = fixture["profile"]
+			var chans: Array = profile.channels_for_mode(int(fixture.get("mode", 0)))
+			var start: int = fixture["start"]
+			for li in range(chans.size()):
+				if String(chans[li]["role"]) == role:
+					out.append({"u": ui, "ch": start + li})
+	return out
 
 
 func _refresh_tab_titles() -> void:
@@ -218,9 +254,12 @@ func _update_universe_buttons() -> void:
 
 func _on_blackout_all() -> void:
 	ArtNet.stop_fade()
+	Fx.stop_all()
+	chase_panel.sync_ui()
+	fx_panel.sync_ui()
 	for i in range(ArtNet.universe_count()):
 		ArtNet.get_universe(i).set_all(0)
-	status_label.text = "Blackout — all universes."
+	status_label.text = "Blackout — all universes, chases and effects stopped."
 
 
 func _on_refresh_timeout() -> void:
@@ -275,9 +314,14 @@ func _refresh_all_profile_options(select_new: bool) -> void:
 # ------------------------------------------------------------ SHOW FILES --
 
 ## A show file is every universe's connection settings + fixture patch,
-## plus the cue list.
+## plus the cue list, chases and effects.
 func _on_save_show() -> void:
-	var data := {"universes": [], "cues": cue_panel.to_dict()}
+	var data := {
+		"universes": [],
+		"cues": cue_panel.to_dict(),
+		"chases": chase_panel.to_dict(),
+		"effects": fx_panel.to_dict(),
+	}
 	for p in _panels:
 		data["universes"].append(p.patch_dict())
 
@@ -287,8 +331,8 @@ func _on_save_show() -> void:
 		return
 	f.store_string(JSON.stringify(data))
 	f.close()
-	status_label.text = "Show saved (%d universes, %d cues)." % [
-		_panels.size(), cue_panel.cues.size()]
+	status_label.text = "Show saved (%d universes, %d cues, %d chases, %d effects)." % [
+		_panels.size(), cue_panel.cues.size(), Fx.chases.size(), Fx.effects.size()]
 
 
 func _on_load_show() -> void:
@@ -311,17 +355,19 @@ func _on_load_show() -> void:
 		return
 
 	ArtNet.stop_fade()
+	Fx.stop_all()
 	var n: int = clampi(uni_list.size(), 1, ArtNet.MAX_UNIVERSES)
 	ArtNet.set_universe_count(n)
 	_sync_tabs_to_universes()
 	for i in range(n):
 		_panels[i].apply_patch_dict(uni_list[i])
 
-	if parsed is Dictionary and parsed.has("cues"):
-		cue_panel.from_dict(parsed["cues"])
-	else:
-		cue_panel.from_dict({})
-	status_label.text = "Show loaded (%d universes, %d cues)." % [n, cue_panel.cues.size()]
+	var doc: Dictionary = parsed if parsed is Dictionary else {}
+	cue_panel.from_dict(doc.get("cues", {}))
+	chase_panel.from_dict(doc.get("chases", {}))
+	fx_panel.from_dict(doc.get("effects", {}))
+	status_label.text = "Show loaded (%d universes, %d cues, %d chases, %d effects)." % [
+		n, cue_panel.cues.size(), Fx.chases.size(), Fx.effects.size()]
 
 
 # ---------------------------------------------------------------- PRESETS --
@@ -362,6 +408,9 @@ func _on_load_preset() -> void:
 		return
 
 	ArtNet.stop_fade()
+	Fx.stop_all()
+	chase_panel.sync_ui()
+	fx_panel.sync_ui()
 	# Grow (never shrink) so a preset wider than the current show still loads.
 	var n: int = clampi(uni_list.size(), 1, ArtNet.MAX_UNIVERSES)
 	ArtNet.set_universe_count(maxi(ArtNet.universe_count(), n))

@@ -54,19 +54,26 @@ func set_all(value: int) -> void:
 	dmx_data.fill(clampi(value, 0, 255))
 
 
-## Send the buffer as one ArtDMX packet, optionally scaled by `scale`
-## (0..1, the grand master). Scaling is applied to a copy, so the stored
-## per-channel values are never lost. Call ~30-40x/second — most Art-Net
-## receivers expect a steady refresh stream, like real DMX512.
-func send(scale: float = 1.0) -> void:
+## Send the buffer as one ArtDMX packet. `overrides` ({channel: value})
+## replace those channels first (the effects/chase layer); then the whole
+## frame is scaled by `scale` (0..1, the grand master). Both act on a
+## copy, so the stored per-channel values are never lost. Call
+## ~30-40x/second — most Art-Net receivers expect a steady refresh stream,
+## like real DMX512.
+func send(scale: float = 1.0, overrides: Dictionary = {}) -> void:
 	if not connected:
 		return
 
 	var data := dmx_data
-	if scale < 1.0:
+	if scale < 1.0 or not overrides.is_empty():
 		data = dmx_data.duplicate()
-		for i in range(data.size()):
-			data[i] = int(data[i] * scale)
+		for key in overrides:
+			var c := int(key)
+			if c >= 0 and c < data.size():
+				data[c] = clampi(int(overrides[key]), 0, 255)
+		if scale < 1.0:
+			for i in range(data.size()):
+				data[i] = int(data[i] * scale)
 
 	var packet := PackedByteArray()
 
