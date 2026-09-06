@@ -3,9 +3,9 @@ extends Node3D
 ## One patched fixture in the 3D visualizer. Builds either the GDTF
 ## geometry (glTF models + pan/tilt axes) when the profile has it, or a
 ## schematic body by category. Every frame it reads its slice of the
-## universe's composited `output` (via DmxRender) to drive a SpotLight3D
-## — colour, intensity, pan/tilt, zoom, strobe, gobo projection + spin —
-## plus a faint additive beam cone.
+## universe's composited `output` (via DmxRender) and drives one light +
+## beam cone *per head* — so a multi-head bar / spider is many sources —
+## plus shared pan/tilt/zoom/strobe/gobo.
 
 var universe := 0
 var start := 0          # 0-based
@@ -24,11 +24,14 @@ var _beam_len := 13.0
 var _yoke: Node3D            # pan axis
 var _head: Node3D            # tilt axis
 var _head_base := 0.0        # tilt-axis home rotation (rad, X)
-var _light: SpotLight3D
-var _beam: MeshInstance3D
-var _emissive: MeshInstance3D
 var _ring: MeshInstance3D
 var _geo_nodes := {}
+var _geo_beam_node: Node3D
+var _geo_beam_deg := 0.0
+
+## Per head: { node, light, beam (or null), emissive (or null) }
+var _heads: Array = []
+var _light: SpotLight3D      # alias for _heads[0].light (compat / gobo target)
 
 var _cur_pan := 0.0
 var _cur_tilt := 0.0
@@ -50,6 +53,8 @@ func setup(p_universe: int, p_start: int, p_mode: int, p_profile: FixtureProfile
 	_category = _resolve_category()
 	if not _build_from_geometry():
 		_build_schematic()
+	if not _heads.is_empty():
+		_light = _heads[0]["light"]
 	_add_selection_and_picker()
 	set_process(true)
 
@@ -70,14 +75,22 @@ func _resolve_category() -> String:
 	return "generic"
 
 
+func _head_offsets() -> Array:
+	var groups := profile.head_groups(mode)
+	if groups.is_empty():
+		return [Vector3.ZERO]
+	var out: Array = []
+	for g in groups:
+		out.append(g["offset"])
+	return out
+
+
 # ------------------------------------------------------- GDTF GEOMETRY --
 
 func _build_from_geometry() -> bool:
 	var geo: Dictionary = profile.geometry
 	if geo.is_empty() or not geo.has("tree"):
 		return false
-	# without any glTF models the schematic body reads better than a
-	# tree of empty nodes with beams hanging in space.
 	var mm: Dictionary = geo.get("models", {})
 	if mm.is_empty():
 		return false
@@ -85,8 +98,7 @@ func _build_from_geometry() -> bool:
 	var mdir := "user://fixture_models/%s" % String(geo.get("models_dir", ""))
 	_spawn_geo(geo["tree"], self, mdir, mm)
 
-	if _light == null:
-		# geometry had no <Beam> — unusable, use the schematic instead
+	if _geo_beam_node == null:
 		for c in get_children():
 			c.queue_free()
 		_geo_nodes.clear()
@@ -97,6 +109,10 @@ func _build_from_geometry() -> bool:
 	if _head:
 		_head_base = deg_to_rad(-90.0)  # tilt home: beam straight down
 		_head.rotation.x = _head_base
+	if _geo_beam_deg > 0.0:
+		profile.physical["beam_deg"] = _geo_beam_deg
+
+	_build_heads(_geo_beam_node, Vector3.ZERO, true, false)
 	return true
 
 
@@ -105,8 +121,7 @@ func _spawn_geo(node: Dictionary, parent: Node3D, mdir: String, mmap: Dictionary
 	n.name = String(node.get("name", "geo")) if node.get("name", "") != "" else "geo"
 	var m: Array = node.get("mat", [])
 	if m.size() == 16:
-		# GDTF is Z-up; use the translation, converted to Godot Y-up.
-		n.position = Vector3(float(m[12]), float(m[14]), -float(m[13]))
+		n.position = Vector3(float(m[12]), float(m[14]), -float(m[13]))  # Z-up -> Y-up
 	parent.add_child(n)
 	if node.get("name", "") != "":
 		_geo_nodes[String(node["name"])] = n
@@ -118,11 +133,8 @@ func _spawn_geo(node: Dictionary, parent: Node3D, mdir: String, mmap: Dictionary
 			n.add_child(scene)
 
 	if String(node.get("kind", "")) == "beam":
-		var bd := float(node.get("beam_deg", 0.0))
-		if bd > 0.0:
-			profile.physical["beam_deg"] = bd
-		_attach_light(n, Vector3.ZERO)
-		_attach_beam(n, Vector3.ZERO)
+		_geo_beam_node = n
+		_geo_beam_deg = float(node.get("beam_deg", 0.0))
 
 	for c in node.get("children", []):
 		_spawn_geo(c, n, mdir, mmap)
@@ -172,6 +184,7 @@ func _cyl(rt: float, rb: float, h: float, mat: Material) -> MeshInstance3D:
 
 func _build_schematic() -> void:
 	var metal := _metal()
+
 	match _category:
 		"moving_head", "scanner":
 			add_child(_cyl(0.13, 0.15, 0.10, metal))
@@ -188,27 +201,97 @@ func _build_schematic() -> void:
 			_head.position.y = 0.22
 			_yoke.add_child(_head)
 			_head.add_child(_box(Vector3(0.24, 0.20, 0.24), metal))
-			_attach_light(_head, Vector3(0, 0, -0.13))
-			_attach_beam(_head, Vector3(0, 0, -0.13))
+			_build_heads(_head, Vector3(0, 0, -0.13), true, false)
 		"blinder", "strobe":
 			add_child(_box(Vector3(0.55, 0.38, 0.12), metal))
-			_attach_emissive(Vector3(0.5, 0.32, 0.02), Vector3(0, 0, -0.07))
-			_attach_light(self, Vector3(0, 0, -0.1))
-			_light.spot_angle = 65.0
+			_build_heads(self, Vector3(0, 0, -0.07), false, true, 65.0)
 		"strip", "bar", "pixel_bar":
-			add_child(_box(Vector3(1.0, 0.09, 0.09), metal))
-			_attach_emissive(Vector3(0.96, 0.05, 0.02), Vector3(0, 0, -0.06))
-			_attach_light(self, Vector3(0, 0, -0.08))
-			_light.spot_angle = 55.0
+			var span := 0.0
+			for o in _head_offsets():
+				span = maxf(span, absf(o.x) * 2.0)
+			var w := maxf(1.0, span + 0.2)
+			add_child(_box(Vector3(w, 0.09, 0.09), metal))
+			_build_heads(self, Vector3(0, 0, -0.06), false, true, 55.0)
 		_:
 			var can := _cyl(0.11, 0.11, 0.24, metal)
 			can.rotation_degrees.x = 90.0
 			can.position.z = -0.02
 			add_child(can)
-			_attach_light(self, Vector3(0, 0, -0.13))
-			_attach_beam(self, Vector3(0, 0, -0.13))
-			if _category == "wash":
-				_light.spot_angle = 32.0
+			_build_heads(self, Vector3(0, 0, -0.13), _category != "wash", false,
+				32.0 if _category == "wash" else 0.0)
+
+
+## Build one light (+ optional beam cone / emissive glow) per head, each
+## parented at its offset under `carrier`.
+func _build_heads(carrier: Node3D, base_at: Vector3, want_cone: bool, want_emissive: bool, angle_override := 0.0) -> void:
+	var offsets := _head_offsets()
+	for i in range(offsets.size()):
+		var node := Node3D.new()
+		node.position = base_at + offsets[i]
+		carrier.add_child(node)
+		var hd := {"node": node, "light": null, "beam": null, "emissive": null}
+
+		var lt := SpotLight3D.new()
+		lt.spot_range = 28.0
+		lt.spot_angle = angle_override * 0.5 if angle_override > 0.0 \
+			else clampf(float(profile.physical.get("beam_deg", 14.0)) * 0.5, 2.0, 60.0)
+		lt.spot_angle_attenuation = 0.6
+		lt.spot_attenuation = 1.2
+		lt.light_energy = 0.0
+		lt.shadow_enabled = shadows
+		lt.light_volumetric_fog_energy = 3.0
+		lt.distance_fade_enabled = true
+		lt.distance_fade_begin = 24.0
+		lt.distance_fade_length = 10.0
+		node.add_child(lt)
+		hd["light"] = lt
+
+		if want_cone:
+			hd["beam"] = _mk_beam()
+			node.add_child(hd["beam"])
+		if want_emissive:
+			var sz := Vector3(0.22, 0.14, 0.02) if offsets.size() > 1 else Vector3(0.5, 0.32, 0.02)
+			hd["emissive"] = _mk_emissive(sz)
+			node.add_child(hd["emissive"])
+
+		_heads.append(hd)
+
+
+func _mk_beam() -> MeshInstance3D:
+	var bm := MeshInstance3D.new()
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = 1.0
+	cyl.bottom_radius = 0.02
+	cyl.height = 1.0
+	cyl.radial_segments = 22
+	cyl.cap_top = false
+	cyl.cap_bottom = false
+	bm.mesh = cyl
+	bm.rotation_degrees = Vector3(-90, 0, 0)
+	bm.position = Vector3(0, 0, -0.5)
+
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+	mat.albedo_texture = _get_beam_gradient()
+	mat.texture_repeat = false   # clamp — no bright seam at the far end
+	mat.albedo_color = Color(1, 1, 1, 0.0)
+	bm.material_override = mat
+	bm.visible = false
+	return bm
+
+
+func _mk_emissive(size: Vector3) -> MeshInstance3D:
+	var mi := _box(size, StandardMaterial3D.new())
+	var m: StandardMaterial3D = mi.material_override
+	m.albedo_color = Color(0.02, 0.02, 0.02)
+	m.emission_enabled = true
+	m.emission = Color.WHITE
+	m.emission_energy_multiplier = 0.0
+	return mi
 
 
 func _add_selection_and_picker() -> void:
@@ -237,64 +320,6 @@ func _add_selection_and_picker() -> void:
 	cs.position.y = 0.15
 	body.add_child(cs)
 	add_child(body)
-
-
-func _attach_light(parent: Node3D, at: Vector3) -> void:
-	_light = SpotLight3D.new()
-	_light.position = at
-	_light.spot_range = 28.0
-	_light.spot_angle = clampf(float(profile.physical.get("beam_deg", 14.0)) * 0.5, 2.0, 60.0)
-	_light.spot_angle_attenuation = 0.6
-	_light.spot_attenuation = 1.2
-	_light.light_energy = 0.0
-	_light.shadow_enabled = shadows
-	_light.light_volumetric_fog_energy = 3.0
-	_light.distance_fade_enabled = true
-	_light.distance_fade_begin = 24.0
-	_light.distance_fade_length = 10.0
-	parent.add_child(_light)
-
-
-func _attach_beam(parent: Node3D, at: Vector3) -> void:
-	if _category in ["blinder", "strobe", "strip", "bar", "pixel_bar", "wash"]:
-		return
-	_beam = MeshInstance3D.new()
-	var cyl := CylinderMesh.new()
-	cyl.top_radius = 1.0
-	cyl.bottom_radius = 0.02
-	cyl.height = 1.0
-	cyl.radial_segments = 22
-	cyl.cap_top = false
-	cyl.cap_bottom = false
-	_beam.mesh = cyl
-	_beam.rotation_degrees = Vector3(-90, 0, 0)
-	_beam.position = at + Vector3(0, 0, -0.5)
-
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
-	mat.albedo_texture = _get_beam_gradient()
-	# Clamp, not repeat — otherwise the V=1 seam wraps to the bright V=0
-	# end and leaves a hard ring where the cone should fade to nothing.
-	mat.texture_repeat = false
-	mat.albedo_color = Color(1, 1, 1, 0.0)
-	_beam.material_override = mat
-	_beam.visible = false
-	parent.add_child(_beam)
-
-
-func _attach_emissive(size: Vector3, at: Vector3) -> void:
-	_emissive = _box(size, StandardMaterial3D.new())
-	_emissive.position = at
-	var m: StandardMaterial3D = _emissive.material_override
-	m.albedo_color = Color(0.02, 0.02, 0.02)
-	m.emission_enabled = true
-	m.emission = Color.WHITE
-	m.emission_energy_multiplier = 0.0
-	add_child(_emissive)
 
 
 static func _get_beam_gradient() -> Texture2D:
@@ -336,37 +361,48 @@ func _process(delta: float) -> void:
 		mult = 1.0 if fmod(_strobe_phase, 1.0) < 0.5 else 0.0
 	else:
 		_strobe_phase = 0.0
-	var dim: float = float(st["dimmer"]) * mult
-	var color: Color = st["color"]
-	var half_angle: float = clampf(float(st["zoom"]) * 0.5, 2.0, 65.0)
 
+	var half_angle: float = clampf(float(st["zoom"]) * 0.5, 2.0, 65.0)
+	var hstates: Array = st["heads"]
+
+	for i in range(_heads.size()):
+		var hd: Dictionary = _heads[i]
+		var hs: Dictionary = hstates[i] if i < hstates.size() else hstates[hstates.size() - 1]
+		var dim: float = float(hs["level"]) * mult
+		var color: Color = hs["color"]
+		var lt: SpotLight3D = hd["light"]
+		if lt:
+			lt.light_color = color
+			lt.light_energy = _base_energy * dim
+			lt.spot_angle = half_angle
+			lt.visible = dim > 0.002
+		var bm: MeshInstance3D = hd["beam"]
+		if bm:
+			if dim > 0.004:
+				var wide := tan(deg_to_rad(half_angle)) * _beam_len
+				bm.scale = Vector3(wide, _beam_len, wide)
+				bm.position.z = -_beam_len * 0.5
+				var mat: StandardMaterial3D = bm.material_override
+				mat.albedo_color = Color(color.r, color.g, color.b, clampf(0.16 * dim, 0.0, 0.30))
+				bm.visible = true
+			else:
+				bm.visible = false
+		var em: MeshInstance3D = hd["emissive"]
+		if em:
+			var m: StandardMaterial3D = em.material_override
+			m.emission = color
+			m.emission_energy_multiplier = dim * 7.0
+
+	# gobo + spin on head 0 only
 	if _light:
-		_light.light_color = color
-		_light.light_energy = _base_energy * dim
-		_light.spot_angle = half_angle
-		_light.visible = dim > 0.002
 		_apply_gobo(String(st["gobo"]))
 		if float(st["gobo_rot"]) != 0.0 and _light.light_projector != null:
 			_gobo_roll += deg_to_rad(float(st["gobo_rot"])) * delta
-			_light.rotation.z = _gobo_roll  # rolls the projected pattern
-	if _beam:
-		if dim > 0.004:
-			var wide := tan(deg_to_rad(half_angle)) * _beam_len
-			_beam.scale = Vector3(wide, _beam_len, wide)
-			_beam.position.z = -_beam_len * 0.5
-			var mat: StandardMaterial3D = _beam.material_override
-			mat.albedo_color = Color(color.r, color.g, color.b, clampf(0.16 * dim, 0.0, 0.30))
-			_beam.visible = true
-		else:
-			_beam.visible = false
-	if _emissive:
-		var em: StandardMaterial3D = _emissive.material_override
-		em.emission = color
-		em.emission_energy_multiplier = dim * 7.0
+			_light.rotation.z = _gobo_roll
 
 
 func _apply_gobo(b64: String) -> void:
-	if b64 == _cur_gobo:
+	if b64 == _cur_gobo or _light == null:
 		return
 	_cur_gobo = b64
 	if b64 == "":
@@ -392,8 +428,9 @@ func _set_selected(v: bool) -> void:
 
 func _set_shadows(v: bool) -> void:
 	shadows = v
-	if _light:
-		_light.shadow_enabled = v
+	for hd in _heads:
+		if hd["light"]:
+			hd["light"].shadow_enabled = v
 
 
 func apply_transform(pos: Vector3, rot_deg: Vector3) -> void:

@@ -168,16 +168,104 @@ static func from_gdtf_xml(xml: PackedByteArray, media_reader := Callable()) -> D
 	if mode_nodes.is_empty():
 		return {"error": "No <DMXMode> found."}
 
+	# GeometryReference nodes turn one "module" of channels into many
+	# cells / heads — expand them so the flat channel list has every head.
+	var refs := _gdtf_refs(ft)
+
 	var modes: Array = []
 	for mn in mode_nodes:
-		modes.append(_gdtf_mode(mn, wheels, warnings))
+		modes.append(_gdtf_mode(mn, wheels, warnings, refs))
 
 	var id := _safe_id_hint(fixture_name)
-	var profile := FixtureProfile.new(id, fixture_name, [], modes, _gdtf_physical(ft, modes))
-
+	var phys := _gdtf_physical(ft, modes)
 	var geo := _gdtf_geometry(ft, media_reader, warnings)
+	var heads := _gdtf_head_offsets(ft, mode_nodes, geo["geometry"], refs)
+	if not heads.is_empty():
+		phys["heads"] = heads
+
+	var profile := FixtureProfile.new(id, fixture_name, [], modes, phys)
 	profile.geometry = geo["geometry"]
 	return {"profile": profile, "warnings": warnings, "model_bytes": geo["model_bytes"]}
+
+
+# ------------------------------------------------------------ GDTF HEADS --
+
+## Cumulative Y-up translation of every named geometry in the tree.
+static func _geo_offset_map(node, parent_pos := Vector3.ZERO, out := {}) -> Dictionary:
+	if node == null:
+		return out
+	var m: Array = node.get("mat", [])
+	var local := Vector3.ZERO
+	if m is Array and m.size() == 16:
+		local = Vector3(float(m[12]), float(m[14]), -float(m[13]))
+	var world: Vector3 = parent_pos + local
+	if String(node.get("name", "")) != "":
+		out[String(node["name"])] = world
+	for c in node.get("children", []):
+		_geo_offset_map(c, world, out)
+	return out
+
+
+static func _gdtf_refs(ft) -> Array:
+	var out: Array = []
+	for gr in _find_all(ft, "GeometryReference"):
+		var brk = _kid(gr, "Break")
+		out.append({
+			"name": String(gr["attrs"].get("Name", "")),
+			"geometry": String(gr["attrs"].get("Geometry", "")),
+			"dmx_offset": int(brk["attrs"].get("DMXOffset", "0")) if brk else 0,
+			"mat": _gdtf_matrix(String(gr["attrs"].get("Position", ""))),
+		})
+	return out
+
+
+## Per-head translation relative to the fixture origin. Built from the
+## geometries the RGB channels point at, using whichever mode has the most.
+static func _gdtf_head_offsets(ft, mode_nodes: Array, geometry: Dictionary, refs: Array) -> Array:
+	if geometry.is_empty() or not geometry.has("tree"):
+		return _ref_head_offsets(refs, geometry)
+	var omap := _geo_offset_map(geometry["tree"])
+	var origin: Vector3 = omap.get(String(geometry["tree"].get("name", "")), Vector3.ZERO)
+
+	var best: Array = []
+	for mn in mode_nodes:
+		var geos: Array = []
+		for dc in _kids(_kid(mn, "DMXChannels"), "DMXChannel"):
+			for lc in _kids(dc, "LogicalChannel"):
+				if String(lc["attrs"].get("Attribute", "")) in ["ColorAdd_R", "ColorRGB_Red"]:
+					var g := String(dc["attrs"].get("Geometry", ""))
+					if g != "" and not (g in geos):
+						geos.append(g)
+		if geos.size() > best.size():
+			best = geos
+
+	var out := _ref_head_offsets(refs, geometry)
+	if best.size() >= 2:
+		out = []
+		for g in best:
+			var p: Vector3 = omap.get(g, Vector3.ZERO) - origin
+			out.append([p.x, p.y, p.z])
+	return out
+
+
+static func _ref_head_offsets(refs: Array, geometry: Dictionary) -> Array:
+	if refs.size() < 2:
+		return []
+	var out: Array = []
+	for r in refs:
+		var m: Array = r["mat"]
+		if m.size() == 16:
+			out.append([float(m[12]), float(m[14]), -float(m[13])])
+		else:
+			out.append([0.0, 0.0, 0.0])
+	# re-centre on the group's midpoint
+	var mid := Vector3.ZERO
+	for o in out:
+		mid += Vector3(o[0], o[1], o[2])
+	mid /= out.size()
+	for i in range(out.size()):
+		out[i] = [out[i][0] - mid.x, out[i][1] - mid.y, out[i][2] - mid.z]
+	return out
 
 
 # --------------------------------------------------------- GDTF GEOMETRY --
@@ -392,11 +480,20 @@ static func _match_wheel_slot(slots: Array, cf, label: String, fi: int) -> Dicti
 	return {}
 
 
-static func _gdtf_mode(mn, wheels: Dictionary, warnings: Array) -> Dictionary:
+static func _gdtf_mode(mn, wheels: Dictionary, warnings: Array, refs: Array = []) -> Dictionary:
 	var mode_name := String(mn["attrs"].get("Name", "Mode"))
 	var dmx_channels := _kids(_kid(mn, "DMXChannels"), "DMXChannel")
 
-	var slots := {}   # 1-based offset -> channel dict
+	# Geometries instanced by a <GeometryReference> hold "module" channels
+	# (one pixel / head) that get replicated at each reference's DMX offset.
+	var module_names := {}
+	for r in refs:
+		var gm := String(r.get("geometry", ""))
+		if gm != "":
+			module_names[gm] = true
+
+	var slots := {}          # 1-based offset -> channel dict
+	var module_slots := {}   # subset of slots that live in a referenced module
 	var footprint := 0
 
 	for dc in dmx_channels:
@@ -410,6 +507,8 @@ static func _gdtf_mode(mn, wheels: Dictionary, warnings: Array) -> Dictionary:
 				offs.append(n)
 		if offs.is_empty():
 			continue
+
+		var is_module: bool = module_names.has(String(dc["attrs"].get("Geometry", "")))
 
 		var funcs: Array = []
 		var attr := ""
@@ -458,6 +557,8 @@ static func _gdtf_mode(mn, wheels: Dictionary, warnings: Array) -> Dictionary:
 			"name": cname, "role": role,
 			"default": clampi(coarse_default, 0, 255), "fine": false, "ranges": ranges,
 		}
+		if is_module:
+			module_slots[offs[0]] = slots[offs[0]]
 		footprint = maxi(footprint, offs[0])
 		for k in range(1, offs.size()):
 			slots[offs[k]] = {
@@ -465,7 +566,24 @@ static func _gdtf_mode(mn, wheels: Dictionary, warnings: Array) -> Dictionary:
 				"default": clampi(fine_default if k == 1 else 0, 0, 255),
 				"fine": true, "ranges": [],
 			}
+			if is_module:
+				module_slots[offs[k]] = slots[offs[k]]
 			footprint = maxi(footprint, offs[k])
+
+	# replicate the module channels at every GeometryReference's DMX offset
+	if module_slots.size() > 0 and refs.size() >= 2:
+		var base_off := 1 << 30
+		for r in refs:
+			base_off = mini(base_off, int(r.get("dmx_offset", 0)))
+		for r in refs:
+			var shift := int(r.get("dmx_offset", 0)) - base_off
+			if shift <= 0:
+				continue
+			for boff in module_slots:
+				var tgt: int = int(boff) + shift
+				if tgt >= 1 and tgt <= _MAX_FOOTPRINT and not slots.has(tgt):
+					slots[tgt] = (module_slots[boff] as Dictionary).duplicate(true)
+					footprint = maxi(footprint, tgt)
 
 	var channels: Array = []
 	for off in range(1, footprint + 1):
@@ -602,11 +720,104 @@ static func _ofl_channel(cname: String, cdef: Dictionary, wheels: Dictionary, wa
 	}
 
 
+## Ordered pixels of an OFL `matrix` object: [{key, pos:Vector3}] with pos in
+## grid units (X right, Y up, Z toward viewer), centred on the fixture origin.
+static func _ofl_matrix_pixels(matrix: Dictionary) -> Array:
+	var raw: Array = []   # {key, x, y, z} in 1-based grid indices
+	if matrix.get("pixelKeys", null) is Array:
+		var layers: Array = matrix["pixelKeys"]
+		for z in range(layers.size()):
+			var rows = layers[z]
+			if not (rows is Array):
+				continue
+			for y in range(rows.size()):
+				var cols = rows[y]
+				if not (cols is Array):
+					continue
+				for x in range(cols.size()):
+					var k = cols[x]
+					if k != null:
+						raw.append({"key": String(k), "x": x + 1, "y": rows.size() - y, "z": z + 1})
+	elif matrix.get("pixelCount", null) is Array and matrix["pixelCount"].size() == 3:
+		var pc: Array = matrix["pixelCount"]
+		for z in range(int(pc[2])):
+			for y in range(int(pc[1])):
+				for x in range(int(pc[0])):
+					raw.append({
+						"key": "(%d, %d, %d)" % [x + 1, y + 1, z + 1],
+						"x": x + 1, "y": y + 1, "z": z + 1,
+					})
+	if raw.is_empty():
+		return []
+
+	var cx := 0.0
+	var cy := 0.0
+	var cz := 0.0
+	for r in raw:
+		cx += r["x"]; cy += r["y"]; cz += r["z"]
+	cx /= raw.size(); cy /= raw.size(); cz /= raw.size()
+	var out: Array = []
+	for r in raw:
+		out.append({
+			"key": r["key"],
+			"pos": Vector3(r["x"] - cx, r["y"] - cy, r["z"] - cz),
+		})
+	return out
+
+
+## Resolve a mode's `{insert:"matrixChannels", ...}` entry to a flat list of
+## channel dicts, and record the per-head offset for each emitted pixel.
+static func _ofl_expand_matrix(
+		entry: Dictionary, pixels: Array, templates: Dictionary,
+		wheels: Dictionary, head_pos: Array, warnings: Array) -> Array:
+	var order := String(entry.get("channelOrder", "perPixel"))
+	var tmpl_names: Array = entry.get("templateChannels", [])
+
+	# which pixels, in which order
+	var keys: Array = []
+	var rf = entry.get("repeatFor", "eachPixelXYZ")
+	if rf is Array:
+		for k in rf:
+			keys.append(String(k))
+	else:
+		for p in pixels:
+			keys.append(String(p["key"]))
+
+	var pos_of := {}
+	for p in pixels:
+		pos_of[String(p["key"])] = p["pos"]
+
+	var out: Array = []
+	var emit := func(pkey: String, tname: String) -> void:
+		var cname := tname.replace("$pixelKey", pkey)
+		var tdef = templates.get(tname, templates.get(cname, null))
+		if tdef is Dictionary:
+			out.append(_ofl_channel(cname, tdef, wheels, warnings))
+		else:
+			out.append({"name": cname, "role": "GENERIC", "default": 0, "fine": false, "ranges": []})
+
+	if order == "perChannel":
+		warnings.append("Matrix channelOrder 'perChannel' — per-head colour pickers may not align")
+		for tname in tmpl_names:
+			for pkey in keys:
+				emit.call(pkey, String(tname))
+	else:
+		for pkey in keys:
+			for tname in tmpl_names:
+				emit.call(pkey, String(tname))
+			var pv = pos_of.get(pkey, Vector3.ZERO)
+			head_pos.append([pv.x, pv.y, pv.z])
+	return out
+
+
 static func from_ofl(d: Dictionary) -> Dictionary:
 	var warnings: Array = []
 	var fixture_name := String(d.get("name", "Imported Fixture"))
 	var available: Dictionary = d.get("availableChannels", {})
 	var wheels: Dictionary = d.get("wheels", {})
+	var templates: Dictionary = d.get("templateChannels", {})
+	var pixels := _ofl_matrix_pixels(d.get("matrix", {}))
+	var head_pos: Array = []
 
 	# fine-channel alias -> its coarse channel name
 	var fine_of := {}
@@ -630,6 +841,11 @@ static func from_ofl(d: Dictionary) -> Dictionary:
 				else:
 					mch.append({"name": String(entry), "role": "GENERIC", "default": 0, "fine": false, "ranges": []})
 					warnings.append("Channel '%s' is not in availableChannels" % entry)
+			elif entry is Dictionary and String(entry.get("insert", "")) == "matrixChannels":
+				var hp: Array = []
+				mch.append_array(_ofl_expand_matrix(entry, pixels, templates, wheels, hp, warnings))
+				if head_pos.is_empty():
+					head_pos = hp
 			else:
 				mch.append({"name": "Matrix", "role": "GENERIC", "default": 0, "fine": false, "ranges": []})
 				warnings.append("Matrix / template channels are imported as GENERIC")
@@ -638,9 +854,23 @@ static func from_ofl(d: Dictionary) -> Dictionary:
 	if modes.is_empty():
 		return {"error": "The OFL fixture has no modes."}
 
+	var phys := _ofl_physical(d, modes)
+	if head_pos.size() >= 2:
+		# grid indices -> metres. Prefer the fixture's real width if given.
+		var pitch := 0.15
+		var dims = d.get("physical", {}).get("dimensions", null)
+		if dims is Array and dims.size() >= 1 and pixels.size() >= 2:
+			var span := 0.0
+			for p in pixels:
+				span = maxf(span, absf(p["pos"].x))
+			if span > 0.0:
+				pitch = (float(dims[0]) / 1000.0) / (span * 2.0 + 1.0)
+		for h in head_pos:
+			h[0] *= pitch; h[1] *= pitch; h[2] *= pitch
+		phys["heads"] = head_pos
+
 	var profile := FixtureProfile.new(
-		_safe_id_hint(fixture_name), fixture_name, [], modes,
-		_ofl_physical(d, modes))
+		_safe_id_hint(fixture_name), fixture_name, [], modes, phys)
 	return {"profile": profile, "warnings": warnings}
 
 

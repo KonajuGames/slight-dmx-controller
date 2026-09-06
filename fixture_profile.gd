@@ -32,7 +32,14 @@ const PHYSICAL_DEFAULT := {
 	"beam_deg": 14.0,
 	"pan_range": 540.0,
 	"tilt_range": 270.0,
+	## Per-head translation (metres, x/y/z arrays) for multi-head fixtures
+	## — an LED bar's cells, a spider's beams. Empty = single head. Index
+	## matches the order of RGB triplets in the channel list.
+	"heads": [],
 }
+
+## Intensity roles that make up a "head" (an RGB triplet plus its extras).
+const HEAD_ROLES := ["RED", "GREEN", "BLUE", "WHITE", "AMBER", "UV"]
 
 var id: String
 var profile_name: String
@@ -62,12 +69,69 @@ func _init(p_id: String = "", p_name: String = "", p_channels: Array = [], p_mod
 
 
 static func _normalize_physical(p: Dictionary) -> Dictionary:
+	var heads: Array = []
+	for e in p.get("heads", []):
+		if e is Array and e.size() == 3:
+			heads.append([float(e[0]), float(e[1]), float(e[2])])
 	return {
 		"category": String(p.get("category", "")),
 		"beam_deg": clampf(float(p.get("beam_deg", 14.0)), 1.0, 120.0),
 		"pan_range": clampf(float(p.get("pan_range", 540.0)), 0.0, 1080.0),
 		"tilt_range": clampf(float(p.get("tilt_range", 270.0)), 0.0, 540.0),
+		"heads": heads,
 	}
+
+
+## Group the mode's channels into heads: [{ r, g, b, extra:[idx], offset:Vector3 }].
+## One head per RGB triplet, in channel order; WHITE/AMBER/UV between/after a
+## triplet fold into it. Empty if the fixture has no RGB. Offsets come from
+## `physical.heads`, or a horizontal spread when that's absent.
+func head_groups(mode_index: int) -> Array:
+	var chans := channels_for_mode(mode_index)
+	var heads: Array = []
+	var cur = null
+	for i in range(chans.size()):
+		match String(chans[i]["role"]):
+			"RED":
+				if cur != null and cur["g"] != -1 and cur["b"] != -1:
+					heads.append(cur)
+					cur = null
+				if cur == null:
+					cur = {"r": i, "g": -1, "b": -1, "extra": []}
+				else:
+					cur["r"] = i
+			"GREEN":
+				if cur == null:
+					cur = {"r": -1, "g": i, "b": -1, "extra": []}
+				elif cur["g"] == -1:
+					cur["g"] = i
+			"BLUE":
+				if cur == null:
+					cur = {"r": -1, "g": -1, "b": i, "extra": []}
+				elif cur["b"] == -1:
+					cur["b"] = i
+			"WHITE", "AMBER", "UV":
+				if cur != null:
+					cur["extra"].append(i)
+	if cur != null:
+		heads.append(cur)
+
+	var full: Array = []
+	for h in heads:
+		if h["r"] != -1 and h["g"] != -1 and h["b"] != -1:
+			full.append(h)
+
+	var offs: Array = physical.get("heads", [])
+	var n := full.size()
+	for k in range(n):
+		if k < offs.size():
+			full[k]["offset"] = Vector3(offs[k][0], offs[k][1], offs[k][2])
+		elif n > 1:
+			# no spacing in the definition — space the heads 0.15 m apart
+			full[k]["offset"] = Vector3((k - (n - 1) * 0.5) * 0.15, 0, 0)
+		else:
+			full[k]["offset"] = Vector3.ZERO
+	return full
 
 
 # ------------------------------------------------------------ NORMALIZE --
@@ -164,7 +228,7 @@ func to_dict() -> Dictionary:
 	return {
 		"id": id,
 		"profile_name": profile_name,
-		"physical": physical.duplicate(),
+		"physical": physical.duplicate(true),
 		"geometry": geometry.duplicate(true),
 		"modes": mode_dicts,
 	}

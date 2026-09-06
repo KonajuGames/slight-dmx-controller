@@ -589,21 +589,17 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 				push_intensity.call(li)
 		)
 
-	# Find a complete RGB trio (by local channel index) so it can be driven
-	# by a single colour picker instead of three sliders.
-	var r_idx := -1
-	var g_idx := -1
-	var b_idx := -1
-	for i in range(chans.size()):
-		match String(chans[i]["role"]):
-			"RED": r_idx = i
-			"GREEN": g_idx = i
-			"BLUE": b_idx = i
-
+	# One colour picker per head (RGB triplet). Multi-head fixtures — LED
+	# bars, spiders — get "Colour 1", "Colour 2", …
+	var heads := profile.head_groups(mode)
 	var handled := {}
-	if r_idx != -1 and g_idx != -1 and b_idx != -1:
+	for hi in range(heads.size()):
+		var g: Dictionary = heads[hi]
+		var r_idx: int = g["r"]
+		var g_idx: int = g["g"]
+		var b_idx: int = g["b"]
 		var color_box := VBoxContainer.new()
-		color_box.add_child(_centered_label("Colour"))
+		color_box.add_child(_centered_label("Colour %d" % (hi + 1) if heads.size() > 1 else "Colour"))
 		var picker := ColorPickerButton.new()
 		picker.color = Color.BLACK
 		picker.custom_minimum_size = Vector2(60, 24)
@@ -620,7 +616,6 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 		handled[r_idx] = true
 		handled[g_idx] = true
 		handled[b_idx] = true
-		# The trio has no per-channel default; "home" for a colour is off.
 		reset_callables.append(func():
 			picker.color = Color.BLACK
 			full_levels[r_idx] = 0

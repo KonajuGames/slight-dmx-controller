@@ -2,7 +2,9 @@ class_name DmxRender
 extends RefCounted
 ## Turns a fixture's live DMX (its slice of a universe's composited
 ## `output` buffer) into a visual state the 3D view applies:
-##   { color, dimmer, pan, tilt, strobe_hz, gobo, zoom, blackout }
+##   { dimmer, pan, tilt, strobe_hz, gobo, gobo_rot, zoom, blackout,
+##     color,                       # head 0's colour (single-head shortcut)
+##     heads: [ {color, level, offset} ] }   # one per RGB triplet
 ##
 ## Pure and stateless — call it every frame per fixture.
 
@@ -27,7 +29,7 @@ static func _slot_color(ch: Dictionary, raw: int):
 		return Color.from_string(hex, Color.WHITE)
 	var lbl := String(slot.get("label", "")).to_lower()
 	if "open" in lbl or "white" in lbl or "none" in lbl:
-		return null  # open slot: keep whatever colour the LEDs make
+		return null
 	for w in lbl.replace("/", " ").replace("-", " ").split(" ", false):
 		var c := Color.from_string(w, Color.TRANSPARENT)
 		if c != Color.TRANSPARENT:
@@ -47,7 +49,6 @@ static func _strobe_hz(ch: Dictionary, raw: int) -> float:
 			var hi := maxi(int(slot["hi"]), lo + 1)
 			return lerpf(1.0, 25.0, float(raw - lo) / float(hi - lo))
 		return 0.0
-	# no chart: guess a strobe band in the middle of the channel
 	if raw >= 20 and raw <= 240:
 		return lerpf(1.0, 22.0, float(raw - 20) / 220.0)
 	return 0.0
@@ -68,55 +69,28 @@ static func evaluate(profile: FixtureProfile, mode: int, out_buf: PackedByteArra
 	var beam_deg := float(phys.get("beam_deg", 14.0))
 
 	var st := {
-		"color": Color.WHITE, "dimmer": 0.0,
-		"pan": 0.0, "tilt": 0.0,
+		"dimmer": 0.0, "pan": 0.0, "tilt": 0.0,
 		"strobe_hz": 0.0, "gobo": "", "gobo_rot": 0.0,
 		"zoom": beam_deg, "blackout": false,
+		"color": Color.WHITE, "heads": [],
 	}
 
-	var col := Color(0, 0, 0)     # accumulated additive colour drive
-	var has_rgb := false
-	var wheel_hue = null
+	# --- pass 1: the fixture-wide channels ------------------------
 	var dim := -1.0
-
+	var wheel_hue = null
 	for ci in range(chans.size()):
 		var ch: Dictionary = chans[ci]
-		var role := String(ch["role"])
 		var raw := _read(out_buf, start + ci)
 		var has_fine: bool = ci + 1 < chans.size() and bool(chans[ci + 1].get("fine", false))
-
-		match role:
+		match String(ch["role"]):
 			"DIMMER":
 				dim = raw / 255.0
-			"RED":
-				col.r += raw / 255.0
-				has_rgb = true
-			"GREEN":
-				col.g += raw / 255.0
-				has_rgb = true
-			"BLUE":
-				col.b += raw / 255.0
-				has_rgb = true
-			"WHITE":
-				var v := raw / 255.0
-				col += Color(v, v * 0.95, v * 0.85)
-				has_rgb = true
-			"AMBER":
-				var va := raw / 255.0
-				col += Color(va, va * 0.55, 0.0)
-				has_rgb = true
-			"UV":
-				var vu := raw / 255.0
-				col += Color(vu * 0.45, 0.0, vu)
-				has_rgb = true
 			"PAN":
 				var pv := raw * 256 + _read(out_buf, start + ci + 1) if has_fine else raw
-				var span := 65535.0 if has_fine else 255.0
-				st["pan"] = (pv / span - 0.5) * float(phys.get("pan_range", 540.0))
+				st["pan"] = (pv / (65535.0 if has_fine else 255.0) - 0.5) * float(phys.get("pan_range", 540.0))
 			"TILT":
 				var tv := raw * 256 + _read(out_buf, start + ci + 1) if has_fine else raw
-				var tspan := 65535.0 if has_fine else 255.0
-				st["tilt"] = (tv / tspan - 0.5) * float(phys.get("tilt_range", 270.0))
+				st["tilt"] = (tv / (65535.0 if has_fine else 255.0) - 0.5) * float(phys.get("tilt_range", 270.0))
 			"ZOOM":
 				st["zoom"] = lerpf(maxf(beam_deg * 0.6, 3.0), minf(beam_deg * 3.0, 70.0), raw / 255.0)
 			"STROBE":
@@ -128,24 +102,49 @@ static func evaluate(profile: FixtureProfile, mode: int, out_buf: PackedByteArra
 				st["gobo"] = String(slot.get("image", "")) if not slot.is_empty() else ""
 			"GOBO_ROT":
 				if absi(raw - 128) > 10:
-					st["gobo_rot"] = (float(raw) - 128.0) / 127.0 * 240.0  # deg/s, signed
+					st["gobo_rot"] = (float(raw) - 128.0) / 127.0 * 240.0
 			"COLOR_WHEEL":
 				var wc = _slot_color(ch, raw)
 				if wc != null:
 					wheel_hue = wc
 
-	# --- resolve colour + level ------------------------------------
-	var level := 1.0
-	var hue := Color.WHITE
-	if has_rgb:
-		level = clampf(maxf(maxf(col.r, col.g), col.b), 0.0, 1.0)
-		hue = Color(col.r / level, col.g / level, col.b / level) if level > 0.001 else Color.BLACK
-	elif wheel_hue != null:
-		hue = wheel_hue as Color
-	if wheel_hue != null and has_rgb:
-		hue = hue * (wheel_hue as Color)
-
-	st["color"] = hue
 	var master := dim if dim >= 0.0 else 1.0
-	st["dimmer"] = 0.0 if st["blackout"] else clampf(level * master, 0.0, 1.0)
+
+	# --- pass 2: per-head colour + level -------------------------
+	for g in profile.head_groups(mode):
+		var col := Color(0, 0, 0)
+		col.r += _read(out_buf, start + int(g["r"])) / 255.0
+		col.g += _read(out_buf, start + int(g["g"])) / 255.0
+		col.b += _read(out_buf, start + int(g["b"])) / 255.0
+		for ei in g["extra"]:
+			var v := _read(out_buf, start + int(ei)) / 255.0
+			match String(chans[int(ei)]["role"]):
+				"WHITE": col += Color(v, v * 0.95, v * 0.85)
+				"AMBER": col += Color(v, v * 0.55, 0.0)
+				"UV": col += Color(v * 0.45, 0.0, v)
+		var lvl := clampf(maxf(maxf(col.r, col.g), col.b), 0.0, 1.0)
+		var hue := Color.WHITE
+		if lvl > 0.001:
+			hue = Color(col.r / lvl, col.g / lvl, col.b / lvl)
+		else:
+			hue = Color.BLACK
+		if wheel_hue != null:
+			hue = (hue * (wheel_hue as Color)) if lvl > 0.001 else (wheel_hue as Color)
+		st["heads"].append({
+			"color": hue,
+			"level": 0.0 if st["blackout"] else clampf(lvl * master, 0.0, 1.0),
+			"offset": g["offset"],
+		})
+
+	if st["heads"].is_empty():
+		# no RGB — one implicit head, lit by the dimmer / colour wheel
+		var lit := dim >= 0.0 or wheel_hue != null
+		st["heads"].append({
+			"color": wheel_hue as Color if wheel_hue != null else Color.WHITE,
+			"level": (clampf(master, 0.0, 1.0) if lit and not st["blackout"] else 0.0),
+			"offset": Vector3.ZERO,
+		})
+
+	st["color"] = st["heads"][0]["color"]
+	st["dimmer"] = st["heads"][0]["level"]
 	return st

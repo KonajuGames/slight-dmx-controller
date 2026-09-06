@@ -197,9 +197,14 @@ Each channel in a profile carries more than a role:
 Channel roles include `DIMMER`, `RED`/`GREEN`/`BLUE`/`WHITE`/`AMBER`/`UV`,
 `PAN`(`_FINE`), `TILT`(`_FINE`), `ZOOM`, `STROBE`, `GOBO`, `GOBO_ROT`,
 `COLOR_WHEEL` and `GENERIC`. A profile also carries a **physical** block
-(category, beam angle, pan/tilt range) and, from a geometry-rich GDTF, a
-`geometry` tree (glTF models + pan/tilt axes) — both for the 3D
-visualizer, filled from a GDTF/OFL import or guessed from the roles.
+(category, beam angle, pan/tilt range, and per-head offsets for
+multi-head fixtures) and, from a geometry-rich GDTF, a `geometry` tree
+(glTF models + pan/tilt axes) — both for the 3D visualizer, filled from a
+GDTF/OFL import or guessed from the roles. Repeated RGB triplets in a
+mode's channel list are treated as separate heads: GDTF
+`<GeometryReference>` blocks are expanded into the flat channel list, and
+OFL `matrix` / `matrixChannels` template channels are instanced per
+pixel.
 
 Profiles can also have **multiple modes** (personalities) — the same
 fixture as an 8-channel and a 14-channel layout, say. Pick the mode in
@@ -208,7 +213,9 @@ the **Mode** dropdown when patching.
 **Patching a fixture**: in the "Fixture Patch" row, pick a profile and
 mode, optionally name it, set its start channel, and click **Add
 Fixture**. Its panel appears below with the right controls automatically:
-- A complete Red/Green/Blue trio becomes one colour picker.
+- A complete Red/Green/Blue trio becomes one colour picker. A fixture
+  with several triplets (a multi-head batten or pixel bar) gets one
+  picker per head, labelled **Colour 1**, **Colour 2**, …
 - A channel + its fine partner become one high-resolution (0–65535)
   slider that splits across the two DMX channels on output.
 - A channel with named ranges becomes a slot dropdown plus a trim slider
@@ -308,6 +315,13 @@ the on-screen controls for an unobstructed view.
   Arena) resize the space; **Shadows** turns on per-fixture spot shadows;
   **Work light** is a dim fill so you can see the rig with the beams
   down. Bloom is on for bright beams.
+- **Multi-head fixtures**: a profile with more than one RGB triplet
+  (a pixel bar, a multi-eye batten) is drawn as one light source per
+  head, each with its own colour, level and position. Head offsets come
+  from the imported definition — GDTF `<GeometryReference>` matrices or
+  OFL `matrix` pixel grid — or a horizontal spread when the file gives
+  none. The patch list shows one colour picker per head (**Colour 1**,
+  **Colour 2**, …).
 - **What each fixture shows**: colour (RGB/W/A/UV additive, or a
   colour-wheel slot's swatch), intensity (its dimmer, or the brightest
   colour channel), pan/tilt (16-bit aware, through the profile's range),
@@ -389,7 +403,9 @@ packets to a physical DMX512 signal for your fixtures.
 - **3D visualizer**: already implemented — a Forward+ SubViewport with
   volumetric beams + real gobo projectors + bloom, GDTF geometry / glTF
   fixture models, glTF set-piece props, spot shadows, saved camera views,
-  a PNG-sequence recorder, and MVR import/export, all driven by the live
-  output. Room to grow: proper GDTF matrix orientation (only translation
-  is used today), prism / animation wheels, a real in-app video encoder,
-  timeline scrubbing, an MVR round-trip that survives every consumer.
+  a PNG-sequence recorder, multi-head fixtures (one light per RGB triplet,
+  offsets from the definition file), and MVR import/export, all driven by
+  the live output. Room to grow: proper GDTF matrix orientation (only
+  head translation is used today, not per-head rotation), prism /
+  animation wheels, a real in-app video encoder, timeline scrubbing, an
+  MVR round-trip that survives every consumer.
