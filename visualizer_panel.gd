@@ -6,13 +6,16 @@ extends Control
 ## trusses, and set the haze / room.
 
 const ROOMS := {
-	"Black Box": {"floor": Vector2(26, 20), "wall": Color(0.05, 0.05, 0.06), "haze": 0.022},
-	"Club": {"floor": Vector2(16, 13), "wall": Color(0.04, 0.03, 0.06), "haze": 0.05},
-	"Arena": {"floor": Vector2(44, 30), "wall": Color(0.06, 0.06, 0.07), "haze": 0.013},
+	"Black Box": {"floor": Vector2(26, 20), "wall": Color(0.05, 0.05, 0.06), "haze": 0.015},
+	"Club": {"floor": Vector2(16, 13), "wall": Color(0.04, 0.03, 0.06), "haze": 0.03},
+	"Arena": {"floor": Vector2(44, 30), "wall": Color(0.06, 0.06, 0.07), "haze": 0.008},
 }
-const HAZE_MAX := 0.09
+const HAZE_MAX := 0.05
 
 var panels: Array = []   # shared reference to the shell's _panels
+## Shell handlers for the whole-rig formats (they touch the patch).
+var mvr_import_cb := Callable()   # func(path: String) -> String  (status/error)
+var mvr_export_cb := Callable()   # func(path: String) -> String
 
 var _svc: SubViewportContainer
 var _vp: SubViewport
@@ -30,6 +33,14 @@ var _cam_target := Vector3(0, 1.5, -3)
 var _cam_yaw := 0.4
 var _cam_pitch := 0.35
 var _cam_dist := 15.0
+var _cam_views: Array = []   # [{name, target:[x,y,z], yaw, pitch, dist, fov, ortho}]
+var _prop_root: Node3D
+
+# recorder
+var _recording := false
+var _rec_dir := ""
+var _rec_frame := 0
+var _rec_accum := 0.0
 
 # interaction
 var _drag := ""            # "", "orbit", "pan", "move"
@@ -43,7 +54,13 @@ var _room := "Black Box"
 # overlay UI
 var _haze_slider: HSlider
 var _worklight_check: CheckButton
+var _shadow_check: CheckButton
 var _room_option: OptionButton
+var _view_option: OptionButton
+var _fov_spin: SpinBox
+var _ortho_check: CheckButton
+var _rec_btn: Button
+var _rec_label: Label
 var _prop_panel: PanelContainer
 var _prop_title: Label
 var _px: SpinBox
@@ -52,6 +69,7 @@ var _pz: SpinBox
 var _phead: SpinBox
 var _ptilt: SpinBox
 var _plen: SpinBox
+var _plen_lbl: Label
 var _plen_row: Control
 var _prot_row: Control
 var _syncing := false
@@ -62,8 +80,10 @@ func _ready() -> void:
 	_build_viewport()
 	_build_world()
 	_build_overlay()
+	_seed_views()
+	_refresh_view_option()
 	_apply_room(_room)
-	_update_camera()
+	_apply_view(0)
 	set_process(true)
 
 
@@ -100,16 +120,17 @@ func _build_world() -> void:
 	_env.background_mode = Environment.BG_COLOR
 	_env.background_color = Color(0.02, 0.02, 0.03)
 	_env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	_env.ambient_light_color = Color(0.55, 0.55, 0.65)
-	_env.ambient_light_energy = 0.07
-	_env.tonemap_mode = Environment.TONE_MAPPER_AGX
-	_env.tonemap_exposure = 1.1
+	_env.ambient_light_color = Color(0.5, 0.5, 0.55)
+	_env.ambient_light_energy = 0.045
+	_env.tonemap_mode = Environment.TONE_MAPPER_ACES
+	_env.tonemap_exposure = 1.0
 	_env.glow_enabled = true
-	_env.glow_intensity = 0.7
-	_env.glow_bloom = 0.2
-	_env.glow_hdr_threshold = 0.7
+	_env.glow_intensity = 0.5
+	_env.glow_bloom = 0.08
+	_env.glow_hdr_threshold = 0.9
 	_env.volumetric_fog_enabled = true
-	_env.volumetric_fog_density = 0.03
+	_env.volumetric_fog_density = 0.02
+	_env.volumetric_fog_albedo = Color(0.92, 0.92, 0.92)
 	_env.volumetric_fog_length = 55.0
 	_env.volumetric_fog_gi_inject = 0.0
 	_env.volumetric_fog_ambient_inject = 0.0
@@ -151,6 +172,8 @@ func _build_world() -> void:
 	_world.add_child(_fixture_root)
 	_truss_root = Node3D.new()
 	_world.add_child(_truss_root)
+	_prop_root = Node3D.new()
+	_world.add_child(_prop_root)
 
 
 # ------------------------------------------------------------- OVERLAY --
@@ -161,57 +184,102 @@ func _mklabel(t: String) -> Label:
 	return l
 
 
+func _flow(h := 8, v := 4) -> HFlowContainer:
+	var f := HFlowContainer.new()
+	f.add_theme_constant_override("h_separation", h)
+	f.add_theme_constant_override("v_separation", v)
+	return f
+
+
+func _btn(text: String, cb: Callable) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.pressed.connect(cb)
+	return b
+
+
 func _build_overlay() -> void:
 	var bar := PanelContainer.new()
 	bar.position = Vector2(8, 8)
+	bar.custom_minimum_size = Vector2(560, 0)
 	bar.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(bar)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	bar.add_child(row)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 4)
+	bar.add_child(col)
 
-	row.add_child(_mklabel("Haze"))
+	# --- row 1: look --------------------------------------------------
+	var r1 := _flow()
+	col.add_child(r1)
+
+	r1.add_child(_mklabel("Haze"))
 	_haze_slider = HSlider.new()
 	_haze_slider.min_value = 0.0
 	_haze_slider.max_value = 1.0
 	_haze_slider.step = 0.01
 	_haze_slider.value = 0.35
-	_haze_slider.custom_minimum_size = Vector2(120, 0)
+	_haze_slider.custom_minimum_size = Vector2(110, 0)
 	_haze_slider.value_changed.connect(func(v: float): _env.volumetric_fog_density = v * HAZE_MAX)
-	row.add_child(_haze_slider)
+	r1.add_child(_haze_slider)
 
 	_worklight_check = CheckButton.new()
 	_worklight_check.text = "Work light"
 	_worklight_check.button_pressed = true
 	_worklight_check.toggled.connect(func(on: bool): _work_light.light_energy = 0.12 if on else 0.0)
-	row.add_child(_worklight_check)
+	r1.add_child(_worklight_check)
 
-	row.add_child(_mklabel("Room"))
+	_shadow_check = CheckButton.new()
+	_shadow_check.text = "Shadows"
+	_shadow_check.toggled.connect(_set_shadows)
+	r1.add_child(_shadow_check)
+
+	r1.add_child(_mklabel("Room"))
 	_room_option = OptionButton.new()
 	for k in ROOMS:
 		_room_option.add_item(k)
 	_room_option.item_selected.connect(func(i: int): _apply_room(_room_option.get_item_text(i)))
-	row.add_child(_room_option)
+	r1.add_child(_room_option)
 
-	var truss_btn := Button.new()
-	truss_btn.text = "Add Truss"
-	truss_btn.pressed.connect(_add_truss)
-	row.add_child(truss_btn)
+	# --- row 2: camera ----------------------------------------------
+	var r2 := _flow()
+	col.add_child(r2)
 
-	var arrange_btn := Button.new()
-	arrange_btn.text = "Auto-arrange"
-	arrange_btn.pressed.connect(_auto_arrange)
-	row.add_child(arrange_btn)
+	r2.add_child(_mklabel("View"))
+	_view_option = OptionButton.new()
+	_view_option.item_selected.connect(func(i: int): _apply_view(i))
+	r2.add_child(_view_option)
+	r2.add_child(_btn("Save as...", _save_view_as))
+	r2.add_child(_btn("Update", _update_view))
+	r2.add_child(_btn("Delete", _delete_view))
 
-	var reset_btn := Button.new()
-	reset_btn.text = "Reset view"
-	reset_btn.pressed.connect(func():
-		_cam_target = Vector3(0, 1.5, -3)
-		_cam_yaw = 0.4
-		_cam_pitch = 0.35
-		_cam_dist = 15.0
+	r2.add_child(_mklabel("FOV"))
+	_fov_spin = SpinBox.new()
+	_fov_spin.min_value = 15
+	_fov_spin.max_value = 100
+	_fov_spin.value = 55
+	_fov_spin.value_changed.connect(func(v: float): _cam.fov = v)
+	r2.add_child(_fov_spin)
+
+	_ortho_check = CheckButton.new()
+	_ortho_check.text = "Ortho"
+	_ortho_check.toggled.connect(func(on: bool):
+		_cam.projection = Camera3D.PROJECTION_ORTHOGONAL if on else Camera3D.PROJECTION_PERSPECTIVE
 		_update_camera())
-	row.add_child(reset_btn)
+	r2.add_child(_ortho_check)
+
+	# --- row 3: scene + render ------------------------------------
+	var r3 := _flow()
+	col.add_child(r3)
+	r3.add_child(_btn("Add Truss", _add_truss))
+	r3.add_child(_btn("Load Model...", _load_model_dialog))
+	r3.add_child(_btn("Auto-arrange", _auto_arrange))
+	r3.add_child(_btn("Import MVR...", func(): _mvr_dialog(false)))
+	r3.add_child(_btn("Export MVR...", func(): _mvr_dialog(true)))
+	r3.add_child(_btn("Screenshot", _screenshot))
+	_rec_btn = _btn("Record", _toggle_record)
+	r3.add_child(_rec_btn)
+	_rec_label = _mklabel("")
+	r3.add_child(_rec_label)
 
 	# --- selected-item properties ---
 	_prop_panel = PanelContainer.new()
@@ -256,18 +324,16 @@ func _build_overlay() -> void:
 	pv.add_child(_prot_row)
 
 	_plen_row = HBoxContainer.new()
-	_plen_row.add_child(_mklabel("Length"))
+	_plen_lbl = _mklabel("Length")
+	_plen_row.add_child(_plen_lbl)
 	_plen = SpinBox.new()
-	_plen.min_value = 0.5
-	_plen.max_value = 20.0
-	_plen.step = 0.5
+	_plen.min_value = 0.05
+	_plen.max_value = 40.0
+	_plen.step = 0.1
 	_plen.value = 4.0
 	_plen.value_changed.connect(func(_v): _write_selected_transform())
 	_plen_row.add_child(_plen)
-	var del_btn := Button.new()
-	del_btn.text = "Delete truss"
-	del_btn.pressed.connect(_delete_selected_truss)
-	_plen_row.add_child(del_btn)
+	_plen_row.add_child(_btn("Delete", _delete_selected))
 	pv.add_child(_plen_row)
 
 	_prop_panel.visible = false
@@ -293,15 +359,99 @@ func _ang_spin() -> SpinBox:
 
 # -------------------------------------------------------------- CAMERA --
 
+func _seed_views() -> void:
+	_cam_views = [
+		{"name": "Orbit", "target": [0, 1.5, -3], "yaw": 0.4, "pitch": 0.35, "dist": 15.0, "fov": 55.0, "ortho": false},
+		{"name": "Front", "target": [0, 2.0, -4], "yaw": 0.0, "pitch": 0.05, "dist": 15.0, "fov": 50.0, "ortho": false},
+		{"name": "Audience", "target": [0, 2.5, -5], "yaw": 0.0, "pitch": 0.18, "dist": 24.0, "fov": 40.0, "ortho": false},
+		{"name": "FOH high", "target": [0, 2.0, -5], "yaw": 0.15, "pitch": 0.55, "dist": 20.0, "fov": 45.0, "ortho": false},
+		{"name": "Top", "target": [0, 1.0, -4], "yaw": 0.0, "pitch": 1.4, "dist": 24.0, "fov": 50.0, "ortho": true},
+	]
+
+
+func _refresh_view_option() -> void:
+	var keep := _view_option.selected
+	_view_option.clear()
+	for v in _cam_views:
+		_view_option.add_item(String(v["name"]))
+	if keep >= 0 and keep < _view_option.item_count:
+		_view_option.selected = keep
+
+
+func _apply_view(i: int) -> void:
+	if i < 0 or i >= _cam_views.size():
+		return
+	var v: Dictionary = _cam_views[i]
+	var t: Array = v["target"]
+	_cam_target = Vector3(t[0], t[1], t[2])
+	_cam_yaw = float(v["yaw"])
+	_cam_pitch = float(v["pitch"])
+	_cam_dist = float(v["dist"])
+	_cam.fov = float(v.get("fov", 55.0))
+	_fov_spin.value = _cam.fov
+	var ortho := bool(v.get("ortho", false))
+	_ortho_check.button_pressed = ortho
+	_cam.projection = Camera3D.PROJECTION_ORTHOGONAL if ortho else Camera3D.PROJECTION_PERSPECTIVE
+	_update_camera()
+
+
+func _current_view_dict(name: String) -> Dictionary:
+	return {
+		"name": name,
+		"target": [_cam_target.x, _cam_target.y, _cam_target.z],
+		"yaw": _cam_yaw, "pitch": _cam_pitch, "dist": _cam_dist,
+		"fov": _cam.fov, "ortho": _cam.projection == Camera3D.PROJECTION_ORTHOGONAL,
+	}
+
+
+func _update_view() -> void:
+	var i := _view_option.selected
+	if i >= 0 and i < _cam_views.size():
+		var n := String(_cam_views[i]["name"])
+		_cam_views[i] = _current_view_dict(n)
+
+
+func _save_view_as() -> void:
+	var dlg := AcceptDialog.new()
+	dlg.title = "Save camera view"
+	var le := LineEdit.new()
+	le.text = "View %d" % (_cam_views.size() + 1)
+	le.custom_minimum_size = Vector2(200, 0)
+	dlg.add_child(le)
+	dlg.register_text_enter(le)
+	add_child(dlg)
+	dlg.confirmed.connect(func():
+		var n := le.text.strip_edges()
+		if n != "":
+			_cam_views.append(_current_view_dict(n))
+			_refresh_view_option()
+			_view_option.selected = _cam_views.size() - 1
+		dlg.queue_free())
+	dlg.canceled.connect(func(): dlg.queue_free())
+	dlg.popup_centered()
+	le.grab_focus()
+	le.select_all()
+
+
+func _delete_view() -> void:
+	var i := _view_option.selected
+	if i >= 0 and i < _cam_views.size() and _cam_views.size() > 1:
+		_cam_views.remove_at(i)
+		_refresh_view_option()
+		_apply_view(_view_option.selected)
+
+
 func _update_camera() -> void:
 	_cam_pitch = clampf(_cam_pitch, -1.45, 1.45)
-	_cam_dist = clampf(_cam_dist, 2.0, 90.0)
+	_cam_dist = clampf(_cam_dist, 2.0, 120.0)
 	var dir := Vector3(
 		cos(_cam_pitch) * sin(_cam_yaw),
 		sin(_cam_pitch),
 		cos(_cam_pitch) * cos(_cam_yaw))
 	_cam.position = _cam_target + dir * _cam_dist
-	_cam.look_at(_cam_target, Vector3.UP)
+	_cam.look_at(_cam_target, Vector3.UP if absf(_cam_pitch) < 1.4 else Vector3.FORWARD)
+	if _cam.projection == Camera3D.PROJECTION_ORTHOGONAL:
+		_cam.size = _cam_dist * 1.1
 
 
 func _gui_input(event: InputEvent) -> void:
@@ -331,7 +481,7 @@ func _begin_drag(pos: Vector2, shift: bool) -> void:
 	if shift:
 		_drag = "pan"
 		return
-	var hit := _raycast(pos, 2 | 4)  # fixtures + trusses
+	var hit := _raycast(pos, 2 | 4 | 8)  # fixtures + trusses + props
 	if hit.is_empty():
 		_drag = "orbit"
 	else:
@@ -412,8 +562,12 @@ func _refresh_props() -> void:
 		_prop_title.text = "%s   (U%d ch %d-%d)" % [
 			fv.display_name, fv.universe + 1, fv.start + 1,
 			fv.start + fv.profile.channel_count(fv.mode)]
+	elif _selected.has_meta("prop"):
+		_prop_title.text = "Model: " + String(_selected.get_meta("model_name", "prop"))
+		_plen_lbl.text = "Scale"
 	else:
 		_prop_title.text = "Truss"
+		_plen_lbl.text = "Length"
 	_sync_props_from_selected()
 
 
@@ -429,6 +583,9 @@ func _sync_props_from_selected() -> void:
 		var r: Vector3 = e.get("rot", Vector3.ZERO) if e else Vector3.ZERO
 		_phead.value = r.y
 		_ptilt.value = r.x
+	elif _selected.has_meta("prop"):
+		_plen.value = _selected.scale.x
+		_phead.value = _selected.rotation_degrees.y
 	else:
 		_plen.value = _selected.get_meta("len", 4.0)
 		_phead.value = _selected.rotation_degrees.y
@@ -447,6 +604,9 @@ func _write_selected_transform() -> void:
 		if e:
 			e["pos"] = _selected.position
 			e["rot"] = rot
+	elif _selected.has_meta("prop"):
+		_selected.scale = Vector3.ONE * maxf(_plen.value, 0.01)
+		_selected.rotation_degrees.y = _phead.value
 	elif _selected.has_meta("truss"):
 		_selected.set_meta("len", _plen.value)
 		_selected.rotation_degrees.y = _phead.value
@@ -510,19 +670,86 @@ func _add_truss() -> void:
 	_select(t)
 
 
+func spawn_truss_at(pos: Vector3, length := 3.0, rot_y := 0.0) -> void:
+	_spawn_truss(pos, length, rot_y)
+
+
 func _set_truss_selected(truss: Node3D, on: bool) -> void:
-	var mi: MeshInstance3D = truss.get_node("mesh")
+	var mi: MeshInstance3D = truss.get_node_or_null("mesh")
+	if mi == null:
+		return
 	var m: StandardMaterial3D = mi.material_override
 	m.emission_enabled = on
 	m.emission = Color(0.2, 1.0, 1.0)
 	m.emission_energy_multiplier = 0.4 if on else 0.0
 
 
-func _delete_selected_truss() -> void:
-	if _selected and _selected.has_meta("truss"):
+func _delete_selected() -> void:
+	if _selected and (_selected.has_meta("truss") or _selected.has_meta("prop")):
 		var t := _selected
 		_select(null)
 		t.queue_free()
+
+
+# ---------------------------------------------------------- glTF PROPS --
+
+func _load_model_dialog() -> void:
+	var fd := FileDialog.new()
+	fd.title = "Load glTF model (set piece / stage element)"
+	fd.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	fd.access = FileDialog.ACCESS_FILESYSTEM
+	fd.add_filter("*.glb,*.gltf", "glTF model")
+	fd.use_native_dialog = true
+	add_child(fd)
+	fd.file_selected.connect(func(path: String):
+		var n := _spawn_prop(path, _cam_target, 1.0, 0.0)
+		if n:
+			_select(n)
+		fd.queue_free())
+	fd.canceled.connect(func(): fd.queue_free())
+	fd.popup_centered_ratio(0.6)
+
+
+func _spawn_prop(path: String, pos: Vector3, scl: float, rot_y: float) -> Node3D:
+	var scene := FixtureView._load_glb(path)
+	if scene == null:
+		return null
+	var prop := Node3D.new()
+	prop.set_meta("prop", true)
+	prop.set_meta("model_path", path)
+	prop.set_meta("model_name", path.get_file())
+	prop.position = pos
+	prop.scale = Vector3.ONE * scl
+	prop.rotation_degrees.y = rot_y
+	prop.add_child(scene)
+
+	var body := StaticBody3D.new()
+	body.collision_layer = 8
+	body.collision_mask = 0
+	var cs := CollisionShape3D.new()
+	var aabb := _scene_aabb(scene)
+	var shp := BoxShape3D.new()
+	shp.size = aabb.size.clampf(0.2, 100.0)
+	cs.shape = shp
+	cs.position = aabb.get_center()
+	body.add_child(cs)
+	prop.add_child(body)
+
+	_prop_root.add_child(prop)
+	return prop
+
+
+func _scene_aabb(n: Node3D) -> AABB:
+	var box := AABB()
+	var first := true
+	for mi in n.find_children("*", "VisualInstance3D", true, false):
+		var a: AABB = (mi as VisualInstance3D).get_aabb()
+		a = (mi as Node3D).transform * a
+		box = a if first else box.merge(a)
+		first = false
+	if first:
+		box = AABB(Vector3(-0.5, 0, -0.5), Vector3.ONE)
+	return box
 
 
 # ------------------------------------------------------------ FIXTURES --
@@ -533,9 +760,11 @@ func rebuild() -> void:
 	_select(null)
 	for c in _fixture_root.get_children():
 		c.queue_free()
+	var want_shadows := _shadow_check.button_pressed if _shadow_check else false
 	for u in range(panels.size()):
 		for f in panels[u].patched_fixtures:
 			var fv := FixtureView.new()
+			fv.shadows = want_shadows
 			_fixture_root.add_child(fv)
 			fv.setup(u, int(f["start"]), int(f.get("mode", 0)),
 				f["profile"], int(f["id"]), String(f["name"]))
@@ -552,6 +781,79 @@ func _auto_arrange() -> void:
 			f["rot"] = Vector3(28, 0, 0)
 			i += 1
 	rebuild()
+
+
+func _set_shadows(on: bool) -> void:
+	for c in _fixture_root.get_children():
+		if c is FixtureView:
+			(c as FixtureView).shadows = on
+
+
+# ------------------------------------------------- RENDER / RECORD / MVR --
+
+const REC_FPS := 30.0
+
+
+func _screenshot() -> void:
+	var img := _vp.get_texture().get_image()
+	if img == null:
+		return
+	DirAccess.make_dir_recursive_absolute("user://render")
+	var p := "user://render/shot_%s.png" % _stamp()
+	img.save_png(p)
+	_rec_label.text = "Saved " + p.get_file()
+	OS.shell_open(ProjectSettings.globalize_path("user://render"))
+
+
+func _toggle_record() -> void:
+	if _recording:
+		_recording = false
+		_rec_btn.text = "Record"
+		_rec_label.text = "%d frames" % _rec_frame
+		OS.shell_open(ProjectSettings.globalize_path(_rec_dir))
+		return
+	_rec_dir = "user://render/rec_" + _stamp()
+	DirAccess.make_dir_recursive_absolute(_rec_dir)
+	var h := FileAccess.open(_rec_dir + "/assemble.txt", FileAccess.WRITE)
+	if h:
+		h.store_string("ffmpeg -framerate %d -i frame_%%05d.png -c:v libx264 -pix_fmt yuv420p out.mp4\n" % int(REC_FPS))
+		h.close()
+	_rec_frame = 0
+	_rec_accum = 0.0
+	_recording = true
+	_rec_btn.text = "Stop"
+
+
+func _capture_frame() -> void:
+	var img := _vp.get_texture().get_image()
+	if img == null:
+		return
+	img.save_png("%s/frame_%05d.png" % [_rec_dir, _rec_frame])
+	_rec_frame += 1
+
+
+func _stamp() -> String:
+	return Time.get_datetime_string_from_system().replace(":", "-").replace("T", "_")
+
+
+func _mvr_dialog(export_mode: bool) -> void:
+	var fd := FileDialog.new()
+	fd.title = "Export MVR (My Virtual Rig)" if export_mode else "Import MVR (My Virtual Rig)"
+	fd.file_mode = FileDialog.FILE_MODE_SAVE_FILE if export_mode else FileDialog.FILE_MODE_OPEN_FILE
+	fd.access = FileDialog.ACCESS_FILESYSTEM
+	fd.add_filter("*.mvr", "My Virtual Rig")
+	if export_mode:
+		fd.current_file = "rig.mvr"
+	fd.use_native_dialog = true
+	add_child(fd)
+	fd.file_selected.connect(func(path: String):
+		if export_mode and mvr_export_cb.is_valid():
+			_rec_label.text = String(mvr_export_cb.call(path))
+		elif not export_mode and mvr_import_cb.is_valid():
+			_rec_label.text = String(mvr_import_cb.call(path))
+		fd.queue_free())
+	fd.canceled.connect(func(): fd.queue_free())
+	fd.popup_centered_ratio(0.6)
 
 
 # ---------------------------------------------------------------- ROOM --
@@ -576,11 +878,18 @@ func _apply_room(name: String) -> void:
 
 # ------------------------------------------------------------- PROCESS --
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	# While the tab is on screen, recompute output every frame so movement
 	# and colour stay smooth; otherwise the 30 Hz refresh tick is enough.
 	if is_visible_in_tree():
 		ArtNet.tick(false)
+	if _recording:
+		_rec_accum += delta
+		var step := 1.0 / REC_FPS
+		while _rec_accum >= step:
+			_rec_accum -= step
+			_capture_frame()
+		_rec_label.text = "REC  %d" % _rec_frame
 
 
 func _notification(what: int) -> void:
@@ -598,12 +907,22 @@ func to_dict() -> Dictionary:
 	for t in _truss_root.get_children():
 		trusses.append([t.position.x, t.position.y, t.position.z,
 			t.get_meta("len", 4.0), t.rotation_degrees.y])
+	var props: Array = []
+	for p in _prop_root.get_children():
+		props.append({
+			"path": String(p.get_meta("model_path", "")),
+			"pos": [p.position.x, p.position.y, p.position.z],
+			"scale": p.scale.x, "rot_y": p.rotation_degrees.y,
+		})
 	return {
 		"room": _room,
 		"haze": _haze_slider.value,
 		"work_light": _worklight_check.button_pressed,
+		"shadows": _shadow_check.button_pressed,
 		"cam": [_cam_target.x, _cam_target.y, _cam_target.z, _cam_yaw, _cam_pitch, _cam_dist],
+		"views": _cam_views.duplicate(true),
 		"trusses": trusses,
+		"props": props,
 	}
 
 
@@ -617,6 +936,14 @@ func from_dict(d: Dictionary) -> void:
 	if d.has("work_light"):
 		_worklight_check.button_pressed = bool(d["work_light"])
 		_work_light.light_energy = 0.12 if _worklight_check.button_pressed else 0.0
+	if d.has("shadows"):
+		_shadow_check.button_pressed = bool(d["shadows"])
+		_set_shadows(_shadow_check.button_pressed)
+
+	var views = d.get("views", null)
+	if views is Array and not views.is_empty():
+		_cam_views = views.duplicate(true)
+		_refresh_view_option()
 	var cam = d.get("cam", null)
 	if cam is Array and cam.size() == 6:
 		_cam_target = Vector3(cam[0], cam[1], cam[2])
@@ -624,8 +951,16 @@ func from_dict(d: Dictionary) -> void:
 		_cam_pitch = cam[4]
 		_cam_dist = cam[5]
 		_update_camera()
+
 	for t in _truss_root.get_children():
 		t.queue_free()
 	for tr in d.get("trusses", []):
 		if tr is Array and tr.size() >= 5:
 			_spawn_truss(Vector3(tr[0], tr[1], tr[2]), float(tr[3]), float(tr[4]))
+	for p in _prop_root.get_children():
+		p.queue_free()
+	for pd in d.get("props", []):
+		if pd is Dictionary and FileAccess.file_exists(String(pd.get("path", ""))):
+			var pp: Array = pd.get("pos", [0, 0, 0])
+			_spawn_prop(String(pd["path"]), Vector3(pp[0], pp[1], pp[2]),
+				float(pd.get("scale", 1.0)), float(pd.get("rot_y", 0.0)))

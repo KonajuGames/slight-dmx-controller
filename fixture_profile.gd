@@ -21,7 +21,7 @@ extends RefCounted
 const ROLES: Array[String] = [
 	"DIMMER", "RED", "GREEN", "BLUE", "WHITE", "AMBER", "UV",
 	"PAN", "PAN_FINE", "TILT", "TILT_FINE",
-	"STROBE", "ZOOM", "GOBO", "COLOR_WHEEL", "GENERIC",
+	"STROBE", "ZOOM", "GOBO", "GOBO_ROT", "COLOR_WHEEL", "GENERIC",
 ]
 
 ## Physical hints for the 3D visualizer. `category` is one of
@@ -41,6 +41,12 @@ var profile_name: String
 ## just has one.
 var modes: Array = []
 var physical: Dictionary = PHYSICAL_DEFAULT.duplicate()
+## Optional GDTF geometry: { "tree": <node>, "pan_geo": String,
+## "tilt_geo": String, "models_dir": String }. A node is
+## { "name", "kind" (geometry|axis|beam), "mat" (16 floats),
+##   "model" (String), "beam_deg" (float), "children": [node...] }.
+## Empty when the profile wasn't imported from a geometry-rich GDTF.
+var geometry: Dictionary = {}
 
 
 func _init(p_id: String = "", p_name: String = "", p_channels: Array = [], p_modes: Array = [], p_physical: Dictionary = {}) -> void:
@@ -159,6 +165,7 @@ func to_dict() -> Dictionary:
 		"id": id,
 		"profile_name": profile_name,
 		"physical": physical.duplicate(),
+		"geometry": geometry.duplicate(true),
 		"modes": mode_dicts,
 	}
 
@@ -168,6 +175,8 @@ static func from_dict(d: Dictionary) -> FixtureProfile:
 	p.id = String(d.get("id", ""))
 	p.profile_name = String(d.get("profile_name", "Custom"))
 	p.physical = _normalize_physical(d.get("physical", {}))
+	var g = d.get("geometry", {})
+	p.geometry = g.duplicate(true) if g is Dictionary else {}
 	p.modes = []
 
 	var raw_modes = d.get("modes", null)

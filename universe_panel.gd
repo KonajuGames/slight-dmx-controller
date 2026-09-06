@@ -447,6 +447,24 @@ func _on_add_fixture_pressed() -> void:
 	patch_changed.emit()
 
 
+## Patch a fixture programmatically (MVR import, scripting). `emit`
+## defers the patch_changed signal so a bulk add fires it once.
+func add_patched(profile: FixtureProfile, p_start: int, p_mode: int, p_name: String, pos: Vector3, rot: Vector3, emit := true) -> void:
+	patched_fixtures.append({
+		"id": _next_fixture_id,
+		"name": p_name if p_name != "" else profile.profile_name,
+		"profile": profile,
+		"start": p_start,
+		"mode": clampi(p_mode, 0, max(profile.mode_count() - 1, 0)),
+		"pos": pos,
+		"rot": rot,
+	})
+	_next_fixture_id += 1
+	_refresh_fixtures_vbox()
+	if emit:
+		patch_changed.emit()
+
+
 func _on_remove_fixture(fixture_id: int) -> void:
 	for i in range(patched_fixtures.size()):
 		if patched_fixtures[i]["id"] == fixture_id:

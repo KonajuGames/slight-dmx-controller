@@ -12,6 +12,7 @@ const REFRESH_HZ := 30.0
 const PRESET_PATH := "user://dmx_preset.json"
 const SHOW_PATH := "user://dmx_show.json"
 const PROFILES_DIR := "user://fixture_profiles"
+const MODELS_DIR := "user://fixture_models"
 
 var available_profiles: Array[FixtureProfile] = []
 var _builtin_ids := {}  # profile ids that come from code (can't be file-deleted)
@@ -104,6 +105,8 @@ func _ready() -> void:
 
 	viz_panel = VisualizerPanel.new()
 	viz_panel.panels = _panels
+	viz_panel.mvr_import_cb = _do_mvr_import
+	viz_panel.mvr_export_cb = _do_mvr_export
 	right_tabs.add_child(viz_panel)
 	right_tabs.set_tab_title(0, "Patch")
 	right_tabs.set_tab_title(1, "3D Visualizer")
@@ -536,6 +539,22 @@ func _do_import(path: String) -> void:
 	var base_id := _safe_profile_id(profile.id if profile.id.strip_edges() != "" else profile.profile_name)
 	profile.id = base_id if not _id_in_use(base_id) else _unique_profile_id(base_id)
 
+	# save any GDTF glTF model files alongside, referenced from the geometry
+	var mbytes: Dictionary = res.get("model_bytes", {})
+	if not mbytes.is_empty() and profile.geometry.has("tree"):
+		var mdir := MODELS_DIR + "/" + profile.id
+		DirAccess.make_dir_recursive_absolute(mdir)
+		var mmap := {}
+		for name in mbytes:
+			var fn := _safe_profile_id(name) + ".glb"
+			var mf := FileAccess.open(mdir + "/" + fn, FileAccess.WRITE)
+			if mf:
+				mf.store_buffer(mbytes[name])
+				mf.close()
+				mmap[name] = fn
+		profile.geometry["models"] = mmap
+		profile.geometry["models_dir"] = profile.id
+
 	var f := FileAccess.open(PROFILES_DIR + "/%s.json" % profile.id, FileAccess.WRITE)
 	if f:
 		f.store_string(JSON.stringify(profile.to_dict()))
@@ -550,6 +569,78 @@ func _do_import(path: String) -> void:
 		msg += "  %d approximation(s); check it in Edit..." % warns.size()
 		push_warning("Fixture import notes:\n- " + "\n- ".join(warns))
 	status_label.text = msg
+
+
+# ---------------------------------------------------------------- MVR --
+
+func _save_imported_profile(prof: FixtureProfile, mbytes: Dictionary) -> FixtureProfile:
+	if _id_in_use(prof.id):
+		prof.id = _unique_profile_id(_safe_profile_id(prof.id))
+	if not mbytes.is_empty() and prof.geometry.has("tree"):
+		var mdir := MODELS_DIR + "/" + prof.id
+		DirAccess.make_dir_recursive_absolute(mdir)
+		var mmap := {}
+		for name in mbytes:
+			var fn := _safe_profile_id(name) + ".glb"
+			var mf := FileAccess.open(mdir + "/" + fn, FileAccess.WRITE)
+			if mf:
+				mf.store_buffer(mbytes[name]); mf.close()
+				mmap[name] = fn
+		prof.geometry["models"] = mmap
+		prof.geometry["models_dir"] = prof.id
+	var f := FileAccess.open(PROFILES_DIR + "/%s.json" % prof.id, FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify(prof.to_dict())); f.close()
+	available_profiles.append(prof)
+	return prof
+
+
+func _do_mvr_import(path: String) -> String:
+	var res := MvrIO.import_path(path)
+	if res.has("error"):
+		return "MVR import failed: " + res["error"]
+	var fx: Array = res["fixtures"]
+	if fx.is_empty():
+		return "MVR had no usable fixtures."
+
+	var max_u := 0
+	for e in fx:
+		max_u = maxi(max_u, int(e["universe"]))
+	ArtNet.stop_fade()
+	ArtNet.set_universe_count(clampi(max_u + 1, 1, ArtNet.MAX_UNIVERSES))
+	_sync_tabs_to_universes()
+
+	# register each distinct GDTF profile once
+	var by_iid := {}
+	for e in fx:
+		by_iid[e["profile"].get_instance_id()] = e["profile"]
+	for prof in by_iid.values():
+		if _profile_index_by_id(prof.id) == -1:
+			_save_imported_profile(prof, res.get("model_bytes", {}).get(prof.id, {}))
+
+	var count := 0
+	for e in fx:
+		var u := int(e["universe"])
+		if u < 0 or u >= _panels.size():
+			continue
+		_panels[u].add_patched(e["profile"], int(e["start"]), int(e["mode"]),
+			String(e["name"]), e["pos"], e["rot"], false)
+		count += 1
+	_refresh_all_profile_options(false)
+	for tr in res.get("trusses", []):
+		viz_panel.spawn_truss_at(tr["pos"], float(tr.get("size", 3.0)))
+	_on_patch_changed()
+
+	var w: Array = res.get("warnings", [])
+	if not w.is_empty():
+		push_warning("MVR import notes:\n- " + "\n- ".join(w))
+	return "Imported %d fixtures, %d trusses from %s%s" % [
+		count, res.get("trusses", []).size(), path.get_file(),
+		"  (%d notes — see log)" % w.size() if not w.is_empty() else ""]
+
+
+func _do_mvr_export(path: String) -> String:
+	return MvrIO.export_path(path, _panels, viz_panel.to_dict())
 
 
 ## Confirm, then delete a custom profile's file (reverting to the built-in

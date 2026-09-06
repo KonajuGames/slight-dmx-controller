@@ -60,8 +60,12 @@ static func _role_for(raw: String) -> String:
 		return "PAN"
 	if "tilt" in s:
 		return "TILT"
+	if "gobopos" in s or "gobo1pos" in s or ("gobo" in s and ("rot" in s or "index" in s or "spin" in s)):
+		return "GOBO_ROT"
 	if "gobo" in s:
 		return "GOBO"
+	if "zoom" in s:
+		return "ZOOM"
 	if "color" in s and ("wheel" in s or "macro" in s or "1" in s):
 		return "COLOR_WHEEL"
 	if "cto" in s or "ctb" in s or "ctc" in s or "colortemp" in s:
@@ -170,7 +174,102 @@ static func from_gdtf_xml(xml: PackedByteArray, media_reader := Callable()) -> D
 
 	var id := _safe_id_hint(fixture_name)
 	var profile := FixtureProfile.new(id, fixture_name, [], modes, _gdtf_physical(ft, modes))
-	return {"profile": profile, "warnings": warnings}
+
+	var geo := _gdtf_geometry(ft, media_reader, warnings)
+	profile.geometry = geo["geometry"]
+	return {"profile": profile, "warnings": warnings, "model_bytes": geo["model_bytes"]}
+
+
+# --------------------------------------------------------- GDTF GEOMETRY --
+
+## Parse <Geometries> into a node tree plus the glTF model files, and note
+## which geometry the Pan / Tilt channels drive.
+static func _gdtf_geometry(ft, media_reader: Callable, warnings: Array) -> Dictionary:
+	var empty := {"geometry": {}, "model_bytes": {}}
+	var geos = _kid(ft, "Geometries")
+	if geos == null:
+		return empty
+
+	var roots: Array = []
+	for c in geos.get("children", []):
+		if c["name"] in ["Geometry", "Axis"]:
+			roots.append(_geo_node(c))
+	if roots.is_empty():
+		return empty
+
+	var pan_geo := ""
+	var tilt_geo := ""
+	for dc in _find_all(ft, "DMXChannel"):
+		var g := String(dc["attrs"].get("Geometry", ""))
+		if g == "":
+			continue
+		for lc in _kids(dc, "LogicalChannel"):
+			match String(lc["attrs"].get("Attribute", "")):
+				"Pan": pan_geo = g
+				"Tilt": tilt_geo = g
+
+	var model_bytes := {}
+	var models_el = _kid(ft, "Models")
+	if models_el != null and media_reader.is_valid():
+		for m in _kids(models_el, "Model"):
+			var mname := String(m["attrs"].get("Name", ""))
+			var mfile := String(m["attrs"].get("File", mname))
+			for cand in [
+				"models/gltf/%s.glb" % mfile, "models/gltf/%s.gltf" % mfile,
+				"models/%s.glb" % mfile, "%s.glb" % mfile,
+			]:
+				var b: PackedByteArray = media_reader.call(cand)
+				if not b.is_empty():
+					model_bytes[mname] = b
+					break
+
+	return {
+		"geometry": {
+			"tree": roots[0],
+			"pan_geo": pan_geo,
+			"tilt_geo": tilt_geo,
+			"models": {},       # filled in by the shell after saving files
+			"models_dir": "",
+		},
+		"model_bytes": model_bytes,
+	}
+
+
+static func _geo_node(el) -> Dictionary:
+	var kind := "geometry"
+	if el["name"] == "Axis":
+		kind = "axis"
+	elif el["name"] in ["Beam", "FilterBeam"]:
+		kind = "beam"
+	var node := {
+		"name": String(el["attrs"].get("Name", "")),
+		"kind": kind,
+		"mat": _gdtf_matrix(String(el["attrs"].get("Position", ""))),
+		"model": String(el["attrs"].get("Model", "")),
+		"beam_deg": clampf(float(el["attrs"].get("BeamAngle", "0")), 0.0, 120.0) if kind == "beam" else 0.0,
+		"children": [],
+	}
+	for c in el.get("children", []):
+		if c["name"] in ["Geometry", "Axis", "Beam", "FilterBeam", "Support", "Structure"]:
+			node["children"].append(_geo_node(c))
+	return node
+
+
+## GDTF "{a,b,c,d}{...}{...}{...}" -> 16 floats (column-major).
+static func _gdtf_matrix(s: String) -> Array:
+	var out: Array = []
+	var num := ""
+	for ch in s:
+		if ch in "-0123456789.eE+":
+			num += ch
+		elif num != "":
+			out.append(float(num))
+			num = ""
+	if num != "":
+		out.append(float(num))
+	if out.size() != 16:
+		return [1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1.0]
+	return out
 
 
 static func _gdtf_physical(ft, modes: Array) -> Dictionary:
@@ -411,9 +510,14 @@ static func _ofl_role(cname: String, cdef: Dictionary, wheels: Dictionary) -> St
 			"Pan", "PanContinuous": return "PAN"
 			"Tilt", "TiltContinuous": return "TILT"
 			"ShutterStrobe": return "STROBE"
+			"Zoom": return "ZOOM"
 			"ColorIntensity":
 				return _role_for(String(cap.get("color", cname)))
-			"WheelSlot", "WheelShake", "WheelSlotRotation", "WheelRotation":
+			"WheelSlotRotation", "WheelRotation":
+				var wr := String(cap.get("wheel", cname))
+				if wheels.has(wr) and _ofl_wheel_kind(wheels[wr].get("slots", [])) == "GOBO":
+					return "GOBO_ROT"
+			"WheelSlot", "WheelShake":
 				var wn := String(cap.get("wheel", cname))
 				if wheels.has(wn):
 					var k := _ofl_wheel_kind(wheels[wn].get("slots", []))
@@ -575,13 +679,13 @@ static func _ofl_physical(d: Dictionary, modes: Array) -> Dictionary:
 static func _parse_xml(bytes: PackedByteArray) -> Dictionary:
 	var parser := XMLParser.new()
 	if parser.open_buffer(bytes) != OK:
-		return {"name": "", "attrs": {}, "children": []}
-	var root := {"name": "", "attrs": {}, "children": []}
+		return {"name": "", "attrs": {}, "children": [], "text": ""}
+	var root := {"name": "", "attrs": {}, "children": [], "text": ""}
 	var stack: Array = [root]
 	while parser.read() == OK:
 		match parser.get_node_type():
 			XMLParser.NODE_ELEMENT:
-				var node := {"name": parser.get_node_name(), "attrs": {}, "children": []}
+				var node := {"name": parser.get_node_name(), "attrs": {}, "children": [], "text": ""}
 				for i in range(parser.get_attribute_count()):
 					node["attrs"][parser.get_attribute_name(i)] = parser.get_attribute_value(i)
 				stack[stack.size() - 1]["children"].append(node)
@@ -590,6 +694,10 @@ static func _parse_xml(bytes: PackedByteArray) -> Dictionary:
 			XMLParser.NODE_ELEMENT_END:
 				if stack.size() > 1:
 					stack.pop_back()
+			XMLParser.NODE_TEXT:
+				var t := parser.get_node_data().strip_edges()
+				if t != "":
+					stack[stack.size() - 1]["text"] += t
 	return root
 
 

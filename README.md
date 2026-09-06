@@ -44,16 +44,22 @@ so no native plugin or GDExtension is required.
 - `groups_panel.gd` — the Groups tab: named sets of patched fixtures an
   effect can target instead of a whole universe.
 - `fixture_import.gd` — the `FixtureImport` class: reads GDTF (`.gdtf`
-  ZIP) and Open Fixture Library (`.json`) definitions into
-  `FixtureProfile` (best-effort role mapping + physical hints, with a
-  warnings list).
+  ZIP, including its `<Geometries>` tree + glTF models) and Open Fixture
+  Library (`.json`) definitions into `FixtureProfile` — best-effort role
+  mapping + physical hints, with a warnings list.
+- `mvr_io.gd` — the `MvrIO` class: My Virtual Rig (`.mvr`) import (reads
+  each `<Fixture>`'s matrix, address and bundled GDTF) and export
+  (writes a scene description + a generated GDTF per profile).
 - `dmx_render.gd` — the `DmxRender` class: turns a fixture's slice of a
   universe's `output` into a visual state (colour, dimmer, pan/tilt,
-  zoom, strobe, gobo) for the 3D view.
-- `fixture_view.gd` — the `FixtureView` class: one fixture in 3D — a
-  schematic body by category driving a `SpotLight3D` + beam cone.
+  zoom, strobe, gobo, gobo spin) for the 3D view.
+- `fixture_view.gd` — the `FixtureView` class: one fixture in 3D — the
+  GDTF geometry (glTF models + pan/tilt axes) when it has one, otherwise
+  a schematic body by category, driving a `SpotLight3D` + beam cone.
 - `visualizer_panel.gd` — the `VisualizerPanel` class: the 3D Visualizer
-  tab (SubViewport world, orbit camera, room, haze, trusses, placement).
+  tab — SubViewport world with volumetric fog, orbit camera + saved
+  views, rooms, trusses, glTF props, placement, screenshot / frame
+  recorder, and MVR import/export.
 - `fixture_profile.gd` — the `FixtureProfile` class: one or more DMX
   *modes*, each an ordered channel list. Every channel has a role
   (`DIMMER`, `RED`, `PAN`, ...) plus a default/home value, min/max
@@ -189,10 +195,11 @@ Each channel in a profile carries more than a role:
   colour or (from a GDTF import) an embedded picture.
 
 Channel roles include `DIMMER`, `RED`/`GREEN`/`BLUE`/`WHITE`/`AMBER`/`UV`,
-`PAN`(`_FINE`), `TILT`(`_FINE`), `ZOOM`, `STROBE`, `GOBO`, `COLOR_WHEEL`
-and `GENERIC`. A profile also carries a small **physical** block
-(category, beam angle, pan/tilt range) for the 3D visualizer, filled from
-a GDTF/OFL import or guessed from the roles.
+`PAN`(`_FINE`), `TILT`(`_FINE`), `ZOOM`, `STROBE`, `GOBO`, `GOBO_ROT`,
+`COLOR_WHEEL` and `GENERIC`. A profile also carries a **physical** block
+(category, beam angle, pan/tilt range) and, from a geometry-rich GDTF, a
+`geometry` tree (glTF models + pan/tilt axes) — both for the 3D
+visualizer, filled from a GDTF/OFL import or guessed from the roles.
 
 Profiles can also have **multiple modes** (personalities) — the same
 fixture as an 8-channel and a 14-channel layout, say. Pick the mode in
@@ -283,24 +290,40 @@ chases, effects and the grand master all show, and it keeps updating even
 while **Sending** is off.
 
 - **Camera**: left-drag empty space to orbit, middle-drag (or Shift +
-  left-drag) to pan, wheel to zoom, **Reset view** to recentre.
+  left-drag) to pan, wheel to zoom. The **View** dropdown holds saved
+  camera views — five presets (Orbit / Front / Audience / FOH high /
+  Top) plus your own: **Save as...** adds one, **Update** overwrites the
+  selected one, **Delete** removes it. **FOV** and an **Ortho** toggle
+  (the Top preset uses it) sit alongside.
 - **Placement**: click a fixture to select it, then drag it across the
   floor or type its X / Y / Z and heading / tilt in the panel.
   **Auto-arrange** re-hangs everything in a grid. **Add Truss** drops a
-  bar you can move and resize. Fixture positions are saved in the show
-  file (`viz` block: haze, room, camera, trusses).
-- **Look**: the **Haze** slider drives Forward+ volumetric fog (real
-  beams in the air) on top of a faint additive beam cone; **Room**
-  presets (Black Box / Club / Arena) resize the space and set a default
-  haze; **Work light** toggles a dim fill so you can see the rig with the
-  beams down.
+  bar you can move and resize; **Load Model...** brings in a `.glb` /
+  `.gltf` as a set piece (move / scale / delete). Fixture positions live
+  in the universe patch; camera views, room, haze, shadows, trusses and
+  props are the show file's `viz` block.
+- **Look**: **Haze** drives Forward+ volumetric fog (real beams in the
+  air) plus a faint additive cone; **Room** presets (Black Box / Club /
+  Arena) resize the space; **Shadows** turns on per-fixture spot shadows;
+  **Work light** is a dim fill so you can see the rig with the beams
+  down. Bloom is on for bright beams.
 - **What each fixture shows**: colour (RGB/W/A/UV additive, or a
   colour-wheel slot's swatch), intensity (its dimmer, or the brightest
-  colour channel), pan/tilt (16-bit aware, using the profile's range),
+  colour channel), pan/tilt (16-bit aware, through the profile's range),
   zoom (a `ZOOM` channel widens the beam), strobe (shutter channel →
-  flicker rate), and gobo (an imported GDTF gobo is projected through the
-  spot). A profile's **physical** hints — category, beam angle, pan/tilt
-  range — come from a GDTF/OFL import or are guessed from the roles.
+  flicker rate), gobo (an imported GDTF gobo is *projected* through the
+  spot) and gobo spin (a `GOBO_ROT` channel rolls the projection). When
+  the profile came from a GDTF with `<Geometries>` + glTF models, the
+  real body and pan/tilt axes are used; otherwise a schematic body picked
+  from the `physical` category.
+- **Render**: **Screenshot** saves a PNG; **Record** writes a PNG
+  sequence (with an `assemble.txt` holding the `ffmpeg` command) — both
+  land in `user://render/` and open the folder when done.
+- **MVR**: **Import MVR...** reads a `.mvr` — patches every `<Fixture>`
+  at its address with its bundled GDTF and drops its trusses in. **Export
+  MVR...** writes the current rig back out (a scene description plus a
+  generated GDTF per profile), so it can move to Vectorworks, a console,
+  Capture, Depence, etc. Both are best-effort against the spec.
 
 ## Running it
 
@@ -363,8 +386,9 @@ packets to a physical DMX512 signal for your fixtures.
   cue-to-cue auto-follow / wait times, a fade progress bar, MIDI or OSC
   GO triggers, cue tracking (only store what a cue changes).
 - **3D visualizer**: already implemented — a Forward+ SubViewport with
-  the patched fixtures, volumetric beams, and placement, driven by the
-  live output. Room to grow: full GDTF geometry / glTF fixture models,
-  gobo/prism rotation and animation wheels, surface shading of the wash
-  on set pieces, MVR (My Virtual Rig) import/export, multiple saved
-  camera views, render to video.
+  volumetric beams + real gobo projectors + bloom, GDTF geometry / glTF
+  fixture models, glTF set-piece props, spot shadows, saved camera views,
+  a PNG-sequence recorder, and MVR import/export, all driven by the live
+  output. Room to grow: proper GDTF matrix orientation (only translation
+  is used today), prism / animation wheels, a real in-app video encoder,
+  timeline scrubbing, an MVR round-trip that survives every consumer.

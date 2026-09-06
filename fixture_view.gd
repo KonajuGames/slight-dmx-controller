@@ -1,10 +1,11 @@
 class_name FixtureView
 extends Node3D
-## One patched fixture in the 3D visualizer. Builds a schematic body by
-## category, and every frame reads its slice of the universe's composited
-## `output` buffer (via DmxRender) to drive a SpotLight3D — colour,
-## intensity, pan/tilt, zoom, strobe, gobo projection — plus a faint beam
-## cone that reads even when the haze is low.
+## One patched fixture in the 3D visualizer. Builds either the GDTF
+## geometry (glTF models + pan/tilt axes) when the profile has it, or a
+## schematic body by category. Every frame it reads its slice of the
+## universe's composited `output` (via DmxRender) to drive a SpotLight3D
+## — colour, intensity, pan/tilt, zoom, strobe, gobo projection + spin —
+## plus a faint additive beam cone.
 
 var universe := 0
 var start := 0          # 0-based
@@ -14,21 +15,25 @@ var display_name := ""
 var profile: FixtureProfile
 
 var selected := false: set = _set_selected
+var shadows := false: set = _set_shadows
 
 var _category := "par"
 var _base_energy := 12.0
 var _beam_len := 13.0
 
-var _yoke: Node3D
-var _head: Node3D
+var _yoke: Node3D            # pan axis
+var _head: Node3D            # tilt axis
+var _head_base := 0.0        # tilt-axis home rotation (rad, X)
 var _light: SpotLight3D
 var _beam: MeshInstance3D
 var _emissive: MeshInstance3D
 var _ring: MeshInstance3D
+var _geo_nodes := {}
 
 var _cur_pan := 0.0
 var _cur_tilt := 0.0
 var _strobe_phase := 0.0
+var _gobo_roll := 0.0
 var _cur_gobo := "unset"
 var _gobo_cache := {}
 
@@ -43,11 +48,11 @@ func setup(p_universe: int, p_start: int, p_mode: int, p_profile: FixtureProfile
 	fixture_id = p_id
 	display_name = p_name
 	_category = _resolve_category()
-	_build()
+	if not _build_from_geometry():
+		_build_schematic()
+	_add_selection_and_picker()
 	set_process(true)
 
-
-# ------------------------------------------------------------ CATEGORY --
 
 func _resolve_category() -> String:
 	var c := String(profile.physical.get("category", ""))
@@ -65,7 +70,76 @@ func _resolve_category() -> String:
 	return "generic"
 
 
-# --------------------------------------------------------------- BUILD --
+# ------------------------------------------------------- GDTF GEOMETRY --
+
+func _build_from_geometry() -> bool:
+	var geo: Dictionary = profile.geometry
+	if geo.is_empty() or not geo.has("tree"):
+		return false
+	# without any glTF models the schematic body reads better than a
+	# tree of empty nodes with beams hanging in space.
+	var mm: Dictionary = geo.get("models", {})
+	if mm.is_empty():
+		return false
+
+	var mdir := "user://fixture_models/%s" % String(geo.get("models_dir", ""))
+	_spawn_geo(geo["tree"], self, mdir, mm)
+
+	if _light == null:
+		# geometry had no <Beam> — unusable, use the schematic instead
+		for c in get_children():
+			c.queue_free()
+		_geo_nodes.clear()
+		return false
+
+	_yoke = _geo_nodes.get(String(geo.get("pan_geo", "")))
+	_head = _geo_nodes.get(String(geo.get("tilt_geo", "")))
+	if _head:
+		_head_base = deg_to_rad(-90.0)  # tilt home: beam straight down
+		_head.rotation.x = _head_base
+	return true
+
+
+func _spawn_geo(node: Dictionary, parent: Node3D, mdir: String, mmap: Dictionary) -> void:
+	var n := Node3D.new()
+	n.name = String(node.get("name", "geo")) if node.get("name", "") != "" else "geo"
+	var m: Array = node.get("mat", [])
+	if m.size() == 16:
+		# GDTF is Z-up; use the translation, converted to Godot Y-up.
+		n.position = Vector3(float(m[12]), float(m[14]), -float(m[13]))
+	parent.add_child(n)
+	if node.get("name", "") != "":
+		_geo_nodes[String(node["name"])] = n
+
+	var mkey := String(node.get("model", ""))
+	if mkey != "" and mmap.has(mkey):
+		var scene := _load_glb("%s/%s" % [mdir, mmap[mkey]])
+		if scene:
+			n.add_child(scene)
+
+	if String(node.get("kind", "")) == "beam":
+		var bd := float(node.get("beam_deg", 0.0))
+		if bd > 0.0:
+			profile.physical["beam_deg"] = bd
+		_attach_light(n, Vector3.ZERO)
+		_attach_beam(n, Vector3.ZERO)
+
+	for c in node.get("children", []):
+		_spawn_geo(c, n, mdir, mmap)
+
+
+static func _load_glb(path: String) -> Node3D:
+	if not FileAccess.file_exists(path):
+		return null
+	var doc := GLTFDocument.new()
+	var state := GLTFState.new()
+	if doc.append_from_file(path, state) != OK:
+		return null
+	var scene = doc.generate_scene(state)
+	return scene if scene is Node3D else null
+
+
+# ------------------------------------------------------- SCHEMATIC BODY --
 
 func _metal(shade := 0.14) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
@@ -96,12 +170,11 @@ func _cyl(rt: float, rb: float, h: float, mat: Material) -> MeshInstance3D:
 	return mi
 
 
-func _build() -> void:
+func _build_schematic() -> void:
 	var metal := _metal()
-
 	match _category:
 		"moving_head", "scanner":
-			add_child(_cyl(0.13, 0.15, 0.10, metal))  # base
+			add_child(_cyl(0.13, 0.15, 0.10, metal))
 			_yoke = Node3D.new()
 			_yoke.position.y = 0.16
 			add_child(_yoke)
@@ -114,25 +187,22 @@ func _build() -> void:
 			_head = Node3D.new()
 			_head.position.y = 0.22
 			_yoke.add_child(_head)
-			var headbox := _box(Vector3(0.24, 0.20, 0.24), metal)
-			_head.add_child(headbox)
+			_head.add_child(_box(Vector3(0.24, 0.20, 0.24), metal))
 			_attach_light(_head, Vector3(0, 0, -0.13))
 			_attach_beam(_head, Vector3(0, 0, -0.13))
 		"blinder", "strobe":
-			var panel := _box(Vector3(0.55, 0.38, 0.12), metal)
-			add_child(panel)
+			add_child(_box(Vector3(0.55, 0.38, 0.12), metal))
 			_attach_emissive(Vector3(0.5, 0.32, 0.02), Vector3(0, 0, -0.07))
 			_attach_light(self, Vector3(0, 0, -0.1))
 			_light.spot_angle = 65.0
 		"strip", "bar", "pixel_bar":
-			var bar := _box(Vector3(1.0, 0.09, 0.09), metal)
-			add_child(bar)
+			add_child(_box(Vector3(1.0, 0.09, 0.09), metal))
 			_attach_emissive(Vector3(0.96, 0.05, 0.02), Vector3(0, 0, -0.06))
 			_attach_light(self, Vector3(0, 0, -0.08))
 			_light.spot_angle = 55.0
-		_:  # par / wash / beam / generic — a can pointing down its -Z
+		_:
 			var can := _cyl(0.11, 0.11, 0.24, metal)
-			can.rotation_degrees.x = 90.0    # cylinder axis -> Z
+			can.rotation_degrees.x = 90.0
 			can.position.z = -0.02
 			add_child(can)
 			_attach_light(self, Vector3(0, 0, -0.13))
@@ -140,7 +210,8 @@ func _build() -> void:
 			if _category == "wash":
 				_light.spot_angle = 32.0
 
-	# selection ring at the base
+
+func _add_selection_and_picker() -> void:
 	_ring = MeshInstance3D.new()
 	var torus := TorusMesh.new()
 	torus.inner_radius = 0.26
@@ -156,11 +227,9 @@ func _build() -> void:
 	_ring.visible = false
 	add_child(_ring)
 
-	# picker (collision layer 2)
 	var body := StaticBody3D.new()
 	body.collision_layer = 2
 	body.collision_mask = 0
-	body.set_meta("fixture_view", get_instance_id())
 	var cs := CollisionShape3D.new()
 	var shp := BoxShape3D.new()
 	shp.size = Vector3(0.5, 0.5, 0.5)
@@ -173,12 +242,12 @@ func _build() -> void:
 func _attach_light(parent: Node3D, at: Vector3) -> void:
 	_light = SpotLight3D.new()
 	_light.position = at
-	_light.spot_range = 26.0
+	_light.spot_range = 28.0
 	_light.spot_angle = clampf(float(profile.physical.get("beam_deg", 14.0)) * 0.5, 2.0, 60.0)
 	_light.spot_angle_attenuation = 0.6
 	_light.spot_attenuation = 1.2
 	_light.light_energy = 0.0
-	_light.shadow_enabled = false
+	_light.shadow_enabled = shadows
 	_light.light_volumetric_fog_energy = 3.0
 	_light.distance_fade_enabled = true
 	_light.distance_fade_begin = 24.0
@@ -191,14 +260,14 @@ func _attach_beam(parent: Node3D, at: Vector3) -> void:
 		return
 	_beam = MeshInstance3D.new()
 	var cyl := CylinderMesh.new()
-	cyl.top_radius = 1.0      # wide end
-	cyl.bottom_radius = 0.02  # at the lens
+	cyl.top_radius = 1.0
+	cyl.bottom_radius = 0.02
 	cyl.height = 1.0
 	cyl.radial_segments = 22
 	cyl.cap_top = false
 	cyl.cap_bottom = false
 	_beam.mesh = cyl
-	_beam.rotation_degrees = Vector3(-90, 0, 0)  # +Y (wide) -> -Z (out the front)
+	_beam.rotation_degrees = Vector3(-90, 0, 0)
 	_beam.position = at + Vector3(0, 0, -0.5)
 
 	var mat := StandardMaterial3D.new()
@@ -234,7 +303,7 @@ static func _get_beam_gradient() -> Texture2D:
 		gt.gradient = g
 		gt.width = 4
 		gt.height = 64
-		gt.fill_from = Vector2(0, 1)  # wide end (v=1 after our -90 rot maps to lens? keep simple)
+		gt.fill_from = Vector2(0, 1)
 		gt.fill_to = Vector2(0, 0)
 		_beam_gradient = gt
 	return _beam_gradient
@@ -250,15 +319,13 @@ func _process(delta: float) -> void:
 		return
 	var st := DmxRender.evaluate(profile, mode, uni.output, start)
 
-	# Moving heads have a hard range — plain lerp toward the target angle,
-	# never the wrap-around short path.
 	var k := clampf(delta * 8.0, 0.0, 1.0)
 	if _yoke:
 		_cur_pan = lerpf(_cur_pan, deg_to_rad(float(st["pan"])), k)
 		_yoke.rotation.y = _cur_pan
 	if _head:
 		_cur_tilt = lerpf(_cur_tilt, deg_to_rad(float(st["tilt"])), k)
-		_head.rotation.x = _cur_tilt
+		_head.rotation.x = _head_base + _cur_tilt
 
 	var mult := 1.0
 	if st["strobe_hz"] > 0.01:
@@ -276,6 +343,9 @@ func _process(delta: float) -> void:
 		_light.spot_angle = half_angle
 		_light.visible = dim > 0.002
 		_apply_gobo(String(st["gobo"]))
+		if float(st["gobo_rot"]) != 0.0 and _light.light_projector != null:
+			_gobo_roll += deg_to_rad(float(st["gobo_rot"])) * delta
+			_light.rotation.z = _gobo_roll  # rolls the projected pattern
 	if _beam:
 		if dim > 0.004:
 			var wide := tan(deg_to_rad(half_angle)) * _beam_len
@@ -317,7 +387,12 @@ func _set_selected(v: bool) -> void:
 		_ring.visible = v
 
 
+func _set_shadows(v: bool) -> void:
+	shadows = v
+	if _light:
+		_light.shadow_enabled = v
+
+
 func apply_transform(pos: Vector3, rot_deg: Vector3) -> void:
 	position = pos
-	# rot.x tilts the nose down; rot.y is heading
 	rotation_degrees = Vector3(-rot_deg.x, rot_deg.y, rot_deg.z)

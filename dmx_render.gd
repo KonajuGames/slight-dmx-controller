@@ -70,7 +70,8 @@ static func evaluate(profile: FixtureProfile, mode: int, out_buf: PackedByteArra
 	var st := {
 		"color": Color.WHITE, "dimmer": 0.0,
 		"pan": 0.0, "tilt": 0.0,
-		"strobe_hz": 0.0, "gobo": "", "zoom": beam_deg, "blackout": false,
+		"strobe_hz": 0.0, "gobo": "", "gobo_rot": 0.0,
+		"zoom": beam_deg, "blackout": false,
 	}
 
 	var col := Color(0, 0, 0)     # accumulated additive colour drive
@@ -125,6 +126,9 @@ static func evaluate(profile: FixtureProfile, mode: int, out_buf: PackedByteArra
 			"GOBO":
 				var slot := _slot_at(ch, raw)
 				st["gobo"] = String(slot.get("image", "")) if not slot.is_empty() else ""
+			"GOBO_ROT":
+				if absi(raw - 128) > 10:
+					st["gobo_rot"] = (float(raw) - 128.0) / 127.0 * 240.0  # deg/s, signed
 			"COLOR_WHEEL":
 				var wc = _slot_color(ch, raw)
 				if wc != null:
