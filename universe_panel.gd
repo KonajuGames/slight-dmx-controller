@@ -6,7 +6,7 @@ extends VBoxContainer
 ## the Sending toggle, and whole-show save/load.
 ##
 ## Before adding this to the tree, the shell sets `sender`,
-## `available_profiles` and `open_new_profile_cb`; `_ready` then builds
+## `available_profiles` and `profile_action_cb`; `_ready` then builds
 ## the UI.
 
 const CHANNEL_MAX := 512
@@ -16,7 +16,9 @@ const INTENSITY_ROLES := ["RED", "GREEN", "BLUE", "WHITE", "AMBER", "UV"]
 
 var sender: ArtNetUniverse
 var available_profiles: Array = []       # shared reference, owned by the shell
-var open_new_profile_cb := Callable()    # shell opens the New Profile dialog
+## Shell handler: func(action: String, profile) where action is
+## "new" (profile null), "edit", or "delete".
+var profile_action_cb := Callable()
 
 var patched_fixtures: Array = []
 var _next_fixture_id := 0
@@ -273,12 +275,19 @@ func _build_fixture_patch_section() -> Control:
 	add_row.add_child(add_btn)
 
 	var new_profile_btn := Button.new()
-	new_profile_btn.text = "New Profile..."
-	new_profile_btn.pressed.connect(func():
-		if open_new_profile_cb.is_valid():
-			open_new_profile_cb.call()
-	)
+	new_profile_btn.text = "New..."
+	new_profile_btn.pressed.connect(func(): _profile_action("new"))
 	add_row.add_child(new_profile_btn)
+
+	var edit_profile_btn := Button.new()
+	edit_profile_btn.text = "Edit..."
+	edit_profile_btn.pressed.connect(func(): _profile_action("edit"))
+	add_row.add_child(edit_profile_btn)
+
+	var del_profile_btn := Button.new()
+	del_profile_btn.text = "Delete..."
+	del_profile_btn.pressed.connect(func(): _profile_action("delete"))
+	add_row.add_child(del_profile_btn)
 
 	outer.add_child(add_row)
 
@@ -297,6 +306,24 @@ func _build_fixture_patch_section() -> Control:
 
 
 # -------------------------------------------------------------- PROFILES --
+
+func _selected_profile() -> FixtureProfile:
+	var i: int = profile_option.selected
+	if i >= 0 and i < available_profiles.size():
+		return available_profiles[i]
+	return null
+
+
+func _profile_action(action: String) -> void:
+	if not profile_action_cb.is_valid():
+		return
+	if action == "new":
+		profile_action_cb.call("new", null)
+	else:
+		var p := _selected_profile()
+		if p:
+			profile_action_cb.call(action, p)
+
 
 func populate_profile_option() -> void:
 	var keep: int = profile_option.selected

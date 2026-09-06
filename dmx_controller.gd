@@ -14,6 +14,7 @@ const SHOW_PATH := "user://dmx_show.json"
 const PROFILES_DIR := "user://fixture_profiles"
 
 var available_profiles: Array[FixtureProfile] = []
+var _builtin_ids := {}  # profile ids that come from code (can't be file-deleted)
 
 var _panels: Array[UniversePanel] = []
 var _refresh_timer: Timer
@@ -173,7 +174,7 @@ func _add_universe_tab(sender: ArtNetUniverse) -> UniversePanel:
 	var panel := UniversePanel.new()
 	panel.sender = sender
 	panel.available_profiles = available_profiles
-	panel.open_new_profile_cb = _open_new_profile_dialog
+	panel.profile_action_cb = _on_profile_action
 	universe_tabs.add_child(panel)
 	_panels.append(panel)
 	_refresh_tab_titles()
@@ -280,7 +281,17 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 func _load_available_profiles() -> void:
 	available_profiles.clear()
-	available_profiles.append_array(FixtureProfile.built_in_profiles())
+	_builtin_ids.clear()
+
+	# Built-ins first, in their declared order; a custom file with the same
+	# id replaces the built-in in place (that's how an edited built-in
+	# "sticks"), and custom-only profiles are appended after.
+	var by_id := {}
+	var order: Array = []
+	for p in FixtureProfile.built_in_profiles():
+		_builtin_ids[p.id] = true
+		by_id[p.id] = p
+		order.append(p.id)
 
 	if not DirAccess.dir_exists_absolute(PROFILES_DIR):
 		DirAccess.make_dir_recursive_absolute(PROFILES_DIR)
@@ -296,9 +307,124 @@ func _load_available_profiles() -> void:
 					var parsed = JSON.parse_string(f.get_as_text())
 					f.close()
 					if parsed is Dictionary:
-						available_profiles.append(FixtureProfile.from_dict(parsed))
+						var cp := FixtureProfile.from_dict(parsed)
+						if not by_id.has(cp.id):
+							order.append(cp.id)
+						by_id[cp.id] = cp
 			fname = dir.get_next()
 		dir.list_dir_end()
+
+	for id in order:
+		available_profiles.append(by_id[id])
+
+
+func _profile_file_path(p: FixtureProfile) -> String:
+	return PROFILES_DIR + "/%s.json" % p.id
+
+
+func _profile_index_by_id(id: String) -> int:
+	for i in range(available_profiles.size()):
+		if available_profiles[i].id == id:
+			return i
+	return -1
+
+
+func _profile_has_file(p: FixtureProfile) -> bool:
+	return FileAccess.file_exists(_profile_file_path(p))
+
+
+## Filesystem-safe id from a profile name (lowercase, [a-z0-9_] only).
+func _safe_profile_id(pname: String) -> String:
+	var s := ""
+	for ch in pname.to_lower():
+		if (ch >= "a" and ch <= "z") or (ch >= "0" and ch <= "9") or ch == "_":
+			s += ch
+		elif ch == " " or ch == "-":
+			s += "_"
+	while s.begins_with("_"):
+		s = s.substr(1)
+	while s.ends_with("_"):
+		s = s.substr(0, s.length() - 1)
+	return s if s != "" else "profile"
+
+
+func _unique_profile_id(base: String) -> String:
+	var id := base
+	var n := 2
+	while _id_in_use(id):
+		id = "%s_%d" % [base, n]
+		n += 1
+	return id
+
+
+func _id_in_use(id: String) -> bool:
+	if FileAccess.file_exists(PROFILES_DIR + "/%s.json" % id):
+		return true
+	for p in available_profiles:
+		if p.id == id:
+			return true
+	return false
+
+
+func _on_profile_action(action: String, profile) -> void:
+	match action:
+		"new":
+			_open_profile_dialog(null)
+		"edit":
+			_open_profile_dialog(profile)
+		"delete":
+			_delete_profile(profile)
+
+
+## Confirm, then delete a custom profile's file (reverting to the built-in
+## of the same id if one exists). A pure built-in can't be deleted.
+func _delete_profile(p: FixtureProfile) -> void:
+	if p == null:
+		return
+	if _builtin_ids.has(p.id) and not _profile_has_file(p):
+		status_label.text = "'%s' is a built-in profile and can't be deleted." % p.profile_name
+		return
+
+	var reverts := _builtin_ids.has(p.id)
+	var dlg := ConfirmationDialog.new()
+	dlg.title = "Delete Profile"
+	if reverts:
+		dlg.dialog_text = "Reset \"%s\" to its built-in default?\n\nYour edited copy (%s.json) will be removed." % [p.profile_name, p.id]
+		dlg.ok_button_text = "Reset"
+	else:
+		dlg.dialog_text = "Delete the profile \"%s\"?\n\n%s.json will be removed. This can't be undone." % [p.profile_name, p.id]
+		dlg.ok_button_text = "Delete"
+	add_child(dlg)
+	dlg.confirmed.connect(func():
+		_do_delete_profile(p)
+		dlg.queue_free()
+	)
+	dlg.canceled.connect(func(): dlg.queue_free())
+	dlg.popup_centered()
+
+
+func _do_delete_profile(p: FixtureProfile) -> void:
+	var path := _profile_file_path(p)
+	if FileAccess.file_exists(path):
+		DirAccess.remove_absolute(path)
+
+	var idx := _profile_index_by_id(p.id)
+	if _builtin_ids.has(p.id):
+		# restore the code default in the same slot
+		var restored: FixtureProfile = null
+		for b in FixtureProfile.built_in_profiles():
+			if b.id == p.id:
+				restored = b
+				break
+		if idx != -1 and restored:
+			available_profiles[idx] = restored
+		status_label.text = "Reset '%s' to its built-in default." % p.profile_name
+	else:
+		if idx != -1:
+			available_profiles.remove_at(idx)
+		status_label.text = "Deleted profile '%s'." % p.profile_name
+
+	_refresh_all_profile_options(false)
 
 
 func _refresh_all_profile_options(select_new: bool) -> void:
@@ -467,14 +593,19 @@ func _format_ranges(arr: Array) -> String:
 	return joined
 
 
-## Popup for defining a custom fixture profile: a name, one or more DMX
-## modes, and per mode a list of channels — each with a label, role,
+## Popup for creating or editing a fixture profile: a name, one or more
+## DMX modes, and per mode a list of channels — each with a label, role,
 ## default / min / max, a 16-bit "fine" flag, and optional named value
-## ranges. Saves to user://fixture_profiles/<id>.json and adds it to every
-## universe's profile picker.
-func _open_new_profile_dialog() -> void:
+## ranges. Saves to user://fixture_profiles/<id>.json.
+##
+## Pass `existing` to edit it in place (its id and file stay put; editing
+## a built-in writes an editable copy under the same id that shadows the
+## built-in). Pass null to create a new profile.
+func _open_profile_dialog(existing: FixtureProfile = null) -> void:
+	var editing := existing != null
+
 	var win := Window.new()
-	win.title = "New Fixture Profile"
+	win.title = "Edit Fixture Profile" if editing else "New Fixture Profile"
 	win.size = Vector2i(760, 540)
 	win.min_size = Vector2i(480, 360)
 	add_child(win)
@@ -492,16 +623,29 @@ func _open_new_profile_dialog() -> void:
 	var name_row := HFlowContainer.new()
 	name_row.add_child(_label("Profile name:"))
 	var name_edit := LineEdit.new()
-	name_edit.text = "Custom Fixture"
+	name_edit.text = existing.profile_name if editing else "Custom Fixture"
 	name_edit.custom_minimum_size = Vector2(220, 0)
 	name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_row.add_child(name_edit)
 	vbox.add_child(name_row)
 
+	if editing and _builtin_ids.has(existing.id) and not _profile_has_file(existing):
+		var note := _label("Editing a built-in — Save keeps this as your own copy.")
+		note.modulate = Color(1, 1, 1, 0.6)
+		vbox.add_child(note)
+
 	# --- mode bar -------------------------------------------------------
 	# Channel edits live in modes_data[cur.i]; the on-screen rows
 	# are flushed back into it whenever the mode changes or on Save.
-	var modes_data: Array = [{"name": "Default", "channels": []}]
+	var modes_data: Array = []
+	if editing:
+		for m in existing.modes:
+			modes_data.append({
+				"name": String(m.get("name", "Mode")),
+				"channels": (m.get("channels", []) as Array).duplicate(true),
+			})
+	if modes_data.is_empty():
+		modes_data = [{"name": "Default", "channels": []}]
 	# Held in a Dictionary, not a bare int: GDScript lambdas capture locals
 	# by value, so the several closures below must share one container to
 	# all see the current mode index.
@@ -516,7 +660,7 @@ func _open_new_profile_dialog() -> void:
 	mode_row.add_child(mode_sel)
 	var mode_name_edit := LineEdit.new()
 	mode_name_edit.custom_minimum_size = Vector2(140, 0)
-	mode_name_edit.text = "Default"
+	mode_name_edit.text = String(modes_data[0]["name"])
 	mode_row.add_child(mode_name_edit)
 	var add_mode_btn := Button.new()
 	add_mode_btn.text = "Add Mode"
@@ -674,13 +818,13 @@ func _open_new_profile_dialog() -> void:
 	add_channel_btn.pressed.connect(func(): add_channel_row.call())
 	vbox.add_child(add_channel_btn)
 
-	# Start with one channel row so the dialog isn't empty.
-	add_channel_row.call()
+	# Populate the first mode's channel rows (one blank row if it's empty).
+	build_rows_from.call(cur.i)
 	refresh_mode_sel.call()
 
 	var bottom_row := HFlowContainer.new()
 	var save_btn := Button.new()
-	save_btn.text = "Save Profile"
+	save_btn.text = "Save Changes" if editing else "Save Profile"
 	var cancel_btn := Button.new()
 	cancel_btn.text = "Cancel"
 	bottom_row.add_child(save_btn)
@@ -703,19 +847,30 @@ func _open_new_profile_dialog() -> void:
 		var pname: String = name_edit.text.strip_edges()
 		if pname == "":
 			pname = "Custom Fixture"
-		var safe_id: String = pname.to_lower().replace(" ", "_")
+
+		# Editing keeps the profile's id stable (so its file / built-in
+		# shadow stays put); a new profile gets a unique id from its name.
+		var safe_id: String = existing.id if editing else _unique_profile_id(_safe_profile_id(pname))
 
 		var profile := FixtureProfile.new(safe_id, pname, [], p_modes)
 
-		var fpath := PROFILES_DIR + "/%s.json" % safe_id
-		var f := FileAccess.open(fpath, FileAccess.WRITE)
+		var f := FileAccess.open(PROFILES_DIR + "/%s.json" % safe_id, FileAccess.WRITE)
 		if f:
 			f.store_string(JSON.stringify(profile.to_dict()))
 			f.close()
 
-		available_profiles.append(profile)
-		_refresh_all_profile_options(true)
-		status_label.text = "Saved profile '%s' (%d mode(s))." % [pname, p_modes.size()]
+		if editing:
+			var idx := _profile_index_by_id(existing.id)
+			if idx != -1:
+				available_profiles[idx] = profile
+			else:
+				available_profiles.append(profile)
+			_refresh_all_profile_options(false)
+			status_label.text = "Updated profile '%s' — re-patch fixtures to use the changes." % pname
+		else:
+			available_profiles.append(profile)
+			_refresh_all_profile_options(true)
+			status_label.text = "Saved profile '%s' (%d mode(s))." % [pname, p_modes.size()]
 		win.queue_free()
 	)
 

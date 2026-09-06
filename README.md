@@ -24,7 +24,7 @@ so no native plugin or GDExtension is required.
   add/remove universe, whole-show + preset save/load) above a split
   view — playback tabs (Cues / Chases / Effects) on the left, one
   universe tab each on the right — plus the shared fixture-profile list
-  and the New Profile dialog.
+  and the profile new/edit/delete flow.
 - `universe_panel.gd` — the `UniversePanel` class: one universe's tab —
   its connection settings, quick RGB row, blackout/full, and fixture
   patch with purpose-built per-fixture controls.
@@ -185,15 +185,24 @@ Fixture**. Its panel appears below with the right controls automatically:
 - **Home** resets every control in that fixture to its channel defaults;
   **Remove** deletes it.
 
-**Custom profiles**: click **New Profile...** to open a dialog where you
-name the profile, add one or more modes, and add channels one at a time.
-Each channel row has a label, a role dropdown, `d` / `min` / `max`
-spinners, a `16-bit` checkbox, and a free-text ranges field —
-`lo-hi:label:colour` per slot, e.g. `0-9:Open:#fff, 10-19:Red:#c00`
-(the colour is optional; `GOBO` slots draw a pattern from their
-position). Saving writes a JSON file to
-`user://fixture_profiles/` and adds it to the profile picker immediately
-— no restart needed.
+**Custom profiles**: **New...** opens a dialog where you name the
+profile, add one or more modes, and add channels one at a time. Each
+channel row has a label, a role dropdown, `d` / `min` / `max` spinners, a
+`16-bit` checkbox, and a free-text ranges field — `lo-hi:label:colour`
+per slot, e.g. `0-9:Open:#fff, 10-19:Red:#c00` (the colour is optional;
+`GOBO` slots draw a pattern from their position). Saving writes a JSON
+file to `user://fixture_profiles/` and adds it to every universe's
+profile picker immediately — no restart needed.
+
+**Edit...** opens the same dialog pre-filled with the selected profile.
+Its id and file stay put, so the edit sticks across restarts; editing a
+built-in writes an editable copy that shadows it. Editing a profile does
+*not* retroactively change fixtures already patched from it — re-patch
+those to pick up the changes.
+
+**Delete...** asks for confirmation, then removes the profile's JSON
+file. Deleting an edited built-in resets it to its code default; a
+pristine built-in can't be deleted.
 
 Custom profiles are shared across every universe tab and persist in
 `user://fixture_profiles/`. The fixture list itself is saved as part of
