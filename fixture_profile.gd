@@ -21,8 +21,18 @@ extends RefCounted
 const ROLES: Array[String] = [
 	"DIMMER", "RED", "GREEN", "BLUE", "WHITE", "AMBER", "UV",
 	"PAN", "PAN_FINE", "TILT", "TILT_FINE",
-	"STROBE", "GOBO", "COLOR_WHEEL", "GENERIC",
+	"STROBE", "ZOOM", "GOBO", "COLOR_WHEEL", "GENERIC",
 ]
+
+## Physical hints for the 3D visualizer. `category` is one of
+## moving_head / wash / par / beam / strip / blinder / generic ("" = let
+## the visualizer guess from the roles).
+const PHYSICAL_DEFAULT := {
+	"category": "",
+	"beam_deg": 14.0,
+	"pan_range": 540.0,
+	"tilt_range": 270.0,
+}
 
 var id: String
 var profile_name: String
@@ -30,17 +40,28 @@ var profile_name: String
 ## entry once the profile carries any channels; a single-mode fixture
 ## just has one.
 var modes: Array = []
+var physical: Dictionary = PHYSICAL_DEFAULT.duplicate()
 
 
-func _init(p_id: String = "", p_name: String = "", p_channels: Array = [], p_modes: Array = []) -> void:
+func _init(p_id: String = "", p_name: String = "", p_channels: Array = [], p_modes: Array = [], p_physical: Dictionary = {}) -> void:
 	id = p_id
 	profile_name = p_name
 	modes = []
+	physical = _normalize_physical(p_physical)
 	if not p_modes.is_empty():
 		for m in p_modes:
 			modes.append(_normalize_mode(m))
 	elif not p_channels.is_empty():
 		modes.append({"name": "Default", "channels": _normalize_channels(p_channels)})
+
+
+static func _normalize_physical(p: Dictionary) -> Dictionary:
+	return {
+		"category": String(p.get("category", "")),
+		"beam_deg": clampf(float(p.get("beam_deg", 14.0)), 1.0, 120.0),
+		"pan_range": clampf(float(p.get("pan_range", 540.0)), 0.0, 1080.0),
+		"tilt_range": clampf(float(p.get("tilt_range", 270.0)), 0.0, 540.0),
+	}
 
 
 # ------------------------------------------------------------ NORMALIZE --
@@ -137,6 +158,7 @@ func to_dict() -> Dictionary:
 	return {
 		"id": id,
 		"profile_name": profile_name,
+		"physical": physical.duplicate(),
 		"modes": mode_dicts,
 	}
 
@@ -145,6 +167,7 @@ static func from_dict(d: Dictionary) -> FixtureProfile:
 	var p := FixtureProfile.new()
 	p.id = String(d.get("id", ""))
 	p.profile_name = String(d.get("profile_name", "Custom"))
+	p.physical = _normalize_physical(d.get("physical", {}))
 	p.modes = []
 
 	var raw_modes = d.get("modes", null)

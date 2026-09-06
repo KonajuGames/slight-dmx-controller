@@ -83,14 +83,24 @@ func set_universe_count(n: int) -> void:
 		universes.remove_at(universes.size() - 1)
 
 
-func send_all() -> void:
+## Recompute every universe's `output` (base + effect/chase layer + grand
+## master). When `transmit` is true, also put it on the wire. Call this
+## every refresh tick — computing always keeps the 3D visualizer live
+## even while "Sending" is off.
+func tick(transmit: bool = true) -> void:
 	var bases: Array = []
 	for u in universes:
 		bases.append(u.dmx_data)
 	var layers: Array = Fx.compose(universes.size(), bases)
 	for i in range(universes.size()):
 		var ov: Dictionary = layers[i] if i < layers.size() else {}
-		universes[i].send(master, ov)
+		universes[i].compute_output(master, ov)
+		if transmit:
+			universes[i].transmit()
+
+
+func send_all() -> void:
+	tick(true)
 
 
 # ------------------------------------------------------------ CROSSFADE --

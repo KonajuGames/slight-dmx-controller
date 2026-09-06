@@ -169,8 +169,49 @@ static func from_gdtf_xml(xml: PackedByteArray, media_reader := Callable()) -> D
 		modes.append(_gdtf_mode(mn, wheels, warnings))
 
 	var id := _safe_id_hint(fixture_name)
-	var profile := FixtureProfile.new(id, fixture_name, [], modes)
+	var profile := FixtureProfile.new(id, fixture_name, [], modes, _gdtf_physical(ft, modes))
 	return {"profile": profile, "warnings": warnings}
+
+
+static func _gdtf_physical(ft, modes: Array) -> Dictionary:
+	var phys := {
+		"category": _guess_category(modes),
+		"beam_deg": 14.0, "pan_range": 540.0, "tilt_range": 270.0,
+	}
+	var beam = _find_first(ft, "Beam")
+	if beam and beam["attrs"].has("BeamAngle"):
+		phys["beam_deg"] = clampf(float(beam["attrs"]["BeamAngle"]), 1.0, 120.0)
+
+	var pan_found := false
+	var tilt_found := false
+	for cf in _find_all(ft, "ChannelFunction"):
+		if not (cf["attrs"].has("PhysicalFrom") and cf["attrs"].has("PhysicalTo")):
+			continue
+		var span := absf(float(cf["attrs"]["PhysicalTo"]) - float(cf["attrs"]["PhysicalFrom"]))
+		match String(cf["attrs"].get("Attribute", "")):
+			"Pan":
+				phys["pan_range"] = span if not pan_found else maxf(phys["pan_range"], span)
+				pan_found = true
+			"Tilt":
+				phys["tilt_range"] = span if not tilt_found else maxf(phys["tilt_range"], span)
+				tilt_found = true
+	return phys
+
+
+static func _guess_category(modes: Array) -> String:
+	var roles := {}
+	for m in modes:
+		for ch in m.get("channels", []):
+			roles[String(ch["role"])] = true
+	if roles.has("PAN") and roles.has("TILT"):
+		return "moving_head"
+	if roles.has("STROBE") and not roles.has("RED") and not roles.has("DIMMER"):
+		return "blinder"
+	if roles.has("RED") and roles.has("GREEN") and roles.has("BLUE"):
+		return "par"
+	if roles.has("DIMMER"):
+		return "par"
+	return "generic"
 
 
 static func _gdtf_wheels(ft, media_reader: Callable, warnings: Array) -> Dictionary:
@@ -493,8 +534,39 @@ static func from_ofl(d: Dictionary) -> Dictionary:
 	if modes.is_empty():
 		return {"error": "The OFL fixture has no modes."}
 
-	var profile := FixtureProfile.new(_safe_id_hint(fixture_name), fixture_name, [], modes)
+	var profile := FixtureProfile.new(
+		_safe_id_hint(fixture_name), fixture_name, [], modes,
+		_ofl_physical(d, modes))
 	return {"profile": profile, "warnings": warnings}
+
+
+static func _ofl_physical(d: Dictionary, modes: Array) -> Dictionary:
+	var phys := {
+		"category": "", "beam_deg": 14.0, "pan_range": 540.0, "tilt_range": 270.0,
+	}
+	var op: Dictionary = d.get("physical", {})
+	var dm = op.get("lens", {}).get("degreesMinMax", null)
+	if dm is Array and dm.size() == 2:
+		phys["beam_deg"] = clampf(float(dm[0]), 1.0, 120.0)
+	var focus: Dictionary = op.get("focus", {})
+	var pm = focus.get("panMax", null)
+	if pm is float or pm is int:
+		phys["pan_range"] = clampf(float(pm), 0.0, 1080.0)
+	var tm = focus.get("tiltMax", null)
+	if tm is float or tm is int:
+		phys["tilt_range"] = clampf(float(tm), 0.0, 540.0)
+
+	for c in d.get("categories", []):
+		var s := String(c).to_lower()
+		if "moving head" in s or "scanner" in s:
+			phys["category"] = "moving_head"
+		elif "blinder" in s or "strobe" in s:
+			phys["category"] = "blinder"
+		elif "pixel bar" in s or "matrix" in s:
+			phys["category"] = "strip"
+	if phys["category"] == "":
+		phys["category"] = _guess_category(modes)
+	return phys
 
 
 # ============================================== tiny XML tree helper ==
@@ -534,3 +606,18 @@ static func _kids(node, name: String) -> Array:
 static func _kid(node, name: String):
 	var k := _kids(node, name)
 	return k[0] if not k.is_empty() else null
+
+
+static func _find_all(node, name: String, out: Array = []) -> Array:
+	if node == null:
+		return out
+	for c in node.get("children", []):
+		if c["name"] == name:
+			out.append(c)
+		_find_all(c, name, out)
+	return out
+
+
+static func _find_first(node, name: String):
+	var all := _find_all(node, name)
+	return all[0] if not all.is_empty() else null

@@ -7,15 +7,18 @@ so no native plugin or GDExtension is required.
 
 ## What's included
 
-- `project.godot` — project config, registers `artnet_sender.gd` and
-  `effects_engine.gd` as the `ArtNet` and `Fx` autoload singletons.
+- `project.godot` — project config (Forward+ renderer, for volumetric
+  beams), registers `artnet_sender.gd` and `effects_engine.gd` as the
+  `ArtNet` and `Fx` autoload singletons.
 - `artnet_universe.gd` — the `ArtNetUniverse` class: one universe's
-  512-channel buffer plus its own UDP socket and target. Builds and sends
-  `ArtDMX` packets — effect/chase overrides applied first, then the grand
-  master scale.
+  512-channel buffer plus its own UDP socket and target. `compute_output()`
+  folds the effect/chase overrides and grand master into `output` (which
+  the 3D view reads); `transmit()` puts that on the wire as an `ArtDMX`
+  packet.
 - `artnet_sender.gd` — the `ArtNet` autoload: manages one `ArtNetUniverse`
   per universe slot (up to 8), the grand master, the cue crossfade
-  engine, and `send_all()` (which composites the `Fx` layer).
+  engine, and `tick()` (recompute every universe's output; transmit if
+  asked).
 - `effects_engine.gd` — the `Fx` autoload: runs the chases and waveform
   effects and composites their combined output into a per-universe
   override layer.
@@ -42,7 +45,15 @@ so no native plugin or GDExtension is required.
   effect can target instead of a whole universe.
 - `fixture_import.gd` — the `FixtureImport` class: reads GDTF (`.gdtf`
   ZIP) and Open Fixture Library (`.json`) definitions into
-  `FixtureProfile` (best-effort role mapping, with a warnings list).
+  `FixtureProfile` (best-effort role mapping + physical hints, with a
+  warnings list).
+- `dmx_render.gd` — the `DmxRender` class: turns a fixture's slice of a
+  universe's `output` into a visual state (colour, dimmer, pan/tilt,
+  zoom, strobe, gobo) for the 3D view.
+- `fixture_view.gd` — the `FixtureView` class: one fixture in 3D — a
+  schematic body by category driving a `SpotLight3D` + beam cone.
+- `visualizer_panel.gd` — the `VisualizerPanel` class: the 3D Visualizer
+  tab (SubViewport world, orbit camera, room, haze, trusses, placement).
 - `fixture_profile.gd` — the `FixtureProfile` class: one or more DMX
   *modes*, each an ordered channel list. Every channel has a role
   (`DIMMER`, `RED`, `PAN`, ...) plus a default/home value, min/max
@@ -177,6 +188,12 @@ Each channel in a profile carries more than a role:
   `0-9 Open, 10-19 Red, 20-29 Orange`, each with an optional swatch
   colour or (from a GDTF import) an embedded picture.
 
+Channel roles include `DIMMER`, `RED`/`GREEN`/`BLUE`/`WHITE`/`AMBER`/`UV`,
+`PAN`(`_FINE`), `TILT`(`_FINE`), `ZOOM`, `STROBE`, `GOBO`, `COLOR_WHEEL`
+and `GENERIC`. A profile also carries a small **physical** block
+(category, beam angle, pan/tilt range) for the 3D visualizer, filled from
+a GDTF/OFL import or guessed from the roles.
+
 Profiles can also have **multiple modes** (personalities) — the same
 fixture as an 8-channel and a 14-channel layout, say. Pick the mode in
 the **Mode** dropdown when patching.
@@ -258,10 +275,38 @@ Loading a preset updates the live output immediately but won't visually
 move any fixture panel's sliders/pickers, since those are write-only
 controls rather than a live readout of the buffer.
 
+## 3D Visualizer
+
+The right side has a **3D Visualizer** tab: a dark room with the patched
+fixtures, lit live by each universe's composited output — so cues,
+chases, effects and the grand master all show, and it keeps updating even
+while **Sending** is off.
+
+- **Camera**: left-drag empty space to orbit, middle-drag (or Shift +
+  left-drag) to pan, wheel to zoom, **Reset view** to recentre.
+- **Placement**: click a fixture to select it, then drag it across the
+  floor or type its X / Y / Z and heading / tilt in the panel.
+  **Auto-arrange** re-hangs everything in a grid. **Add Truss** drops a
+  bar you can move and resize. Fixture positions are saved in the show
+  file (`viz` block: haze, room, camera, trusses).
+- **Look**: the **Haze** slider drives Forward+ volumetric fog (real
+  beams in the air) on top of a faint additive beam cone; **Room**
+  presets (Black Box / Club / Arena) resize the space and set a default
+  haze; **Work light** toggles a dim fill so you can see the rig with the
+  beams down.
+- **What each fixture shows**: colour (RGB/W/A/UV additive, or a
+  colour-wheel slot's swatch), intensity (its dimmer, or the brightest
+  colour channel), pan/tilt (16-bit aware, using the profile's range),
+  zoom (a `ZOOM` channel widens the beam), strobe (shutter channel →
+  flicker rate), and gobo (an imported GDTF gobo is projected through the
+  spot). A profile's **physical** hints — category, beam angle, pan/tilt
+  range — come from a GDTF/OFL import or are guessed from the roles.
+
 ## Running it
 
 1. Open the folder in Godot 4.4+ (`Project > Import`, point at
-   `project.godot`).
+   `project.godot`). The project uses the **Forward+** renderer for the
+   3D visualizer's volumetric beams, so it wants a Vulkan-capable GPU.
 2. Press Play (F5). The main scene builds its own UI at runtime.
 3. On the **Universe 1** tab, set the **IP / Port / Art-Net universe** for
    your receiver and click **Apply Connection**. Default is
@@ -299,7 +344,7 @@ packets to a physical DMX512 signal for your fixtures.
 ## Extending it
 
 - **sACN (E1.31)** instead of Art-Net: same idea, different packet format
-  and multicast address — swap out `ArtNetUniverse.send()` for an
+  and multicast address — swap out `ArtNetUniverse.transmit()` for an
   sACN-formatted packet.
 - **Direct USB DMX interfaces** (e.g. ENTTEC USB Pro) instead of a network
   gateway: these need serial/USB access, which Godot doesn't expose
@@ -307,13 +352,19 @@ packets to a physical DMX512 signal for your fixtures.
   pure GDScript can't talk to USB DMX widgets directly.
 - **Fixture profiles**: already implemented — `FixtureProfile` carries
   per-mode channel lists with roles, defaults, min/max, 16-bit fine
-  pairs, and named value ranges with swatch/gobo icons; the GUI
-  generates purpose-built controls per fixture (including a virtual
-  dimmer), and GDTF / Open Fixture Library definitions can be imported
-  (with GDTF gobo artwork). Room to grow: GDTF physical / geometry data,
-  a bundled fixture library, an online GDTF-Share / OFL browser.
+  pairs, named value ranges with swatch/gobo icons, and physical hints;
+  the GUI generates purpose-built controls per fixture (including a
+  virtual dimmer), and GDTF / Open Fixture Library definitions can be
+  imported (with GDTF gobo artwork). Room to grow: a bundled fixture
+  library, an online GDTF-Share / OFL browser.
 - **Playback**: cues do split-time crossfades; chases cycle captured
   steps at a tempo; effects run waveforms (absolute or base-value
   pickup) on a role across a universe or a fixture group. Room to grow:
   cue-to-cue auto-follow / wait times, a fade progress bar, MIDI or OSC
   GO triggers, cue tracking (only store what a cue changes).
+- **3D visualizer**: already implemented — a Forward+ SubViewport with
+  the patched fixtures, volumetric beams, and placement, driven by the
+  live output. Room to grow: full GDTF geometry / glTF fixture models,
+  gobo/prism rotation and animation wheels, surface shading of the wash
+  on set pieces, MVR (My Virtual Rig) import/export, multiple saved
+  camera views, render to video.

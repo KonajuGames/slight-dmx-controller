@@ -431,6 +431,9 @@ func _on_add_fixture_pressed() -> void:
 		"profile": profile,
 		"start": start,
 		"mode": mode,
+		# 3D visualizer placement (world metres / degrees).
+		"pos": auto_place(patched_fixtures.size()),
+		"rot": Vector3(28, 0, 0),
 	}
 	_next_fixture_id += 1
 	patched_fixtures.append(fixture)
@@ -823,6 +826,24 @@ func full_universe() -> void:
 
 # ------------------------------------------------------- SERIALIZATION --
 
+## Default 3D placement for the Nth fixture in this universe: a hanging
+## grid facing the stage.
+static func auto_place(n: int) -> Vector3:
+	var col := n % 6
+	var row := n / 6
+	return Vector3((col - 2.5) * 1.7, 4.6, -1.5 - row * 1.7)
+
+
+static func _v3_to_arr(v: Vector3) -> Array:
+	return [v.x, v.y, v.z]
+
+
+static func _arr_to_v3(a, fallback: Vector3) -> Vector3:
+	if a is Array and a.size() == 3:
+		return Vector3(float(a[0]), float(a[1]), float(a[2]))
+	return fallback
+
+
 ## Connection settings + patched fixtures for this universe (part of a
 ## whole-show file). Does not include the live DMX buffer — that's a
 ## preset, saved separately.
@@ -835,6 +856,8 @@ func patch_dict() -> Dictionary:
 			"start": fixture["start"],
 			"mode": int(fixture.get("mode", 0)),
 			"profile": profile.to_dict(),
+			"pos": _v3_to_arr(fixture.get("pos", Vector3.ZERO)),
+			"rot": _v3_to_arr(fixture.get("rot", Vector3.ZERO)),
 		})
 	return {
 		"ip": ip_edit.text,
@@ -854,6 +877,7 @@ func apply_patch_dict(d: Dictionary) -> void:
 	apply_connection()
 
 	patched_fixtures.clear()
+	var i := 0
 	for entry in d.get("fixtures", []):
 		var profile := FixtureProfile.from_dict(entry.get("profile", {}))
 		patched_fixtures.append({
@@ -862,8 +886,11 @@ func apply_patch_dict(d: Dictionary) -> void:
 			"profile": profile,
 			"start": int(entry.get("start", 0)),
 			"mode": clampi(int(entry.get("mode", 0)), 0, max(profile.mode_count() - 1, 0)),
+			"pos": _arr_to_v3(entry.get("pos", null), auto_place(i)),
+			"rot": _arr_to_v3(entry.get("rot", null), Vector3(28, 0, 0)),
 		})
 		_next_fixture_id += 1
+		i += 1
 	_refresh_fixtures_vbox()
 
 

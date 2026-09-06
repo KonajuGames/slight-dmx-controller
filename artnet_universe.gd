@@ -21,11 +21,17 @@ var connected := false
 
 var _sequence := 0
 var dmx_data := PackedByteArray()
+## The last frame actually put on the wire: dmx_data with the effect/chase
+## overrides and grand master already applied. The 3D visualizer reads
+## this so it shows exactly what a receiver would.
+var output := PackedByteArray()
 
 
 func _init() -> void:
 	dmx_data.resize(DMX_UNIVERSE_SIZE)
 	dmx_data.fill(0)
+	output.resize(DMX_UNIVERSE_SIZE)
+	output.fill(0)
 
 
 ## Point this universe's sender at a new IP/port. Safe to call repeatedly.
@@ -54,26 +60,28 @@ func set_all(value: int) -> void:
 	dmx_data.fill(clampi(value, 0, 255))
 
 
-## Send the buffer as one ArtDMX packet. `overrides` ({channel: value})
-## replace those channels first (the effects/chase layer); then the whole
-## frame is scaled by `scale` (0..1, the grand master). Both act on a
-## copy, so the stored per-channel values are never lost. Call
+## Fold the effect/chase `overrides` ({channel: value}) and the grand
+## master `scale` (0..1) into `output`, without touching the stored
+## per-channel values. Always safe to call; does not send anything.
+func compute_output(scale: float = 1.0, overrides: Dictionary = {}) -> void:
+	var data := dmx_data.duplicate()
+	for key in overrides:
+		var c := int(key)
+		if c >= 0 and c < data.size():
+			data[c] = clampi(int(overrides[key]), 0, 255)
+	if scale < 1.0:
+		for i in range(data.size()):
+			data[i] = int(data[i] * scale)
+	output = data
+
+
+## Put the current `output` on the wire as one ArtDMX packet. Call
 ## ~30-40x/second — most Art-Net receivers expect a steady refresh stream,
 ## like real DMX512.
-func send(scale: float = 1.0, overrides: Dictionary = {}) -> void:
+func transmit() -> void:
 	if not connected:
 		return
-
-	var data := dmx_data
-	if scale < 1.0 or not overrides.is_empty():
-		data = dmx_data.duplicate()
-		for key in overrides:
-			var c := int(key)
-			if c >= 0 and c < data.size():
-				data[c] = clampi(int(overrides[key]), 0, 255)
-		if scale < 1.0:
-			for i in range(data.size()):
-				data[i] = int(data[i] * scale)
+	var data := output
 
 	var packet := PackedByteArray()
 
@@ -110,6 +118,12 @@ func send(scale: float = 1.0, overrides: Dictionary = {}) -> void:
 	packet.append_array(data.slice(0, length))
 
 	udp.put_packet(packet)
+
+
+## Convenience: compute + transmit in one call.
+func send(scale: float = 1.0, overrides: Dictionary = {}) -> void:
+	compute_output(scale, overrides)
+	transmit()
 
 
 func close() -> void:

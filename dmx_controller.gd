@@ -28,6 +28,7 @@ var cue_panel: CueListPanel
 var chase_panel: ChaseListPanel
 var fx_panel: EffectsPanel
 var groups_panel: GroupsPanel
+var viz_panel: VisualizerPanel
 var master_slider: HSlider
 var sending_toggle: CheckButton
 var add_uni_btn: Button
@@ -93,9 +94,19 @@ func _ready() -> void:
 		elif i == 2:
 			fx_panel.refresh_group_options())
 
+	# Right side: "Patch" (the universe tabs) and the "3D Visualizer".
+	var right_tabs := TabContainer.new()
+	right_tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	split.add_child(right_tabs)
+
 	universe_tabs = TabContainer.new()
-	universe_tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	split.add_child(universe_tabs)
+	right_tabs.add_child(universe_tabs)
+
+	viz_panel = VisualizerPanel.new()
+	viz_panel.panels = _panels
+	right_tabs.add_child(viz_panel)
+	right_tabs.set_tab_title(0, "Patch")
+	right_tabs.set_tab_title(1, "3D Visualizer")
 
 	_load_available_profiles()
 
@@ -103,6 +114,7 @@ func _ready() -> void:
 	_add_universe_tab(ArtNet.get_universe(0))
 	_update_universe_buttons()
 	fx_panel.refresh_universe_options()
+	viz_panel.rebuild()
 
 	_refresh_timer = Timer.new()
 	add_child(_refresh_timer)
@@ -254,6 +266,8 @@ func _sync_tabs_to_universes() -> void:
 	_refresh_tab_titles()
 	_update_universe_buttons()
 	fx_panel.refresh_universe_options()
+	if viz_panel:
+		viz_panel.rebuild()
 
 
 ## Resolve an effect's channel targets from the live patch: every patched
@@ -321,6 +335,8 @@ func _fixture_index(u: int, id: int) -> int:
 func _on_patch_changed() -> void:
 	if groups_panel:
 		groups_panel.sync_to_patch()
+	if viz_panel:
+		viz_panel.rebuild()
 
 
 ## Groups saved with members as [universe, patch-index] so they survive a
@@ -376,8 +392,9 @@ func _on_blackout_all() -> void:
 
 
 func _on_refresh_timeout() -> void:
-	if sending_toggle.button_pressed:
-		ArtNet.send_all()
+	# Always recompute each universe's output (the 3D view reads it);
+	# only put it on the wire while "Sending" is checked.
+	ArtNet.tick(sending_toggle.button_pressed)
 
 
 ## Space fires the next cue, like a real console — but only when no text
@@ -607,6 +624,7 @@ func _on_save_show() -> void:
 		"chases": chase_panel.to_dict(),
 		"effects": fx_panel.to_dict(),
 		"groups": _groups_to_dict(),
+		"viz": viz_panel.to_dict(),
 	}
 	for p in _panels:
 		data["universes"].append(p.patch_dict())
@@ -655,6 +673,8 @@ func _on_load_show() -> void:
 	groups_panel.sync_to_patch()
 	fx_panel.from_dict(doc.get("effects", {}))
 	fx_panel.refresh_group_options()
+	viz_panel.rebuild()
+	viz_panel.from_dict(doc.get("viz", {}))
 	status_label.text = "Show loaded (%d universes, %d cues, %d chases, %d effects, %d groups)." % [
 		n, cue_panel.cues.size(), Fx.chases.size(), Fx.effects.size(), groups.size()]
 
