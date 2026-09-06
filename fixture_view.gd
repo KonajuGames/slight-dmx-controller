@@ -277,6 +277,9 @@ func _attach_beam(parent: Node3D, at: Vector3) -> void:
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
 	mat.albedo_texture = _get_beam_gradient()
+	# Clamp, not repeat — otherwise the V=1 seam wraps to the bright V=0
+	# end and leaves a hard ring where the cone should fade to nothing.
+	mat.texture_repeat = false
 	mat.albedo_color = Color(1, 1, 1, 0.0)
 	_beam.material_override = mat
 	_beam.visible = false
