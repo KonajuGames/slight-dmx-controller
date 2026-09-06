@@ -37,6 +37,9 @@ so no native plugin or GDExtension is required.
   tempo-cycled list of captured steps with crossfade and direction.
 - `wave_effect.gd` / `effects_panel.gd` — the `WaveEffect` class and its
   tab: a waveform on one channel role, fanned across the fixtures.
+- `fixture_import.gd` — the `FixtureImport` class: reads GDTF (`.gdtf`
+  ZIP) and Open Fixture Library (`.json`) definitions into
+  `FixtureProfile` (best-effort role mapping, with a warnings list).
 - `fixture_profile.gd` — the `FixtureProfile` class: one or more DMX
   *modes*, each an ordered channel list. Every channel has a role
   (`DIMMER`, `RED`, `PAN`, ...) plus a default/home value, min/max
@@ -204,6 +207,24 @@ those to pick up the changes.
 file. Deleting an edited built-in resets it to its code default; a
 pristine built-in can't be deleted.
 
+**Import...** reads an external fixture definition and adds it as a
+custom profile:
+
+- **GDTF** — a `.gdtf` file (a ZIP holding `description.xml`) from
+  [gdtf-share.com](https://gdtf-share.com) or a manufacturer. All DMX
+  modes are imported; `Offset` pairs become 16-bit channels; wheel slots
+  become named ranges with swatch colours (CIE `x,y,Y` → sRGB).
+- **Open Fixture Library** — a single-fixture `.json` from the
+  "Download as JSON" button on
+  [open-fixture-library.org](https://open-fixture-library.org) (or a raw
+  file from its GitHub). Capability types and `fineChannelAliases` drive
+  the role mapping; wheel slots supply names and colours.
+
+Mapping is best-effort — anything that doesn't map to a known role is
+left `GENERIC`, undefined DMX slots become `GENERIC` placeholders, and
+the status line reports how many approximations were made (details go to
+the Godot log). Open the result with **Edit...** to check and adjust it.
+
 Custom profiles are shared across every universe tab and persist in
 `user://fixture_profiles/`. The fixture list itself is saved as part of
 the whole-show file (see **Save/Load Show** above), including each
@@ -266,11 +287,11 @@ packets to a physical DMX512 signal for your fixtures.
   pure GDScript can't talk to USB DMX widgets directly.
 - **Fixture profiles**: already implemented — `FixtureProfile` carries
   per-mode channel lists with roles, defaults, min/max, 16-bit fine
-  pairs, and named value ranges with swatch/gobo icons, and the GUI
+  pairs, and named value ranges with swatch/gobo icons; the GUI
   generates purpose-built controls per fixture (including a virtual
-  dimmer for fixtures with no dimmer channel). Room to grow: real gobo
-  artwork from image files, importing GDTF / Open Fixture Library
-  definitions.
+  dimmer), and GDTF / Open Fixture Library definitions can be imported.
+  Room to grow: real gobo artwork from a GDTF's embedded images, GDTF
+  physical/geometry data, a bundled fixture library.
 - **Playback**: cues do split-time crossfades; chases cycle captured
   steps at a tempo; effects run waveforms on a role across the rig. Room
   to grow: cue-to-cue auto-follow / wait times, a fade progress bar,

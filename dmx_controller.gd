@@ -370,10 +370,57 @@ func _on_profile_action(action: String, profile) -> void:
 	match action:
 		"new":
 			_open_profile_dialog(null)
+		"import":
+			_import_profile()
 		"edit":
 			_open_profile_dialog(profile)
 		"delete":
 			_delete_profile(profile)
+
+
+## Pick a .gdtf or Open Fixture Library .json and add it as a custom
+## profile (opened in the editor afterwards for review).
+func _import_profile() -> void:
+	var fd := FileDialog.new()
+	fd.title = "Import Fixture Definition (GDTF / Open Fixture Library)"
+	fd.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	fd.access = FileDialog.ACCESS_FILESYSTEM
+	fd.add_filter("*.gdtf", "GDTF fixture")
+	fd.add_filter("*.json", "Open Fixture Library JSON")
+	fd.use_native_dialog = true
+	add_child(fd)
+	fd.file_selected.connect(func(path: String):
+		_do_import(path)
+		fd.queue_free()
+	)
+	fd.canceled.connect(func(): fd.queue_free())
+	fd.popup_centered_ratio(0.6)
+
+
+func _do_import(path: String) -> void:
+	var res := FixtureImport.from_path(path)
+	if res.has("error"):
+		status_label.text = "Import failed: %s" % res["error"]
+		return
+
+	var profile: FixtureProfile = res["profile"]
+	var base_id := _safe_profile_id(profile.id if profile.id.strip_edges() != "" else profile.profile_name)
+	profile.id = base_id if not _id_in_use(base_id) else _unique_profile_id(base_id)
+
+	var f := FileAccess.open(PROFILES_DIR + "/%s.json" % profile.id, FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify(profile.to_dict()))
+		f.close()
+	available_profiles.append(profile)
+	_refresh_all_profile_options(true)
+
+	var warns: Array = res.get("warnings", [])
+	var msg := "Imported '%s' — %d mode(s), %d ch." % [
+		profile.profile_name, profile.mode_count(), profile.channel_count(0)]
+	if not warns.is_empty():
+		msg += "  %d approximation(s); check it in Edit..." % warns.size()
+		push_warning("Fixture import notes:\n- " + "\n- ".join(warns))
+	status_label.text = msg
 
 
 ## Confirm, then delete a custom profile's file (reverting to the built-in

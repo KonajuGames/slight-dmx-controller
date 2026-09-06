@@ -279,6 +279,11 @@ func _build_fixture_patch_section() -> Control:
 	new_profile_btn.pressed.connect(func(): _profile_action("new"))
 	add_row.add_child(new_profile_btn)
 
+	var import_profile_btn := Button.new()
+	import_profile_btn.text = "Import..."
+	import_profile_btn.pressed.connect(func(): _profile_action("import"))
+	add_row.add_child(import_profile_btn)
+
 	var edit_profile_btn := Button.new()
 	edit_profile_btn.text = "Edit..."
 	edit_profile_btn.pressed.connect(func(): _profile_action("edit"))
@@ -317,8 +322,8 @@ func _selected_profile() -> FixtureProfile:
 func _profile_action(action: String) -> void:
 	if not profile_action_cb.is_valid():
 		return
-	if action == "new":
-		profile_action_cb.call("new", null)
+	if action == "new" or action == "import":
+		profile_action_cb.call(action, null)
 	else:
 		var p := _selected_profile()
 		if p:
