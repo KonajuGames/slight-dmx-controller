@@ -287,7 +287,8 @@ controls rather than a live readout of the buffer.
 The right side has a **3D Visualizer** tab: a dark room with the patched
 fixtures, lit live by each universe's composited output — so cues,
 chases, effects and the grand master all show, and it keeps updating even
-while **Sending** is off.
+while **Sending** is off. **Hide UI** (top-right corner) collapses all
+the on-screen controls for an unobstructed view.
 
 - **Camera**: left-drag empty space to orbit, middle-drag (or Shift +
   left-drag) to pan, wheel to zoom. The **View** dropdown holds saved

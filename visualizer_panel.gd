@@ -52,6 +52,9 @@ var _selected: Node3D = null
 var _room := "Black Box"
 
 # overlay UI
+var _toolbar: PanelContainer
+var _ui_toggle: Button
+var _ui_visible := true
 var _haze_slider: HSlider
 var _worklight_check: CheckButton
 var _shadow_check: CheckButton
@@ -199,14 +202,14 @@ func _btn(text: String, cb: Callable) -> Button:
 
 
 func _build_overlay() -> void:
-	var bar := PanelContainer.new()
-	bar.position = Vector2(8, 8)
-	bar.custom_minimum_size = Vector2(560, 0)
-	bar.mouse_filter = Control.MOUSE_FILTER_STOP
-	add_child(bar)
+	_toolbar = PanelContainer.new()
+	_toolbar.position = Vector2(8, 8)
+	_toolbar.custom_minimum_size = Vector2(560, 0)
+	_toolbar.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(_toolbar)
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 4)
-	bar.add_child(col)
+	_toolbar.add_child(col)
 
 	# --- row 1: look --------------------------------------------------
 	var r1 := _flow()
@@ -337,6 +340,19 @@ func _build_overlay() -> void:
 	pv.add_child(_plen_row)
 
 	_prop_panel.visible = false
+
+	# always-visible toggle for the on-screen controls (top-right); added
+	# last so it stays clickable over everything else.
+	_ui_toggle = _btn("Hide UI", _toggle_ui)
+	_ui_toggle.mouse_filter = Control.MOUSE_FILTER_STOP
+	_ui_toggle.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_ui_toggle.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_ui_toggle.grow_vertical = Control.GROW_DIRECTION_END
+	_ui_toggle.offset_left = -8
+	_ui_toggle.offset_right = -8
+	_ui_toggle.offset_top = 8
+	_ui_toggle.offset_bottom = 8
+	add_child(_ui_toggle)
 
 
 func _pos_spin() -> SpinBox:
@@ -549,8 +565,15 @@ func _select(node: Node3D) -> void:
 	_refresh_props()
 
 
+func _toggle_ui() -> void:
+	_ui_visible = not _ui_visible
+	_ui_toggle.text = "Hide UI" if _ui_visible else "Show UI"
+	_toolbar.visible = _ui_visible
+	_refresh_props()
+
+
 func _refresh_props() -> void:
-	if _selected == null:
+	if _selected == null or not _ui_visible:
 		_prop_panel.visible = false
 		return
 	_prop_panel.visible = true
