@@ -75,7 +75,12 @@ static func _normalize_channel(c: Dictionary) -> Dictionary:
 		var label := String(r.get("label", ""))
 		if label == "":
 			label = "%d-%d" % [rlo, rhi]
-		ch["ranges"].append({"lo": rlo, "hi": rhi, "label": label})
+		# Optional swatch colour (HTML hex or named); the GUI also derives
+		# one from the label for colour-wheel slots when this is blank.
+		ch["ranges"].append({
+			"lo": rlo, "hi": rhi, "label": label,
+			"color": String(r.get("color", "")),
+		})
 
 	return ch
 
@@ -168,13 +173,13 @@ static func _strobe_ranges() -> Array:
 
 static func _color_wheel_ranges() -> Array:
 	return [
-		{"lo": 0, "hi": 9, "label": "Open / white"},
-		{"lo": 10, "hi": 19, "label": "Red"},
-		{"lo": 20, "hi": 29, "label": "Orange"},
-		{"lo": 30, "hi": 39, "label": "Yellow"},
-		{"lo": 40, "hi": 49, "label": "Green"},
-		{"lo": 50, "hi": 59, "label": "Blue"},
-		{"lo": 60, "hi": 69, "label": "Magenta"},
+		{"lo": 0, "hi": 9, "label": "Open / white", "color": "#ffffff"},
+		{"lo": 10, "hi": 19, "label": "Red", "color": "#e01f1f"},
+		{"lo": 20, "hi": 29, "label": "Orange", "color": "#f07a10"},
+		{"lo": 30, "hi": 39, "label": "Yellow", "color": "#f2d011"},
+		{"lo": 40, "hi": 49, "label": "Green", "color": "#1fae3d"},
+		{"lo": 50, "hi": 59, "label": "Blue", "color": "#1f52e0"},
+		{"lo": 60, "hi": 69, "label": "Magenta", "color": "#d016b0"},
 	]
 
 

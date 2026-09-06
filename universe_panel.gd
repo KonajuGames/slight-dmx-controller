@@ -78,6 +78,92 @@ func set_status(text: String) -> void:
 		status_label.text = text
 
 
+# ---------------------------------------------------- SLOT ICONS --
+# Small textures drawn for colour-wheel / gobo dropdown items.
+
+const _ICON_SIZE := 22
+
+
+## The dropdown icon for one range slot, or null for a plain text item.
+func _slot_icon(role: String, r: Dictionary, index: int) -> Texture2D:
+	var explicit := String(r.get("color", ""))
+	if role == "GOBO":
+		var lbl := String(r["label"]).to_lower()
+		var is_open := "open" in lbl or "none" in lbl or "no gobo" in lbl
+		return _gobo_texture(index, is_open)
+	if role == "COLOR_WHEEL" or explicit != "":
+		return _swatch_texture(_slot_color(String(r["label"]), explicit))
+	return null
+
+
+## Resolve a swatch colour: an explicit HTML/named colour if given, else
+## guessed from the label's words (so "Deep Red", "Open / white" work).
+func _slot_color(label: String, explicit: String) -> Color:
+	if explicit != "":
+		return Color.from_string(explicit, Color(0.8, 0.8, 0.8))
+	var low := label.to_lower()
+	if "open" in low or "white" in low or "none" in low:
+		return Color(1, 1, 1)
+	if "uv" in low or "congo" in low:
+		return Color(0.35, 0.12, 0.72)
+	for w in low.replace("/", " ").replace("-", " ").split(" ", false):
+		var c := Color.from_string(w, Color.TRANSPARENT)
+		if c != Color.TRANSPARENT:
+			return c
+	return Color(0.8, 0.8, 0.8)
+
+
+func _swatch_texture(col: Color) -> Texture2D:
+	var s := _ICON_SIZE
+	var img := Image.create_empty(s, s, false, Image.FORMAT_RGBA8)
+	var border := Color(0.15, 0.15, 0.15)
+	for y in range(s):
+		for x in range(s):
+			var edge := x == 0 or y == 0 or x == s - 1 or y == s - 1
+			img.set_pixel(x, y, border if edge else col)
+	return ImageTexture.create_from_image(img)
+
+
+## A schematic gobo pattern, chosen by the slot's position in the list.
+func _gobo_texture(index: int, is_open: bool) -> Texture2D:
+	var s := _ICON_SIZE
+	var img := Image.create_empty(s, s, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var c := (s - 1) / 2.0
+	var rad := c - 1.0
+	var lit := Color(0.95, 0.95, 0.95)
+	var pat := 0 if is_open else 1 + (index % 6)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = index * 1013904223 + 1
+
+	for y in range(s):
+		for x in range(s):
+			var dx := x - c
+			var dy := y - c
+			var dist := sqrt(dx * dx + dy * dy)
+			if dist > rad:
+				continue
+			var on := dist >= rad - 1.6  # circle outline, always
+			if not on:
+				var ang := atan2(dy, dx)
+				match pat:
+					1:  # dots
+						on = int(roundi(dx / 4.0)) % 2 == 0 and int(roundi(dy / 4.0)) % 2 == 0
+					2:  # spokes
+						on = fmod(absf(ang), PI / 3.0) < 0.30
+					3:  # bars
+						on = int(floori(dy / 2.6)) % 2 == 0
+					4:  # concentric rings
+						on = int(roundi(dist / 3.0)) % 2 == 0
+					5:  # cross
+						on = absf(dx) < 1.6 or absf(dy) < 1.6
+					6:  # breakup
+						on = rng.randf() < 0.30
+			if on:
+				img.set_pixel(x, y, lit)
+	return ImageTexture.create_from_image(img)
+
+
 # ---------------------------------------------------------------- UI BUILD --
 
 func _build_connection_row() -> Control:
@@ -566,9 +652,16 @@ func _build_range_control(start: int, local_i: int, ch: Dictionary, reset_callab
 	box.custom_minimum_size = Vector2(160, 0)
 	box.add_child(_centered_label(ch["name"]))
 
+	var role := String(ch["role"])
 	var opt := OptionButton.new()
-	for r in ranges:
-		opt.add_item("%s (%d-%d)" % [r["label"], int(r["lo"]), int(r["hi"])])
+	for ri in range(ranges.size()):
+		var r: Dictionary = ranges[ri]
+		var text := "%s (%d-%d)" % [r["label"], int(r["lo"]), int(r["hi"])]
+		var icon := _slot_icon(role, r, ri)
+		if icon:
+			opt.add_icon_item(icon, text)
+		else:
+			opt.add_item(text)
 	box.add_child(opt)
 
 	var slider := HSlider.new()

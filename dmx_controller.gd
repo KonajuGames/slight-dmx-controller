@@ -422,19 +422,19 @@ func _on_load_preset() -> void:
 
 # ----------------------------------------------------- NEW PROFILE DIALOG --
 
-## Turn a "0-9:Open, 10-19:Red" text field into a ranges array.
+## Turn a "0-9:Open, 10-19:Red:#f00" text field into a ranges array.
+## Each entry is "lo-hi", optionally ":label", optionally ":colour"
+## (HTML hex or a named colour, drawn as a swatch in the dropdown).
 func _parse_ranges_text(text: String) -> Array:
 	var out: Array = []
 	for part in text.split(",", false):
 		var p: String = part.strip_edges()
 		if p == "":
 			continue
-		var span := p
-		var label := ""
-		var colon := p.find(":")
-		if colon != -1:
-			span = p.substr(0, colon).strip_edges()
-			label = p.substr(colon + 1).strip_edges()
+		var bits := p.split(":")
+		var span: String = bits[0].strip_edges()
+		var label := bits[1].strip_edges() if bits.size() > 1 else ""
+		var color := bits[2].strip_edges() if bits.size() > 2 else ""
 		var dash := span.find("-")
 		if dash == -1:
 			continue
@@ -442,6 +442,7 @@ func _parse_ranges_text(text: String) -> Array:
 			"lo": int(span.substr(0, dash).strip_edges()),
 			"hi": int(span.substr(dash + 1).strip_edges()),
 			"label": label,
+			"color": color,
 		})
 	return out
 
@@ -450,17 +451,20 @@ func _parse_ranges_text(text: String) -> Array:
 func _format_ranges(arr: Array) -> String:
 	var parts: Array = []
 	for r in arr:
+		var s := "%d-%d" % [int(r["lo"]), int(r["hi"])]
 		var lbl := String(r.get("label", ""))
-		if lbl == "":
-			parts.append("%d-%d" % [int(r["lo"]), int(r["hi"])])
-		else:
-			parts.append("%d-%d:%s" % [int(r["lo"]), int(r["hi"]), lbl])
-	var s := ""
+		var col := String(r.get("color", ""))
+		if lbl != "" or col != "":
+			s += ":" + lbl
+		if col != "":
+			s += ":" + col
+		parts.append(s)
+	var joined := ""
 	for i in range(parts.size()):
-		s += parts[i]
+		joined += parts[i]
 		if i < parts.size() - 1:
-			s += ", "
-	return s
+			joined += ", "
+	return joined
 
 
 ## Popup for defining a custom fixture profile: a name, one or more DMX
@@ -522,7 +526,7 @@ func _open_new_profile_dialog() -> void:
 	mode_row.add_child(del_mode_btn)
 	vbox.add_child(mode_row)
 
-	var hint := _label("Ranges: \"0-9:Open, 10-19:Red\" (leave blank for a plain slider)")
+	var hint := _label("Ranges: \"0-9:Open, 10-19:Red:#f00\"  (label + optional colour; blank = plain slider)")
 	hint.modulate = Color(1, 1, 1, 0.6)
 	vbox.add_child(hint)
 

@@ -155,7 +155,8 @@ Each channel in a profile carries more than a role:
   right before it (Pan + Pan Fine, Tilt + Tilt Fine, Dimmer + Dimmer
   Fine, ...).
 - **ranges** — named value slots for wheels (gobo, colour), e.g.
-  `0-9 Open, 10-19 Red, 20-29 Orange`.
+  `0-9 Open, 10-19 Red, 20-29 Orange`, each with an optional swatch
+  colour.
 
 Profiles can also have **multiple modes** (personalities) — the same
 fixture as an 8-channel and a 14-channel layout, say. Pick the mode in
@@ -169,6 +170,11 @@ Fixture**. Its panel appears below with the right controls automatically:
   slider that splits across the two DMX channels on output.
 - A channel with named ranges becomes a slot dropdown plus a trim slider
   (they stay in sync — moving the slider re-selects the slot it lands in).
+  Each item carries a little icon: a colour swatch for a `COLOR_WHEEL`
+  channel (from an explicit colour, or guessed from the slot name), and a
+  schematic pattern for a `GOBO` channel (open ring, dots, spokes, bars,
+  rings, cross, breakup — by slot position). The collapsed dropdown shows
+  the current slot's icon.
 - Every other channel gets its own small slider, clamped to min/max.
 - A fixture with colour/white channels but **no DIMMER channel of its
   own** also gets a **virtual dimmer**: a per-fixture intensity master
@@ -182,8 +188,10 @@ Fixture**. Its panel appears below with the right controls automatically:
 **Custom profiles**: click **New Profile...** to open a dialog where you
 name the profile, add one or more modes, and add channels one at a time.
 Each channel row has a label, a role dropdown, `d` / `min` / `max`
-spinners, a `16-bit` checkbox, and a free-text ranges field
-(`0-9:Open, 10-19:Red`). Saving writes a JSON file to
+spinners, a `16-bit` checkbox, and a free-text ranges field —
+`lo-hi:label:colour` per slot, e.g. `0-9:Open:#fff, 10-19:Red:#c00`
+(the colour is optional; `GOBO` slots draw a pattern from their
+position). Saving writes a JSON file to
 `user://fixture_profiles/` and adds it to the profile picker immediately
 — no restart needed.
 
@@ -249,10 +257,11 @@ packets to a physical DMX512 signal for your fixtures.
   pure GDScript can't talk to USB DMX widgets directly.
 - **Fixture profiles**: already implemented — `FixtureProfile` carries
   per-mode channel lists with roles, defaults, min/max, 16-bit fine
-  pairs, and named value ranges, and the GUI generates purpose-built
-  controls per fixture (including a virtual dimmer for fixtures with no
-  dimmer channel). Room to grow: colour-wheel/gobo *images* in the
-  dropdown, importing GDTF / Open Fixture Library definitions.
+  pairs, and named value ranges with swatch/gobo icons, and the GUI
+  generates purpose-built controls per fixture (including a virtual
+  dimmer for fixtures with no dimmer channel). Room to grow: real gobo
+  artwork from image files, importing GDTF / Open Fixture Library
+  definitions.
 - **Playback**: cues do split-time crossfades; chases cycle captured
   steps at a tempo; effects run waveforms on a role across the rig. Room
   to grow: cue-to-cue auto-follow / wait times, a fade progress bar,
