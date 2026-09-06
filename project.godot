@@ -23,6 +23,11 @@ config/icon="res://icon.svg"
 
 ArtNet="*res://artnet_sender.gd"
 
+[display]
+
+window/size/viewport_width=1366
+window/size/viewport_height=820
+
 [dotnet]
 
 project/assembly_name="DMX Lighting Controller"

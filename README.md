@@ -156,7 +156,7 @@ controls rather than a live readout of the buffer.
 
 ## Running it
 
-1. Open the folder in Godot 4.3+ (`Project > Import`, point at
+1. Open the folder in Godot 4.4+ (`Project > Import`, point at
    `project.godot`).
 2. Press Play (F5). The main scene builds its own UI at runtime.
 3. On the **Universe 1** tab, set the **IP / Port / Art-Net universe** for
@@ -168,6 +168,12 @@ controls rather than a live readout of the buffer.
    gear expects a continuous refresh stream rather than one-off packets.
 5. Dial a look, click **Record Cue**, repeat for a few looks, then step
    the show with **GO** (or the spacebar).
+
+The window is freely resizable (down to 720×480). Toolbars, the
+connection/patch rows, and each fixture's bank of sliders are laid out in
+wrapping rows, so controls that don't fit the current width flow onto the
+next line instead of running off the right edge; the fixture list scrolls
+vertically only.
 
 ### Testing without real hardware
 

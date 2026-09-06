@@ -64,6 +64,15 @@ func _centered_label(text: String) -> Label:
 	return l
 
 
+## A horizontal row that wraps its children to the next line instead of
+## overflowing the right edge when the window is narrow.
+func _flow(h: int = 8, v: int = 4) -> HFlowContainer:
+	var f := HFlowContainer.new()
+	f.add_theme_constant_override("h_separation", h)
+	f.add_theme_constant_override("v_separation", v)
+	return f
+
+
 func set_status(text: String) -> void:
 	if status_label:
 		status_label.text = text
@@ -72,8 +81,7 @@ func set_status(text: String) -> void:
 # ---------------------------------------------------------------- UI BUILD --
 
 func _build_connection_row() -> Control:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
+	var row := _flow()
 
 	row.add_child(_label("IP:"))
 	ip_edit = LineEdit.new()
@@ -107,8 +115,7 @@ func _build_connection_row() -> Control:
 
 
 func _build_rgb_row() -> Control:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
+	var row := _flow()
 	row.add_child(_label("Quick RGB channels — start channel:"))
 	rgb_start_spin = SpinBox.new()
 	rgb_start_spin.min_value = 1
@@ -126,8 +133,7 @@ func _build_rgb_row() -> Control:
 
 
 func _build_action_row() -> Control:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
+	var row := _flow()
 
 	var blackout := Button.new()
 	blackout.text = "Blackout Universe"
@@ -149,8 +155,7 @@ func _build_fixture_patch_section() -> Control:
 
 	outer.add_child(_label("Fixture Patch"))
 
-	var add_row := HBoxContainer.new()
-	add_row.add_theme_constant_override("separation", 8)
+	var add_row := _flow()
 
 	add_row.add_child(_label("Profile:"))
 	profile_option = OptionButton.new()
@@ -193,6 +198,8 @@ func _build_fixture_patch_section() -> Control:
 
 	var fixtures_scroll := ScrollContainer.new()
 	fixtures_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	# Only scroll vertically; fixture control rows wrap to fit the width.
+	fixtures_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	outer.add_child(fixtures_scroll)
 
 	fixtures_vbox = VBoxContainer.new()
@@ -303,8 +310,7 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 	# fixture starts at its defaults (in the UI and on the wire).
 	var reset_callables: Array = []
 
-	var header := HBoxContainer.new()
-	header.add_theme_constant_override("separation", 8)
+	var header := _flow()
 	var title := Label.new()
 	var mode_suffix := ""
 	if profile.mode_count() > 1:
@@ -313,7 +319,6 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 		fixture["name"], profile.profile_name, mode_suffix,
 		start + 1, start + chans.size()
 	]
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(title)
 
 	var home_btn := Button.new()
@@ -331,8 +336,7 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 	header.add_child(remove_btn)
 	vbox.add_child(header)
 
-	var controls_row := HBoxContainer.new()
-	controls_row.add_theme_constant_override("separation", 12)
+	var controls_row := _flow(12, 8)
 	vbox.add_child(controls_row)
 
 	# Decide whether this fixture needs a virtual dimmer: it must have at

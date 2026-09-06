@@ -31,6 +31,12 @@ var status_label: Label
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 
+	# Resizable window with a floor small enough to be useful on a laptop;
+	# every row below wraps rather than clipping past the right edge.
+	var win := get_window()
+	if win:
+		win.min_size = Vector2i(720, 480)
+
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
 	for side in ["left", "right", "top", "bottom"]:
@@ -79,8 +85,13 @@ func _label(text: String) -> Label:
 
 
 func _build_top_bar() -> Control:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 4)
+
+	# Wraps its buttons to the next line when the window is too narrow.
+	var row := HFlowContainer.new()
+	row.add_theme_constant_override("h_separation", 8)
+	row.add_theme_constant_override("v_separation", 4)
 
 	row.add_child(_label("Grand Master:"))
 	master_slider = HSlider.new()
@@ -132,11 +143,13 @@ func _build_top_bar() -> Control:
 	load_preset.pressed.connect(_on_load_preset)
 	row.add_child(load_preset)
 
-	status_label = _label("")
-	status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(status_label)
+	col.add_child(row)
 
-	return row
+	status_label = _label("")
+	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	col.add_child(status_label)
+
+	return col
 
 
 # ------------------------------------------------------------- UNIVERSES --
@@ -410,6 +423,7 @@ func _open_new_profile_dialog() -> void:
 	var win := Window.new()
 	win.title = "New Fixture Profile"
 	win.size = Vector2i(760, 540)
+	win.min_size = Vector2i(480, 360)
 	add_child(win)
 
 	var margin := MarginContainer.new()
@@ -422,10 +436,11 @@ func _open_new_profile_dialog() -> void:
 	vbox.add_theme_constant_override("separation", 8)
 	margin.add_child(vbox)
 
-	var name_row := HBoxContainer.new()
+	var name_row := HFlowContainer.new()
 	name_row.add_child(_label("Profile name:"))
 	var name_edit := LineEdit.new()
 	name_edit.text = "Custom Fixture"
+	name_edit.custom_minimum_size = Vector2(220, 0)
 	name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_row.add_child(name_edit)
 	vbox.add_child(name_row)
@@ -439,8 +454,9 @@ func _open_new_profile_dialog() -> void:
 	# all see the current mode index.
 	var cur := {"i": 0}
 
-	var mode_row := HBoxContainer.new()
-	mode_row.add_theme_constant_override("separation", 6)
+	var mode_row := HFlowContainer.new()
+	mode_row.add_theme_constant_override("h_separation", 6)
+	mode_row.add_theme_constant_override("v_separation", 4)
 	mode_row.add_child(_label("Mode:"))
 	var mode_sel := OptionButton.new()
 	mode_sel.custom_minimum_size = Vector2(120, 0)
@@ -609,7 +625,7 @@ func _open_new_profile_dialog() -> void:
 	add_channel_row.call()
 	refresh_mode_sel.call()
 
-	var bottom_row := HBoxContainer.new()
+	var bottom_row := HFlowContainer.new()
 	var save_btn := Button.new()
 	save_btn.text = "Save Profile"
 	var cancel_btn := Button.new()

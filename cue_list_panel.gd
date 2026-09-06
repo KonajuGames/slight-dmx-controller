@@ -33,8 +33,7 @@ func _ready() -> void:
 	add_child(title)
 
 	# --- transport ---
-	var transport := HBoxContainer.new()
-	transport.add_theme_constant_override("separation", 6)
+	var transport := _flow()
 	var go_btn := Button.new()
 	go_btn.text = "GO"
 	go_btn.custom_minimum_size = Vector2(64, 36)
@@ -85,8 +84,7 @@ func _ready() -> void:
 	edit_grid.add_child(fade_down_spin)
 	add_child(edit_grid)
 
-	var edit_btns := HBoxContainer.new()
-	edit_btns.add_theme_constant_override("separation", 6)
+	var edit_btns := _flow()
 	var update_btn := Button.new()
 	update_btn.text = "Update"
 	update_btn.pressed.connect(update_cue)
@@ -104,8 +102,7 @@ func _ready() -> void:
 	add_child(HSeparator.new())
 
 	# --- record ---
-	var rec_row := HBoxContainer.new()
-	rec_row.add_theme_constant_override("separation", 6)
+	var rec_row := _flow()
 	rec_row.add_child(_lbl("New cue fade (s)"))
 	new_fade_spin = _fade_spin()
 	new_fade_spin.value = 3.0
@@ -130,6 +127,14 @@ func _lbl(text: String) -> Label:
 	var l := Label.new()
 	l.text = text
 	return l
+
+
+## A horizontal row that wraps to the next line instead of overflowing.
+func _flow(h: int = 6, v: int = 4) -> HFlowContainer:
+	var f := HFlowContainer.new()
+	f.add_theme_constant_override("h_separation", h)
+	f.add_theme_constant_override("v_separation", v)
+	return f
 
 
 func _fade_spin() -> SpinBox:
