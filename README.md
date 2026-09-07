@@ -34,11 +34,23 @@ so no native plugin or GDExtension is required.
 - `osc.gd` / `trigger.gd` / `triggers_dialog.gd` — a minimal OSC 1.0
   reader, the `Trigger` binding class (match + action), and the
   MIDI/OSC config dialog with a Learn mode.
+- `auto_show.gd` — the `AutoShow` autoload: the Auto Show run mode — plays
+  a music file and fires the generated cue list from a timeline locked to
+  playback position.
+- `song_analyzer.gd` / `song_detect.gd` / `song_analysis.gd` / `fft.gd` —
+  analyses a music file (STFT chroma + timbre, a dynamic-programming beat
+  tracker, self-similarity segmentation with verse/chorus repetition
+  detection) into a tempo, beat grid, downbeats and labelled sections;
+  the detection maths, result data class, and a small radix-2 FFT.
+- `show_generator.gd` / `auto_show_panel.gd` — turns an analysis + the
+  patch into section cues, a beat chase and pan/tilt movement effects,
+  and the Auto Show tab.
 - `main.tscn` — a single root `Control` node with the GUI script attached.
 - `dmx_controller.gd` — the shell: a top bar (grand master, run mode,
   Sending, add/remove universe, whole-show + preset save/load, MIDI/OSC
   triggers) above a
-  split view — playback tabs (Cues / Chases / Effects / Sound / Groups)
+  split view — playback tabs (Cues / Chases / Effects / Sound / Auto
+  Show / Groups)
   on the left, one universe tab each on the right — plus the shared
   fixture-profile list and the profile new/edit/delete flow.
 - `universe_panel.gd` — the `UniversePanel` class: one universe's tab —
@@ -128,6 +140,9 @@ driven:
   the **Sound** tab's reactors (and any beat-synced chases) as an
   override layer, on top of whatever base look is standing. Cues still
   hold their last look as that base; the spacebar is disabled.
+- **Auto Show** — a loaded music file plays and fires the generated
+  section cues, beat chase and movement effects from a timeline locked to
+  the playback position. Set up in the **Auto Show** tab.
 
 The mode is saved in the show file.
 
@@ -178,6 +193,40 @@ unless its first argument is `0` (so TouchOSC's press-then-release
 buttons only trigger on press). The bottom of the dialog shows the last
 message received. Bindings and the MIDI/OSC settings are saved in the
 show file.
+
+### Auto Show
+
+Build a light show from a song's structure, then refine it.
+
+- **Load Song…** picks an MP3, OGG or WAV.
+- **Analyse** plays it fast and muted, captures the audio, and runs a
+  short-time Fourier transform for a beat-synchronous **chroma** (pitch)
+  and timbre feature stream. From that it estimates the tempo, tracks the
+  beat with dynamic programming (so beats lock to real onsets and don't
+  drift), finds the downbeat, and segments the song with a
+  self-similarity / novelty analysis — then labels the sections by
+  **repetition and energy**: the recurring loud part is the **Chorus**,
+  the recurring quieter part the **Verse**, with Intro / Bridge / Build /
+  Drop / Outro around them. The **speed** control trades wait time for
+  precision (1× is the song's length, 4× a quarter of it — chroma
+  survives the octave shift, so 4× is usually fine). It's still an
+  estimate — expect to nudge a boundary or rename a section.
+- **Build Light Show** adds one **block cue per section** *after* your
+  own cues (a rebuild replaces only the generated ones) — a
+  section-appropriate look (palette + intensity, strobe on drops) on
+  every patched fixture, moving heads fanned on the big sections — plus a
+  beat-synced **Auto Beat** colour chase and **Auto Move Slow / Fast**
+  pan/tilt effects, and a timeline that fires all of it on the downbeat.
+- With the run mode set to **Auto Show**, the transport (**Play / Pause /
+  Stop**, a seek bar, click a section to jump) plays the song and runs
+  the show: each section crossfades to its cue on the bar line, the beat
+  chase steps on the beat and the movement effects come in for choruses,
+  drops and bridges. Seeking snaps straight to the look, chase and
+  effects for wherever you land.
+
+Everything it makes is normal cues / chases / effects, so you edit them
+like anything else. The song path, analysis and timeline are saved in
+the show file.
 
 ### Cue list
 
@@ -501,11 +550,15 @@ packets to a physical DMX512 signal for your fixtures.
   mode. Room to grow: cue-to-cue auto-follow / wait times, a fade
   progress bar, per-channel track flags in the cue editor, MIDI feedback
   to light up controller LEDs.
-- **Run modes**: **Cue Mode** (cue list drives playback) and **Sound
+- **Run modes**: **Cue Mode** (cue list drives playback), **Sound
   Reactive** (an audio input drives band → role reactors and beat-synced
-  chases over the standing base look). Room to grow: an FFT spectrogram
-  view, per-reactor curve shaping, auto-BPM lock, an audio-file input
-  for programming without a live source.
+  chases over the standing base look), and **Auto Show** (a music file is
+  analysed — STFT chroma + timbre, DP beat tracking, self-similarity
+  segmentation with verse/chorus repetition — into section cues + a beat
+  chase + movement effects that play from a timeline locked to playback).
+  Room to grow: an FFT spectrogram / structure view, layering the auto
+  show over hand cues instead of alongside them, learned palettes,
+  MIDI-clock or Ableton-Link sync.
 - **3D visualizer**: already implemented — a Forward+ SubViewport with
   volumetric beams + real gobo projectors + bloom, GDTF geometry / glTF
   fixture models, glTF set-piece props, spot shadows, saved camera views,

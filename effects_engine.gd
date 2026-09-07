@@ -16,6 +16,12 @@ var reactors: Array[SoundReactor] = []
 
 ## True while the console is in Sound Reactive run mode.
 var sound_reactive := false
+## True while the console is in Auto Show run mode.
+var auto_show := false
+
+
+func _beat_driven() -> bool:
+	return sound_reactive or auto_show
 
 
 func _ready() -> void:
@@ -24,7 +30,7 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	for c in chases:
-		if c.running and not (sound_reactive and c.beat_sync):
+		if c.running and not (_beat_driven() and c.beat_sync):
 			c.advance(delta)
 	for e in effects:
 		if e.running:
@@ -35,16 +41,17 @@ func _process(delta: float) -> void:
 				r.advance(delta, false)
 
 
-## A beat: kick pulse-mode reactors and step every running beat-sync chase.
+## A beat (from live audio in Sound Reactive, or the beat grid in Auto
+## Show): kick pulse reactors and step every running beat-sync chase.
 func _on_beat() -> void:
-	if not sound_reactive:
-		return
-	for r in reactors:
-		if r.running and r.mode == SoundReactor.MODE_PULSE:
-			r.advance(0.0, true)
-	for c in chases:
-		if c.running and c.beat_sync:
-			c.beat_step()
+	if sound_reactive:
+		for r in reactors:
+			if r.running and r.mode == SoundReactor.MODE_PULSE:
+				r.advance(0.0, true)
+	if _beat_driven():
+		for c in chases:
+			if c.running and c.beat_sync:
+				c.beat_step()
 
 
 ## One override map { channel -> value } per universe slot, HTP-merged

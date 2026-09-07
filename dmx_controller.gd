@@ -29,6 +29,7 @@ var cue_panel: CueListPanel
 var chase_panel: ChaseListPanel
 var fx_panel: EffectsPanel
 var sound_panel: SoundPanel
+var auto_show_panel: AutoShowPanel
 var groups_panel: GroupsPanel
 var viz_panel: VisualizerPanel
 var master_slider: HSlider
@@ -36,8 +37,9 @@ var sending_toggle: CheckButton
 var run_mode_option: OptionButton
 var _triggers_dialog: TriggersDialog
 
-## Console run mode: 0 = Cue Mode (default), 1 = Sound Reactive.
-const RUN_MODES := ["Cue Mode", "Sound Reactive"]
+## Console run mode: 0 = Cue Mode (default), 1 = Sound Reactive,
+## 2 = Auto Show (music-file timeline).
+const RUN_MODES := ["Cue Mode", "Sound Reactive", "Auto Show"]
 var run_mode := 0
 var add_uni_btn: Button
 var remove_uni_btn: Button
@@ -95,22 +97,33 @@ func _ready() -> void:
 	sound_panel.group_names_provider = _group_names
 	playback_tabs.add_child(_scrollable(sound_panel))
 
+	auto_show_panel = AutoShowPanel.new()
+	auto_show_panel.apply_show_cb = _apply_auto_show
+	auto_show_panel.panels_provider = func(): return _panels
+	playback_tabs.add_child(_scrollable(auto_show_panel))
+
 	playback_tabs.add_child(_scrollable(groups_panel))
 	playback_tabs.set_tab_title(0, "Cues")
 	playback_tabs.set_tab_title(1, "Chases")
 	playback_tabs.set_tab_title(2, "Effects")
 	playback_tabs.set_tab_title(3, "Sound")
-	playback_tabs.set_tab_title(4, "Groups")
+	playback_tabs.set_tab_title(4, "Auto Show")
+	playback_tabs.set_tab_title(5, "Groups")
 
 	groups_panel.groups_changed.connect(fx_panel.refresh_group_options)
 	groups_panel.groups_changed.connect(sound_panel.refresh_group_options)
 	playback_tabs.tab_changed.connect(func(i: int):
-		if i == 4:
+		if i == 5:
 			groups_panel.sync_to_patch()
 		elif i == 2:
 			fx_panel.refresh_group_options()
 		elif i == 3:
 			sound_panel.refresh_group_options())
+
+	AutoShow.cue_fired.connect(func(n: int): cue_panel.go_to_number(n))
+	AutoShow.chase_set.connect(func(nm: String, on: bool): chase_panel.set_running_by_name(nm, on))
+	AutoShow.effect_set.connect(func(nm: String, on: bool): fx_panel.set_running_by_name(nm, on))
+	AutoShow.beat.connect(Fx._on_beat)
 
 	# Right side: "Patch" (the universe tabs) and the "3D Visualizer".
 	var right_tabs := TabContainer.new()
@@ -462,6 +475,7 @@ func _update_universe_buttons() -> void:
 func _on_blackout_all() -> void:
 	ArtNet.stop_fade()
 	Fx.stop_all()
+	AutoShow.pause()
 	chase_panel.sync_ui()
 	fx_panel.sync_ui()
 	sound_panel.sync_ui()
@@ -474,10 +488,10 @@ func _on_blackout_all() -> void:
 ## reactors + beat-synced chases on top of the standing base look.
 func _on_run_mode_changed(idx: int) -> void:
 	_set_run_mode(idx)
-	if run_mode == 1:
-		status_label.text = "Sound Reactive — monitoring the audio input. Arm reactors in the Sound tab."
-	else:
-		status_label.text = "Cue Mode — cue list drives playback."
+	match run_mode:
+		1: status_label.text = "Sound Reactive — monitoring the audio input. Arm reactors in the Sound tab."
+		2: status_label.text = "Auto Show — load a song in the Auto Show tab, then Play."
+		_: status_label.text = "Cue Mode — cue list drives playback."
 
 
 func _set_run_mode(idx: int) -> void:
@@ -486,6 +500,10 @@ func _set_run_mode(idx: int) -> void:
 		run_mode_option.selected = run_mode
 	Fx.sound_reactive = run_mode == 1
 	Sound.active = run_mode == 1
+	Fx.auto_show = run_mode == 2
+	AutoShow.active = run_mode == 2
+	if run_mode != 2:
+		AutoShow.pause()
 
 
 # ------------------------------------------------------ MIDI / OSC TRIGGERS --
@@ -502,6 +520,32 @@ func _effect_names() -> Array:
 	for e in Fx.effects:
 		out.append(e.name)
 	return out
+
+
+## The Auto Show generator produced cues, a beat chase, movement effects
+## and a timeline — install them non-destructively (hand-programmed cues,
+## chases and effects are left alone).
+func _apply_auto_show(res: Dictionary) -> void:
+	var new_cues: Array = res["cues"]
+	var first := cue_panel.replace_auto_cues(new_cues)
+
+	var chase: Chase = res["chase"]
+	for i in range(Fx.chases.size() - 1, -1, -1):
+		if Fx.chases[i].name == chase.name:
+			Fx.chases.remove_at(i)
+	Fx.chases.append(chase)
+	chase_panel.sync_ui()
+
+	for eff in res["effects"]:
+		for i in range(Fx.effects.size() - 1, -1, -1):
+			if Fx.effects[i].name == eff.name:
+				Fx.effects.remove_at(i)
+		eff.set_targets(_resolve_fx_targets(eff.role, eff.universe, eff.group))
+		Fx.effects.append(eff)
+	fx_panel.sync_ui()
+
+	AutoShow.set_show(res["timeline"], first)
+	status_label.text = "Auto Show built: %d section cues + a beat chase + movement." % new_cues.size()
 
 
 ## A MIDI / OSC binding matched — run its console action.
@@ -839,6 +883,7 @@ func _on_save_show() -> void:
 		"effects": fx_panel.to_dict(),
 		"sound": sound_panel.to_dict(),
 		"triggers": Triggers.to_dict(),
+		"auto_show": AutoShow.to_dict(),
 		"groups": _groups_to_dict(),
 		"viz": viz_panel.to_dict(),
 	}
@@ -892,6 +937,8 @@ func _on_load_show() -> void:
 	sound_panel.from_dict(doc.get("sound", {}))
 	sound_panel.refresh_group_options()
 	Triggers.from_dict(doc.get("triggers", {}))
+	AutoShow.from_dict(doc.get("auto_show", {}))
+	auto_show_panel.reload()
 	_set_run_mode(int(doc.get("run_mode", 0)))
 	viz_panel.rebuild()
 	viz_panel.from_dict(doc.get("viz", {}))

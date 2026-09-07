@@ -211,10 +211,16 @@ func _on_run_toggled(on: bool) -> void:
 ## insensitive; falls back to a 1-based index if `key` is a number.
 func toggle_by_name(key: String) -> void:
 	var idx := _find_chase(key)
-	if idx == -1:
+	if idx != -1:
+		set_running_by_name(key, not Fx.chases[idx].running)
+
+
+## Set a chase's run state explicitly (Auto Show timeline).
+func set_running_by_name(key: String, on: bool) -> void:
+	var idx := _find_chase(key)
+	if idx == -1 or Fx.chases[idx].running == on:
 		return
 	var c: Chase = Fx.chases[idx]
-	var on := not c.running
 	if on:
 		c.reset()
 	c.running = on

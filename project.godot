@@ -29,6 +29,7 @@ ArtNet="*res://artnet_sender.gd"
 Sound="*res://sound_engine.gd"
 Fx="*res://effects_engine.gd"
 Triggers="*res://triggers_engine.gd"
+AutoShow="*res://auto_show.gd"
 
 [display]
 

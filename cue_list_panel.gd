@@ -234,11 +234,36 @@ func go_back() -> void:
 	_fire(clampi(from_idx - 1, 0, cues.size() - 1))
 
 
-## Jump straight to a 1-based cue number (used by MIDI / OSC triggers).
+## Jump straight to a 1-based cue number (used by MIDI / OSC triggers and
+## the Auto Show timeline).
 func go_to_number(n: int) -> void:
 	if cues.is_empty():
 		return
 	_fire(clampi(n - 1, 0, cues.size() - 1))
+
+
+## Swap in a fresh set of Auto Show cues: drop any earlier `auto` cues,
+## append the new ones after the hand-programmed cues, and return the
+## 1-based number of the first new cue (for the Auto Show timeline).
+func replace_auto_cues(new_cues: Array) -> int:
+	var kept: Array[Cue] = []
+	for c in cues:
+		if not c.auto:
+			kept.append(c)
+	var first := kept.size() + 1
+	for c in new_cues:
+		if c is Cue:
+			c.auto = true
+			kept.append(c)
+	cues = kept
+	_current = -1
+	_next = 0
+	_refresh_list()
+	if not cues.is_empty():
+		cue_list.select(mini(first - 1, cues.size() - 1))
+		_on_cue_selected(mini(first - 1, cues.size() - 1))
+	cues_changed.emit()
+	return first
 
 
 func halt() -> void:

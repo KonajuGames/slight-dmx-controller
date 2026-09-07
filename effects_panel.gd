@@ -284,14 +284,20 @@ func _on_run_toggled(on: bool) -> void:
 ## insensitive; a numeric key is treated as a 1-based index.
 func toggle_by_name(key: String) -> void:
 	var idx := _find_effect(key)
-	if idx == -1:
+	if idx != -1:
+		set_running_by_name(key, not Fx.effects[idx].running)
+
+
+## Set an effect's run state explicitly (Auto Show timeline). Resolves its
+## targets from the live patch when starting.
+func set_running_by_name(key: String, on: bool) -> void:
+	var idx := _find_effect(key)
+	if idx == -1 or Fx.effects[idx].running == on:
 		return
 	var e: WaveEffect = Fx.effects[idx]
-	var on := not e.running
 	if on and resolve_targets_cb.is_valid():
 		e.set_targets(resolve_targets_cb.call(e.role, e.universe, e.group))
 		if e.target_count() == 0:
-			status_label.text = "Trigger: no %s channels patched for '%s'." % [e.role, e.name]
 			return
 	e.running = on
 	_refresh_list_row(idx)
