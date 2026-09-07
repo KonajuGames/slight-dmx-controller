@@ -573,21 +573,29 @@ func _on_trigger_fired(action: int, target: String) -> void:
 		Trigger.ACT_BLACKOUT: _on_blackout_all()
 
 
-## Whether a feedback binding's target is currently active — its pad LED
-## follows this.
-func _feedback_state(action: int, target: String) -> bool:
+## Whether a feedback binding's watched state is currently active — its
+## pad LED follows this.
+func _feedback_state(kind: String, target: String) -> bool:
 	var low := target.strip_edges().to_lower()
-	match action:
-		Trigger.ACT_CUE_GOTO:
+	match kind:
+		"cue":
 			return target.is_valid_int() and cue_panel.current_number() == int(target)
-		Trigger.ACT_CHASE_TOGGLE:
+		"chase":
 			for c in Fx.chases:
 				if c.name.to_lower() == low:
 					return c.running
-		Trigger.ACT_EFFECT_TOGGLE:
+		"effect":
 			for e in Fx.effects:
 				if e.name.to_lower() == low:
 					return e.running
+		"run_mode":
+			return target.is_valid_int() and run_mode == int(target)
+		"sending":
+			return sending_toggle.button_pressed
+		"fx_any":
+			return Fx.any_running()
+		"autoshow":
+			return AutoShow.playing
 	return false
 
 

@@ -13,16 +13,29 @@ const MIDI_KINDS := ["Note", "Control Change", "Program Change"]
 
 enum {
 	ACT_CUE_GO, ACT_CUE_BACK, ACT_CUE_HALT, ACT_CUE_GOTO,
-	ACT_CHASE_TOGGLE, ACT_EFFECT_TOGGLE, ACT_BLACKOUT,
+	ACT_CHASE_TOGGLE, ACT_EFFECT_TOGGLE, ACT_BLACKOUT, ACT_NONE,
 }
 const ACTIONS := [
 	"Cue — GO", "Cue — Back", "Cue — Halt", "Cue — Go to #",
 	"Chase — toggle", "Effect — toggle", "Blackout all",
+	"(nothing — feedback only)",
 ]
 ## Which actions read `target` (a cue number, or a chase / effect name).
 const ACTION_NEEDS_TARGET := {
 	ACT_CUE_GOTO: true, ACT_CHASE_TOGGLE: true, ACT_EFFECT_TOGGLE: true,
 }
+
+## What a feedback LED follows. FB_ACTION mirrors this binding's own
+## action; the rest are standalone console-state indicators.
+enum {
+	FB_ACTION, FB_BEAT, FB_SENDING, FB_FX_ANY, FB_AUTOSHOW,
+	FB_MODE_CUE, FB_MODE_SOUND, FB_MODE_AUTOSHOW,
+}
+const FB_WATCHES := [
+	"this binding's action", "Beat pulse", "Sending is on",
+	"Any chase / effect running", "Auto Show is playing",
+	"Run mode: Cue", "Run mode: Sound Reactive", "Run mode: Auto Show",
+]
 
 var name: String = "Trigger"
 var enabled: bool = true
@@ -40,8 +53,9 @@ var osc_address: String = "/go"
 var action: int = ACT_CUE_GO
 var target: String = ""        # cue number as text, or chase / effect name
 
-# feedback: light this binding's pad when its target is active
+# feedback: light this binding's pad from some console state
 var fb_enabled: bool = false
+var fb_watch: int = FB_ACTION
 var fb_on: int = 127           # note velocity / CC value while active
 var fb_off: int = 0            # ...and while inactive
 
@@ -50,9 +64,35 @@ func needs_target() -> bool:
 	return ACTION_NEEDS_TARGET.has(action)
 
 
-## Feedback only makes sense for actions with a steady on/off state.
+func fires_action() -> bool:
+	return action != ACT_NONE
+
+
+## Feedback needs a steady state to follow: a standalone watch, or an
+## action that has one.
 func can_feedback() -> bool:
+	if fb_watch != FB_ACTION:
+		return true
 	return action in [ACT_CUE_GOTO, ACT_CHASE_TOGGLE, ACT_EFFECT_TOGGLE]
+
+
+## The (kind, target) the feedback engine queries the shell with. A pulse
+## watch (Beat) returns "beat".
+func feedback_query() -> Array:
+	match fb_watch:
+		FB_BEAT: return ["beat", ""]
+		FB_SENDING: return ["sending", ""]
+		FB_FX_ANY: return ["fx_any", ""]
+		FB_AUTOSHOW: return ["autoshow", ""]
+		FB_MODE_CUE: return ["run_mode", "0"]
+		FB_MODE_SOUND: return ["run_mode", "1"]
+		FB_MODE_AUTOSHOW: return ["run_mode", "2"]
+	# FB_ACTION
+	match action:
+		ACT_CUE_GOTO: return ["cue", target]
+		ACT_CHASE_TOGGLE: return ["chase", target]
+		ACT_EFFECT_TOGGLE: return ["effect", target]
+	return ["", ""]
 
 
 ## Human-readable summary of what this binding listens for.
@@ -116,7 +156,8 @@ func to_dict() -> Dictionary:
 		"name": name, "enabled": enabled, "source": source,
 		"midi_kind": midi_kind, "midi_channel": midi_channel, "midi_number": midi_number,
 		"osc_address": osc_address, "action": action, "target": target,
-		"fb_enabled": fb_enabled, "fb_on": fb_on, "fb_off": fb_off,
+		"fb_enabled": fb_enabled, "fb_watch": fb_watch,
+		"fb_on": fb_on, "fb_off": fb_off,
 	}
 
 
@@ -132,6 +173,7 @@ static func from_dict(d: Dictionary) -> Trigger:
 	t.action = clampi(int(d.get("action", ACT_CUE_GO)), 0, ACTIONS.size() - 1)
 	t.target = String(d.get("target", ""))
 	t.fb_enabled = bool(d.get("fb_enabled", false))
+	t.fb_watch = clampi(int(d.get("fb_watch", FB_ACTION)), 0, FB_WATCHES.size() - 1)
 	t.fb_on = clampi(int(d.get("fb_on", 127)), 0, 127)
 	t.fb_off = clampi(int(d.get("fb_off", 0)), 0, 127)
 	return t

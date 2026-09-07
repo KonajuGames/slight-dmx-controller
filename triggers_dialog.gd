@@ -29,6 +29,7 @@ var _target_pick: OptionButton
 var _fb_row_lbl: Label
 var _fb_box: HBoxContainer
 var _fb_check: CheckBox
+var _fb_watch: OptionButton
 var _fb_on: SpinBox
 var _fb_off: SpinBox
 
@@ -335,14 +336,22 @@ func _build_editor_column() -> Control:
 	trow.add_child(_target_pick)
 	ag.add_child(trow)
 
-	_fb_row_lbl = _lbl("Feedback")
+	ag.add_child(_lbl("Feedback"))
+	_fb_check = CheckBox.new()
+	_fb_check.text = "light this pad"
+	_fb_check.toggled.connect(func(on: bool): _edit("fb_enabled", on))
+	ag.add_child(_fb_check)
+
+	_fb_row_lbl = _lbl("  follows")
 	ag.add_child(_fb_row_lbl)
 	_fb_box = HBoxContainer.new()
-	_fb_check = CheckBox.new()
-	_fb_check.text = "light the pad when active"
-	_fb_check.toggled.connect(func(on: bool): _edit("fb_enabled", on))
-	_fb_box.add_child(_fb_check)
-	_fb_box.add_child(_lbl("  on"))
+	_fb_watch = OptionButton.new()
+	_fb_watch.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for w in Trigger.FB_WATCHES:
+		_fb_watch.add_item(w)
+	_fb_watch.item_selected.connect(func(i: int): _edit("fb_watch", i))
+	_fb_box.add_child(_fb_watch)
+	_fb_box.add_child(_lbl("on"))
 	_fb_on = _spin(0, 127, 127)
 	_fb_on.value_changed.connect(func(v: float): _edit("fb_on", int(v)))
 	_fb_box.add_child(_fb_on)
@@ -452,8 +461,11 @@ func _on_shown() -> void:
 func _row_text(t: Trigger) -> String:
 	var mark := "  " if t.enabled else "× "
 	var tgt := ("  → %s" % t.target) if t.needs_target() and t.target != "" else ""
-	return "%s%s   [%s]   %s%s" % [
-		mark, t.name, t.source_summary(), Trigger.ACTIONS[t.action], tgt]
+	var fb := ""
+	if t.fb_enabled:
+		fb = "   ⊙ %s" % ("action" if t.fb_watch == Trigger.FB_ACTION else Trigger.FB_WATCHES[t.fb_watch])
+	return "%s%s   [%s]   %s%s%s" % [
+		mark, t.name, t.source_summary(), Trigger.ACTIONS[t.action], tgt, fb]
 
 
 func _refresh_row(i: int) -> void:
@@ -514,13 +526,13 @@ func _sync_editor() -> void:
 		for n in names:
 			_target_pick.add_item(String(n))
 
-	var fb := t.can_feedback()
-	_fb_row_lbl.visible = fb
-	_fb_box.visible = fb
-	if fb:
-		_fb_check.button_pressed = t.fb_enabled
-		_fb_on.value = t.fb_on
-		_fb_off.value = t.fb_off
+	_fb_check.button_pressed = t.fb_enabled
+	_fb_watch.selected = t.fb_watch
+	_fb_on.value = t.fb_on
+	_fb_off.value = t.fb_off
+	# the "follows action" option only does something for goto / toggles
+	_fb_watch.set_item_disabled(Trigger.FB_ACTION,
+		t.action not in [Trigger.ACT_CUE_GOTO, Trigger.ACT_CHASE_TOGGLE, Trigger.ACT_EFFECT_TOGGLE])
 	_syncing = false
 
 

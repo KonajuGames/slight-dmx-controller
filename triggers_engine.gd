@@ -36,12 +36,15 @@ var _udp := PacketPeerUDP.new()
 var _midi_opened := false
 var _fb_state := {}
 var _fb_refresh := 0.0
+var _fb_pulse := {}          ## binding id -> seconds left holding the "on" value
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	set_process(true)
 	_open_midi()
+	Sound.beat.connect(_on_ext_beat)
+	AutoShow.beat.connect(_on_ext_beat)
 
 
 func _open_midi() -> void:
@@ -115,7 +118,7 @@ func _input(event: InputEvent) -> void:
 
 	_report_midi(ev)
 	for t in triggers:
-		if t.enabled and t.matches_midi(ev):
+		if t.enabled and t.fires_action() and t.matches_midi(ev):
 			fired.emit(t.action, t.target)
 
 
@@ -150,8 +153,31 @@ func refresh_feedback() -> void:
 	_fb_refresh = 0.0
 
 
+## A beat (live audio in Sound Reactive, the grid in Auto Show): flash
+## every Beat-watch feedback pad.
+func _on_ext_beat() -> void:
+	if not feedback_enabled:
+		return
+	for t in triggers:
+		if t.enabled and t.fb_enabled and t.fb_watch == Trigger.FB_BEAT:
+			_send_feedback(t, t.fb_on)
+			_fb_pulse[t.get_instance_id()] = 0.09
+
+
 func _feedback_tick(delta: float) -> void:
-	if not feedback_enabled or not feedback_state_cb.is_valid():
+	if not feedback_enabled:
+		return
+
+	# decay beat flashes back to the "off" value
+	for key in _fb_pulse.keys():
+		_fb_pulse[key] -= delta
+		if _fb_pulse[key] <= 0.0:
+			_fb_pulse.erase(key)
+			var t := instance_from_id(key) as Trigger
+			if t != null:
+				_send_feedback(t, t.fb_off)
+
+	if not feedback_state_cb.is_valid():
 		return
 	_fb_refresh -= delta
 	if _fb_refresh <= 0.0:
@@ -160,35 +186,40 @@ func _feedback_tick(delta: float) -> void:
 	for t in triggers:
 		if not (t.enabled and t.fb_enabled and t.can_feedback()):
 			continue
-		var active: bool = bool(feedback_state_cb.call(t.action, t.target))
+		if t.fb_watch == Trigger.FB_BEAT:
+			continue               # pulse-driven, handled in _on_ext_beat
+		var q: Array = t.feedback_query()
+		if q[0] == "":
+			continue
+		var active: bool = bool(feedback_state_cb.call(q[0], q[1]))
 		var key := t.get_instance_id()
 		if _fb_state.get(key, null) != active:
 			_fb_state[key] = active
-			_emit_feedback(t, active)
+			_send_feedback(t, t.fb_on if active else t.fb_off)
 
 
 ## Send every feedback binding's "off" value (on shutdown / feedback off).
 func all_feedback_off() -> void:
 	for t in triggers:
-		if t.fb_enabled and t.can_feedback():
-			_emit_feedback(t, false)
+		if t.fb_enabled:
+			_send_feedback(t, t.fb_off)
 	_fb_state.clear()
+	_fb_pulse.clear()
 
 
 func _exit_tree() -> void:
 	all_feedback_off()
 
 
-func _emit_feedback(t: Trigger, active: bool) -> void:
-	var v: int = t.fb_on if active else t.fb_off
+func _send_feedback(t: Trigger, value: int) -> void:
 	if t.source == Trigger.SRC_MIDI:
 		var ch: int = maxi(t.midi_channel, 0)
 		if t.midi_kind == Trigger.MIDI_CC:
-			FeedbackOut.cc(midi_out_host, midi_out_port, ch, t.midi_number, v)
+			FeedbackOut.cc(midi_out_host, midi_out_port, ch, t.midi_number, value)
 		else:
-			FeedbackOut.note(midi_out_host, midi_out_port, ch, t.midi_number, v)
+			FeedbackOut.note(midi_out_host, midi_out_port, ch, t.midi_number, value)
 	else:
-		FeedbackOut.osc(osc_out_host, osc_out_port, t.osc_address, float(v) / 127.0)
+		FeedbackOut.osc(osc_out_host, osc_out_port, t.osc_address, float(value) / 127.0)
 
 
 func _dispatch_osc(msg: OscMessage) -> void:
@@ -199,7 +230,7 @@ func _dispatch_osc(msg: OscMessage) -> void:
 	var arg_txt := "" if msg.args.is_empty() else "  %s" % str(msg.args)
 	activity.emit("OSC  %s%s" % [msg.address, arg_txt])
 	for t in triggers:
-		if t.enabled and t.matches_osc(msg):
+		if t.enabled and t.fires_action() and t.matches_osc(msg):
 			fired.emit(t.action, t.target)
 
 

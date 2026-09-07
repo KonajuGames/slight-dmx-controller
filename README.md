@@ -198,14 +198,21 @@ unless its first argument is `0` (so TouchOSC's press-then-release
 buttons only trigger on press). The bottom of the dialog shows the last
 message received.
 
-**Feedback (LEDs).** Tick **Feedback (LEDs)** at the top and, on a
-Go-to-# / Chase-toggle / Effect-toggle binding, tick **light the pad
-when active** with an **on** / **off** value (a velocity, or a pad
-colour code for RGB grids). While that cue is live / that chase or
-effect is running, the binding's own pad is lit; it clears when the
-state ends, and all pads are cleared on exit. OSC feedback goes straight
-to the device (`OSC →` host / port). Godot has no MIDI *output*, so MIDI
-feedback is sent as UDP to a small bridge — run
+**Feedback (LEDs).** Tick **Feedback (LEDs)** at the top, then on any
+binding tick **light this pad** and pick what it **follows** with an
+**on** / **off** value (a velocity, or a pad colour code for RGB grids):
+
+- *this binding's action* — the pad lights while its cue is live / its
+  chase or effect is running (needs a Go-to-# / toggle action).
+- *Beat pulse* — a flash on every beat (Sound Reactive / Auto Show).
+- *Sending is on*, *Any chase / effect running*, *Auto Show is playing*,
+  *Run mode: Cue / Sound Reactive / Auto Show* — standalone console-state
+  indicators. Set the **Action** to *(nothing — feedback only)* for a pad
+  that's only an indicator.
+
+Pads clear when their state ends and all are cleared on exit. OSC
+feedback goes straight to the device (`OSC →` host / port). Godot has no
+MIDI *output*, so MIDI feedback is sent as UDP to a small bridge — run
 `python tools/midi_bridge.py --port "<your controller>"` (needs
 `pip install mido python-rtmidi`) and point **MIDI → bridge :** at the
 same port (default 9010).
@@ -583,10 +590,11 @@ packets to a physical DMX512 signal for your fixtures.
   steps at a tempo or on the beat; effects run waveforms (absolute or
   base-value pickup) on a role across a universe or a fixture group;
   MIDI / OSC bindings fire cue / chase / effect actions with a Learn
-  mode and light the controller's pads back (MIDI feedback via a small
-  UDP bridge, OSC feedback direct). Room to grow: cue-to-cue auto-follow
-  / wait times, a fade progress bar, per-channel track flags in the cue
-  editor, standalone feedback bindings (beat / run-mode indicators).
+  mode and light the controller's pads back — mirroring the action, or a
+  standalone beat / sending / run-mode indicator (MIDI feedback via a
+  small UDP bridge, OSC feedback direct). Room to grow: cue-to-cue
+  auto-follow / wait times, a fade progress bar, per-channel track flags
+  in the cue editor.
 - **Run modes**: **Cue Mode** (cue list drives playback), **Sound
   Reactive** (an audio input drives band → role reactors and beat-synced
   chases over the standing base look), and **Auto Show** (a music file is
