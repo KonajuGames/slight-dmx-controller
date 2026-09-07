@@ -253,6 +253,11 @@ Stepping through them crossfades the whole rig.
 - Select a cue to edit its **label**, **fade up / down** seconds and
   **Tracking** flag inline. **Update** overwrites the selected cue with
   the current live output; **Duplicate** and **Delete** do what they say.
+- **Load to Patch** sets every fixture control to the selected cue's
+  standing look — colour pickers, sliders, gobo dropdowns and all — so
+  you can tweak it and press **Update** to re-record. (This is the one
+  place the fixture controls follow the buffer rather than just writing
+  to it.)
 - Cues (and which one is live) are saved inside the show file.
 
 **Tracking.** With the **Tracking** box (by Record Cue) ticked, a new cue
@@ -436,9 +441,10 @@ profile file is later deleted. Older single-mode profile JSON still loads
 
 There's no raw per-channel slider list — all control happens through
 patched fixtures (plus the quick RGB row for a one-off trio of channels).
-Loading a preset updates the live output immediately but won't visually
-move any fixture panel's sliders/pickers, since those are write-only
-controls rather than a live readout of the buffer.
+The fixture controls write to the buffer rather than reading back from
+it, so loading a preset updates the live output but won't move the
+sliders/pickers. The cue list's **Load to Patch** is the exception — it
+pulls the controls to a stored look so you can edit it.
 
 ## 3D Visualizer
 

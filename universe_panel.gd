@@ -504,6 +504,10 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 	# the Home button and also fired once on build so a freshly patched
 	# fixture starts at its defaults (in the UI and on the wire).
 	var reset_callables: Array = []
+	# Callables func(buf: PackedByteArray) that pull each control's widget
+	# to the value(s) in `buf` — used by "Load to Patch" so a cue can be
+	# edited with the fixture controls.
+	var apply_callables: Array = []
 
 	var header := _flow()
 	var title := Label.new()
@@ -588,6 +592,13 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 			for li in full_levels:
 				push_intensity.call(li)
 		)
+		# A loaded look bakes intensity into the raw colour values, so open
+		# the virtual dimmer fully before the colour / intensity appliers run.
+		apply_callables.append(func(_buf: PackedByteArray):
+			d_slider.set_value_no_signal(255)
+			vdim["frac"] = 1.0
+			d_val.text = "255"
+		)
 
 	# One colour picker per head (RGB triplet). Multi-head fixtures — LED
 	# bars, spiders — get "Colour 1", "Colour 2", …
@@ -625,6 +636,18 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 			push_intensity.call(g_idx)
 			push_intensity.call(b_idx)
 		)
+		apply_callables.append(func(buf: PackedByteArray):
+			var rv := _bufv(buf, start + r_idx)
+			var gv := _bufv(buf, start + g_idx)
+			var bv := _bufv(buf, start + b_idx)
+			picker.color = Color(rv / 255.0, gv / 255.0, bv / 255.0)
+			full_levels[r_idx] = rv
+			full_levels[g_idx] = gv
+			full_levels[b_idx] = bv
+			push_intensity.call(r_idx)
+			push_intensity.call(g_idx)
+			push_intensity.call(b_idx)
+		)
 
 	var ci := 0
 	while ci < chans.size():
@@ -637,14 +660,14 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 			and not bool(ch.get("fine", false))
 
 		if next_is_fine:
-			controls_row.add_child(
-				_build_16bit_control(start, ci, ci + 1, ch, chans[ci + 1], reset_callables))
+			controls_row.add_child(_build_16bit_control(
+				start, ci, ci + 1, ch, chans[ci + 1], reset_callables, apply_callables))
 			handled[ci + 1] = true
 			ci += 2
 			continue
 
 		if not (ch["ranges"] as Array).is_empty():
-			controls_row.add_child(_build_range_control(start, ci, ch, reset_callables))
+			controls_row.add_child(_build_range_control(start, ci, ch, reset_callables, apply_callables))
 			ci += 1
 			continue
 
@@ -655,24 +678,32 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 			var wcb := func(v: int):
 				full_levels[li] = v
 				push_intensity.call(li)
-			controls_row.add_child(_build_slider_control(start, ci, ch, reset_callables, wcb))
+			controls_row.add_child(_build_slider_control(start, ci, ch, reset_callables, apply_callables, wcb))
 			ci += 1
 			continue
 
-		controls_row.add_child(_build_slider_control(start, ci, ch, reset_callables))
+		controls_row.add_child(_build_slider_control(start, ci, ch, reset_callables, apply_callables))
 		ci += 1
 
 	# Snap everything to defaults now that all controls exist.
 	for c in reset_callables:
 		c.call()
 
+	fixture["_apply"] = func(buf: PackedByteArray):
+		for a in apply_callables:
+			a.call(buf)
+
 	return panel
+
+
+func _bufv(buf: PackedByteArray, i: int) -> int:
+	return int(buf[i]) if i >= 0 and i < buf.size() else 0
 
 
 ## Plain 8-bit channel: a vertical slider clamped to [min, max]. When
 ## write_cb is given it receives the value instead of a direct DMX write
 ## (used to route intensity channels through the virtual dimmer).
-func _build_slider_control(start: int, local_i: int, ch: Dictionary, reset_callables: Array, write_cb := Callable()) -> Control:
+func _build_slider_control(start: int, local_i: int, ch: Dictionary, reset_callables: Array, apply_callables: Array, write_cb := Callable()) -> Control:
 	var box := VBoxContainer.new()
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
 	box.add_child(_centered_label(ch["name"]))
@@ -705,12 +736,18 @@ func _build_slider_control(start: int, local_i: int, ch: Dictionary, reset_calla
 		do_write.call(d)
 		val_lbl.text = str(d)
 	)
+	apply_callables.append(func(buf: PackedByteArray):
+		var v := clampi(_bufv(buf, start + local_i), int(ch["min"]), int(ch["max"]))
+		slider.set_value_no_signal(v)
+		do_write.call(v)
+		val_lbl.text = str(v)
+	)
 	return box
 
 
 ## 16-bit pair (coarse channel + its "fine" LSB partner): one slider over
 ## the full 0..65535 range, split into two DMX channels on the way out.
-func _build_16bit_control(start: int, coarse_i: int, fine_i: int, coarse_ch: Dictionary, fine_ch: Dictionary, reset_callables: Array) -> Control:
+func _build_16bit_control(start: int, coarse_i: int, fine_i: int, coarse_ch: Dictionary, fine_ch: Dictionary, reset_callables: Array, apply_callables: Array) -> Control:
 	var box := VBoxContainer.new()
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
 	box.add_child(_centered_label("%s (16-bit)" % coarse_ch["name"]))
@@ -740,6 +777,11 @@ func _build_16bit_control(start: int, coarse_i: int, fine_i: int, coarse_ch: Dic
 		slider.value = default16
 		apply.call(default16)
 	)
+	apply_callables.append(func(buf: PackedByteArray):
+		var v16 := (_bufv(buf, start + coarse_i) << 8) | _bufv(buf, start + fine_i)
+		slider.set_value_no_signal(v16)
+		apply.call(v16)
+	)
 	return box
 
 
@@ -747,7 +789,7 @@ func _build_16bit_control(start: int, coarse_i: int, fine_i: int, coarse_ch: Dic
 ## jumps to the middle of a slot, plus a slider for fine positioning. The
 ## two stay in sync — moving the slider re-selects whichever slot it lands
 ## in.
-func _build_range_control(start: int, local_i: int, ch: Dictionary, reset_callables: Array) -> Control:
+func _build_range_control(start: int, local_i: int, ch: Dictionary, reset_callables: Array, apply_callables: Array) -> Control:
 	var ranges: Array = ch["ranges"]
 	var ch_min := int(ch["min"])
 	var ch_max := int(ch["max"])
@@ -809,6 +851,15 @@ func _build_range_control(start: int, local_i: int, ch: Dictionary, reset_callab
 		val_lbl.text = str(d)
 		var ri: int = slot_for.call(d)
 		opt.select(ri)
+	)
+	apply_callables.append(func(buf: PackedByteArray):
+		var v := clampi(_bufv(buf, start + local_i), ch_min, ch_max)
+		slider.set_value_no_signal(v)
+		sender.set_channel(start + local_i, v)
+		val_lbl.text = str(v)
+		var ri: int = slot_for.call(v)
+		if ri != -1:
+			opt.select(ri)
 	)
 	return box
 
@@ -922,3 +973,20 @@ func apply_buffer_dict(d: Dictionary) -> void:
 	var channels: Dictionary = d.get("channels", {})
 	for key in channels.keys():
 		sender.set_channel(int(key), int(channels[key]))
+
+
+## Load a full 512-byte look (a cue's stored levels for this universe)
+## into the live buffer *and* the fixture controls, so the look can be
+## edited with the sliders / pickers and re-recorded.
+func load_look(buf: PackedByteArray) -> void:
+	var n := ArtNetUniverse.DMX_UNIVERSE_SIZE
+	if buf.size() >= n:
+		sender.dmx_data = buf.slice(0, n)
+	else:
+		sender.set_all(0)
+		for i in range(buf.size()):
+			sender.set_channel(i, buf[i])
+	for fixture in patched_fixtures:
+		var a = fixture.get("_apply", null)
+		if a is Callable and (a as Callable).is_valid():
+			a.call(buf)

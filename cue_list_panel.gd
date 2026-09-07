@@ -22,6 +22,10 @@ var _current := -1   # cue currently live (-1 = none)
 var _next := 0       # cue GO will fire
 var tracking_enabled := true   # what Record Cue makes: tracking vs block
 
+## Set by the shell: func(buffers: Array of PackedByteArray) — loads a
+## cue's per-universe look into the fixture controls for editing.
+var to_patch_cb := Callable()
+
 # UI
 var cue_list: ItemList
 var next_label: Label
@@ -104,6 +108,11 @@ func _ready() -> void:
 	add_child(edit_grid)
 
 	var edit_btns := _flow()
+	var to_patch_btn := Button.new()
+	to_patch_btn.text = "Load to Patch"
+	to_patch_btn.tooltip_text = "Set the fixture controls to this cue's look so you can tweak it, then Update."
+	to_patch_btn.pressed.connect(load_selected_to_patch)
+	edit_btns.add_child(to_patch_btn)
 	var update_btn := Button.new()
 	update_btn.text = "Update"
 	update_btn.pressed.connect(update_cue)
@@ -311,6 +320,16 @@ func record_cue() -> void:
 	status_label.text = "Recorded cue %d (%s) — %d moves." % [
 		insert_at + 1, ("tracking" if c.tracking else "block"), c.move_count()]
 	cues_changed.emit()
+
+
+## Push the selected cue's standing look into the fixture controls so it
+## can be tweaked and re-recorded with Update.
+func load_selected_to_patch() -> void:
+	var at := _selected_index()
+	if at == -1 or not to_patch_cb.is_valid():
+		return
+	to_patch_cb.call(_targets_from_state(_fold(at)))
+	status_label.text = "Cue %d loaded into the patch — tweak the fixtures, then Update." % (at + 1)
 
 
 func update_cue() -> void:

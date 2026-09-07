@@ -79,6 +79,7 @@ func _ready() -> void:
 	split.add_child(playback_tabs)
 
 	cue_panel = CueListPanel.new()
+	cue_panel.to_patch_cb = _cue_to_patch
 	playback_tabs.add_child(_scrollable(cue_panel))
 	chase_panel = ChaseListPanel.new()
 	playback_tabs.add_child(_scrollable(chase_panel))
@@ -547,6 +548,16 @@ func _apply_auto_show(res: Dictionary) -> void:
 	AutoShow.set_show(res["timeline"], first)
 	status_label.text = "Auto Show built: %d section cues, %d chases, %d effects." % [
 		res["cues"].size(), res["chases"].size(), res["effects"].size()]
+
+
+## "Load to Patch" — write a cue's per-universe look into the fixture
+## controls so it can be edited and re-recorded.
+func _cue_to_patch(buffers: Array) -> void:
+	ArtNet.stop_fade()
+	AutoShow.pause()
+	for i in range(min(buffers.size(), _panels.size())):
+		_panels[i].load_look(buffers[i])
+	status_label.text = "Cue loaded into the patch — tweak the fixtures, then Update the cue."
 
 
 ## A MIDI / OSC binding matched — run its console action.
