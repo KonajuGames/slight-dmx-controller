@@ -110,16 +110,29 @@ Stepping through them crossfades the whole rig.
   a new cue (inserted after the selected one, or at the end). So dial a
   look with the fixture controls, set **New cue fade**, and record.
 - **GO** (or the **spacebar**) fires the next cue: every universe
-  crossfades from whatever it's outputting now to the cue's stored
-  levels. Channels rising use the cue's *fade up* time, channels falling
-  use *fade down*. Cues are **non-tracking** — a channel the cue doesn't
-  store fades to 0.
+  crossfades from whatever it's outputting now to that cue's **standing
+  look** (see tracking, below). Channels rising use the cue's *fade up*
+  time, channels falling use *fade down*; a channel that doesn't change
+  doesn't move.
 - **Back** fades to the previous cue; **Halt** freezes a running fade
   where it is.
-- Select a cue to edit its **label** and **fade up / down** seconds
-  inline. **Update** overwrites the selected cue with the current live
-  output; **Duplicate** and **Delete** do what they say.
+- Select a cue to edit its **label**, **fade up / down** seconds and
+  **Tracking** flag inline. **Update** overwrites the selected cue with
+  the current live output; **Duplicate** and **Delete** do what they say.
 - Cues (and which one is live) are saved inside the show file.
+
+**Tracking.** With the **Tracking** box (by Record Cue) ticked, a new cue
+stores only the channels it *changes* from the look the earlier cues
+leave standing — including a channel it drives to 0. Every other channel
+**tracks** through untouched, and editing an upstream cue ripples down
+the list. Untick **Tracking** on a selected cue to make it a **block**:
+it stores a full look and stops the ripple there. Playback always folds
+cues 1..n together (blocks wipe first, tracking cues merge on top), so
+GO's fade target is the complete standing look for that point in the
+list. The cue list shows `[T]` / `[B]` per cue. Toggling a cue's flag
+rewrites its stored levels so its on-stage look doesn't change — only how
+it reacts to edits before it. Older show files load their cues as blocks,
+so they play back exactly as before.
 
 While a fade is running it owns the output — moving a fixture control
 mid-fade is overwritten until the fade lands. **Blackout All**, loading a
@@ -395,11 +408,12 @@ packets to a physical DMX512 signal for your fixtures.
   virtual dimmer), and GDTF / Open Fixture Library definitions can be
   imported (with GDTF gobo artwork). Room to grow: a bundled fixture
   library, an online GDTF-Share / OFL browser.
-- **Playback**: cues do split-time crossfades; chases cycle captured
+- **Playback**: cues do split-time crossfades and **track** (a cue stores
+  only what it changes; blocks stop the ripple); chases cycle captured
   steps at a tempo; effects run waveforms (absolute or base-value
   pickup) on a role across a universe or a fixture group. Room to grow:
   cue-to-cue auto-follow / wait times, a fade progress bar, MIDI or OSC
-  GO triggers, cue tracking (only store what a cue changes).
+  GO triggers, per-channel track flags in the cue editor.
 - **3D visualizer**: already implemented — a Forward+ SubViewport with
   volumetric beams + real gobo projectors + bloom, GDTF geometry / glTF
   fixture models, glTF set-piece props, spot shadows, saved camera views,

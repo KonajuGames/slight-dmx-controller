@@ -6,12 +6,21 @@ extends VBoxContainer
 ##
 ## Recording captures the live DMX buffers (so dial a look with the
 ## fixture controls, then Record Cue). Cues are saved inside the show file.
+##
+## Cues track. With **Tracking** on, a recorded cue stores only the
+## channels it *changes* from the look the earlier cues leave standing;
+## everything else tracks through, and editing an upstream cue ripples
+## down the list. A **block** cue (Tracking unticked for that cue) stores
+## a full look and stops the ripple. Playback folds cues[0..n] together —
+## blocks wipe first, tracking cues merge on top — so the fade target is
+## always the complete standing look for that point in the list.
 
 signal cues_changed
 
 var cues: Array[Cue] = []
 var _current := -1   # cue currently live (-1 = none)
 var _next := 0       # cue GO will fire
+var tracking_enabled := true   # what Record Cue makes: tracking vs block
 
 # UI
 var cue_list: ItemList
@@ -20,6 +29,8 @@ var label_edit: LineEdit
 var fade_up_spin: SpinBox
 var fade_down_spin: SpinBox
 var new_fade_spin: SpinBox
+var track_check: CheckBox        # per-selected-cue: tracking vs block
+var tracking_check: CheckBox     # global: mode for new recordings
 var status_label: Label
 var _syncing := false  # guard while pushing cue -> edit fields
 
@@ -82,6 +93,13 @@ func _ready() -> void:
 	fade_down_spin = _fade_spin()
 	fade_down_spin.value_changed.connect(func(v: float): _set_selected_fade(false, v))
 	edit_grid.add_child(fade_down_spin)
+
+	edit_grid.add_child(_lbl("Tracking"))
+	track_check = CheckBox.new()
+	track_check.text = "tracks from previous cue"
+	track_check.tooltip_text = "On: this cue only stores what it changes.\nOff (block): it stores a full look and stops upstream edits tracking through."
+	track_check.toggled.connect(_set_selected_tracking)
+	edit_grid.add_child(track_check)
 	add_child(edit_grid)
 
 	var edit_btns := _flow()
@@ -111,6 +129,12 @@ func _ready() -> void:
 	rec_btn.text = "Record Cue"
 	rec_btn.pressed.connect(record_cue)
 	rec_row.add_child(rec_btn)
+	tracking_check = CheckBox.new()
+	tracking_check.text = "Tracking"
+	tracking_check.button_pressed = tracking_enabled
+	tracking_check.tooltip_text = "New cues store only what they change from the previous cues."
+	tracking_check.toggled.connect(func(on: bool): tracking_enabled = on)
+	rec_row.add_child(tracking_check)
 	add_child(rec_row)
 
 	status_label = Label.new()
@@ -152,6 +176,48 @@ func _selected_index() -> int:
 	return sel[0] if sel.size() > 0 else -1
 
 
+# --------------------------------------------------------------- TRACKING --
+
+## Fold cues[0..last] into the standing look: one Dictionary per universe
+## ({ "<channel>": int }, values may be 0). A block cue wipes the rig
+## before applying its stored channels; a tracking cue merges its moves
+## over whatever the earlier cues left.
+func _fold(last: int) -> Array:
+	var ucount := ArtNet.universe_count()
+	var out: Array = []
+	for _i in range(ucount):
+		out.append({})
+	for i in range(mini(last + 1, cues.size())):
+		var c := cues[i]
+		if not c.tracking:
+			out = []
+			for _j in range(ucount):
+				out.append({})
+		for u in range(ucount):
+			if u >= c.levels.size():
+				continue
+			var d: Dictionary = c.levels[u]
+			for k in d.keys():
+				out[u][String(k)] = clampi(int(d[k]), 0, 255)
+	return out
+
+
+## Turn a folded state (Array of Dictionary) into fade targets (Array of
+## 512-byte PackedByteArray), one per universe.
+func _targets_from_state(state: Array) -> Array:
+	var targets: Array = []
+	for u in range(ArtNet.universe_count()):
+		var buf := PackedByteArray()
+		buf.resize(ArtNet.DMX_UNIVERSE_SIZE)
+		var d: Dictionary = state[u] if u < state.size() else {}
+		for k in d.keys():
+			var c := int(k)
+			if c >= 0 and c < buf.size():
+				buf[c] = clampi(int(d[k]), 0, 255)
+		targets.append(buf)
+	return targets
+
+
 # ---------------------------------------------------------------- PLAYBACK --
 
 func go() -> void:
@@ -176,16 +242,14 @@ func _fire(idx: int) -> void:
 	if idx < 0 or idx >= cues.size():
 		return
 	var cue := cues[idx]
-	var targets: Array = []
-	for i in range(ArtNet.universe_count()):
-		targets.append(cue.target_for(i))
-	ArtNet.start_fade(targets, cue.fade_up, cue.fade_down)
+	ArtNet.start_fade(_targets_from_state(_fold(idx)), cue.fade_up, cue.fade_down)
 
 	_current = idx
 	_next = min(idx + 1, cues.size() - 1)
 	_refresh_list()
-	status_label.text = "GO — cue %d (%s), %.1fs / %.1fs" % [
-		idx + 1, cue.label, cue.fade_up, cue.fade_down]
+	status_label.text = "GO — cue %d (%s) [%s], %.1fs / %.1fs" % [
+		idx + 1, cue.label, ("track" if cue.tracking else "block"),
+		cue.fade_up, cue.fade_down]
 
 
 func _on_fade_finished() -> void:
@@ -196,10 +260,14 @@ func _on_fade_finished() -> void:
 # ----------------------------------------------------------------- EDITING --
 
 func record_cue() -> void:
-	var c := Cue.new("Cue %d" % (cues.size() + 1), new_fade_spin.value, new_fade_spin.value)
-	c.capture()
 	var at := _selected_index()
 	var insert_at := cues.size() if at == -1 else at + 1
+	var c := Cue.new("Cue %d" % (cues.size() + 1), new_fade_spin.value, new_fade_spin.value)
+	c.tracking = tracking_enabled
+	if c.tracking:
+		c.capture_tracked(_fold(insert_at - 1))
+	else:
+		c.capture()
 	cues.insert(insert_at, c)
 	if _current >= insert_at:
 		_current += 1
@@ -207,7 +275,8 @@ func record_cue() -> void:
 	_refresh_list()
 	cue_list.select(insert_at)
 	_on_cue_selected(insert_at)
-	status_label.text = "Recorded cue %d." % (insert_at + 1)
+	status_label.text = "Recorded cue %d (%s) — %d moves." % [
+		insert_at + 1, ("tracking" if c.tracking else "block"), c.move_count()]
 	cues_changed.emit()
 
 
@@ -215,8 +284,15 @@ func update_cue() -> void:
 	var at := _selected_index()
 	if at == -1:
 		return
-	cues[at].capture()
-	status_label.text = "Updated cue %d from live output." % (at + 1)
+	if cues[at].tracking:
+		cues[at].capture_tracked(_fold(at - 1))
+	else:
+		cues[at].capture()
+	var keep := at
+	_refresh_list()
+	cue_list.select(keep)
+	status_label.text = "Updated cue %d from live output (%s) — %d moves." % [
+		at + 1, ("tracking" if cues[at].tracking else "block"), cues[at].move_count()]
 	cues_changed.emit()
 
 
@@ -260,6 +336,7 @@ func _on_cue_selected(idx: int) -> void:
 	label_edit.text = cues[idx].label
 	fade_up_spin.value = cues[idx].fade_up
 	fade_down_spin.value = cues[idx].fade_down
+	track_check.button_pressed = cues[idx].tracking
 	_syncing = false
 
 
@@ -273,6 +350,43 @@ func _on_label_edited(text: String) -> void:
 	var keep := i
 	_refresh_list()
 	cue_list.select(keep)
+	cues_changed.emit()
+
+
+## Flip the selected cue between tracking and block, rewriting its stored
+## levels so the look it produces on stage doesn't change — only how it
+## reacts to edits of the cues before it.
+func _set_selected_tracking(on: bool) -> void:
+	if _syncing:
+		return
+	var i := _selected_index()
+	if i == -1 or cues[i].tracking == on:
+		return
+	var through := _fold(i)       # complete standing look at this cue
+	var before := _fold(i - 1)    # look the earlier cues leave standing
+	cues[i].tracking = on
+	var new_levels: Array = []
+	for u in range(ArtNet.universe_count()):
+		var t: Dictionary = through[u] if u < through.size() else {}
+		var b: Dictionary = before[u] if u < before.size() else {}
+		var d := {}
+		if on:
+			for k in t.keys():
+				if int(t[k]) != int(b.get(k, 0)):
+					d[String(k)] = int(t[k])
+			for k in b.keys():
+				if not t.has(k) and int(b[k]) != 0:
+					d[String(k)] = 0            # earlier cue's value, moved to 0
+		else:
+			for k in t.keys():
+				if int(t[k]) != 0:
+					d[String(k)] = int(t[k])
+		new_levels.append(d)
+	cues[i].levels = new_levels
+	var keep := i
+	_refresh_list()
+	cue_list.select(keep)
+	status_label.text = "Cue %d is now a %s cue." % [i + 1, ("tracking" if on else "block")]
 	cues_changed.emit()
 
 
@@ -298,14 +412,17 @@ func _refresh_list() -> void:
 	for i in range(cues.size()):
 		var c := cues[i]
 		var marker := "> " if i == _current else "  "
-		cue_list.add_item("%s%d  %s   %.1f/%.1fs" % [
-			marker, i + 1, c.label, c.fade_up, c.fade_down])
+		var flag := "T" if c.tracking else "B"
+		cue_list.add_item("%s%d [%s] %s   %.1f/%.1fs" % [
+			marker, i + 1, flag, c.label, c.fade_up, c.fade_down])
 	if sel >= 0 and sel < cue_list.item_count:
 		cue_list.select(sel)
 	if cues.is_empty():
 		next_label.text = "No cues — dial a look, then Record Cue."
 	else:
-		next_label.text = "Next: cue %d" % (clampi(_next, 0, cues.size() - 1) + 1)
+		var mode := "tracking" if tracking_enabled else "block"
+		next_label.text = "Next: cue %d   (recording: %s)" % [
+			clampi(_next, 0, cues.size() - 1) + 1, mode]
 
 
 # ------------------------------------------------------- SERIALIZATION --
@@ -314,7 +431,10 @@ func to_dict() -> Dictionary:
 	var arr: Array = []
 	for c in cues:
 		arr.append(c.to_dict())
-	return {"cues": arr, "current": _current, "next": _next}
+	return {
+		"cues": arr, "current": _current, "next": _next,
+		"tracking": tracking_enabled,
+	}
 
 
 func from_dict(d: Dictionary) -> void:
@@ -324,4 +444,7 @@ func from_dict(d: Dictionary) -> void:
 			cues.append(Cue.from_dict(e))
 	_current = clampi(int(d.get("current", -1)), -1, cues.size() - 1)
 	_next = clampi(int(d.get("next", 0)), 0, max(cues.size() - 1, 0))
+	tracking_enabled = bool(d.get("tracking", true))
+	if tracking_check:
+		tracking_check.button_pressed = tracking_enabled
 	_refresh_list()
