@@ -427,7 +427,9 @@ The window is freely resizable (down to 720×480). Toolbars, the
 connection/patch rows, and each fixture's bank of sliders are laid out in
 wrapping rows, so controls that don't fit the current width flow onto the
 next line instead of running off the right edge; the fixture list scrolls
-vertically only.
+vertically only. Each playback tab (Cues / Chases / Effects / Sound /
+Groups) grows a vertical scrollbar when the window is too short to show
+all of its controls, so nothing becomes unreachable.
 
 ### Testing without real hardware
 

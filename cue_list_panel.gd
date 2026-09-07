@@ -62,6 +62,7 @@ func _ready() -> void:
 
 	cue_list = ItemList.new()
 	cue_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	cue_list.custom_minimum_size = Vector2(0, 120)
 	cue_list.allow_reselect = true
 	cue_list.item_selected.connect(_on_cue_selected)
 	cue_list.item_activated.connect(func(idx: int): _fire(idx))

@@ -72,13 +72,13 @@ func _ready() -> void:
 	main_vbox.add_child(split)
 
 	var playback_tabs := TabContainer.new()
-	playback_tabs.custom_minimum_size = Vector2(300, 0)
+	playback_tabs.custom_minimum_size = Vector2(320, 0)
 	split.add_child(playback_tabs)
 
 	cue_panel = CueListPanel.new()
-	playback_tabs.add_child(cue_panel)
+	playback_tabs.add_child(_scrollable(cue_panel))
 	chase_panel = ChaseListPanel.new()
-	playback_tabs.add_child(chase_panel)
+	playback_tabs.add_child(_scrollable(chase_panel))
 
 	groups_panel = GroupsPanel.new()
 	groups_panel.groups = groups
@@ -87,14 +87,14 @@ func _ready() -> void:
 	fx_panel = EffectsPanel.new()
 	fx_panel.resolve_targets_cb = _resolve_fx_targets
 	fx_panel.group_names_provider = _group_names
-	playback_tabs.add_child(fx_panel)
+	playback_tabs.add_child(_scrollable(fx_panel))
 
 	sound_panel = SoundPanel.new()
 	sound_panel.resolve_targets_cb = _resolve_fx_targets
 	sound_panel.group_names_provider = _group_names
-	playback_tabs.add_child(sound_panel)
+	playback_tabs.add_child(_scrollable(sound_panel))
 
-	playback_tabs.add_child(groups_panel)
+	playback_tabs.add_child(_scrollable(groups_panel))
 	playback_tabs.set_tab_title(0, "Cues")
 	playback_tabs.set_tab_title(1, "Chases")
 	playback_tabs.set_tab_title(2, "Effects")
@@ -144,6 +144,23 @@ func _ready() -> void:
 
 
 # ---------------------------------------------------------------- UI BUILD --
+
+## Wrap a playback panel so it gets a vertical scrollbar when the window
+## is too short to show all of its controls. Horizontal scrolling is off —
+## the panels already wrap their rows to the available width. The panel's
+## `name` carries through so `TabContainer` still labels the tab from it
+## (we also set titles explicitly).
+func _scrollable(panel: Control) -> ScrollContainer:
+	var sc := ScrollContainer.new()
+	sc.name = panel.name
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	sc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.size_flags_vertical = Control.SIZE_FILL
+	sc.add_child(panel)
+	return sc
+
 
 func _label(text: String) -> Label:
 	var l := Label.new()
