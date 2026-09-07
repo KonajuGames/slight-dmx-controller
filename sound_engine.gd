@@ -143,6 +143,8 @@ func _slew(cur: float, target: float, up: float, down: float) -> float:
 
 ## Linear magnitude for a Hz range, mapped MIN_DB..0 dB -> 0..1, times gain.
 func _band(hz: Vector2) -> float:
+	if _analyzer == null:
+		return 0.0
 	var mag := _analyzer.get_magnitude_for_frequency_range(
 		hz.x, hz.y, AudioEffectSpectrumAnalyzerInstance.MAGNITUDE_MAX)
 	var lin: float = (mag.x + mag.y) * 0.5
@@ -150,6 +152,24 @@ func _band(hz: Vector2) -> float:
 		return 0.0
 	var db: float = linear_to_db(lin) + 6.0   # +6: line level rarely hits 0 dBFS
 	return clampf((db - MIN_DB) / -MIN_DB, 0.0, 1.0) * gain
+
+
+## `n` log-spaced band energies (0..1) from ~40 Hz to ~16 kHz, for the
+## spectrogram. Empty / zeros when not active.
+func spectrum(n := 40) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	out.resize(n)
+	if not active or _analyzer == null:
+		return out
+	var lo := 40.0
+	var hi := 16000.0
+	var ratio: float = pow(hi / lo, 1.0 / n)
+	var f := lo
+	for i in range(n):
+		var f2 := f * ratio
+		out[i] = _band(Vector2(f, f2))
+		f = f2
+	return out
 
 
 func _detect_beat(inst_bass: float, _delta: float) -> void:

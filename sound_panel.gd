@@ -21,6 +21,7 @@ var gain_slider: HSlider
 var sens_slider: HSlider
 var resp_slider: HSlider
 var _meter: SoundMeter
+var _spectrogram: Spectrogram
 
 var rx_list: ItemList
 var name_edit: LineEdit
@@ -70,6 +71,11 @@ func _ready() -> void:
 	_meter = SoundMeter.new()
 	_meter.custom_minimum_size = Vector2(0, 54)
 	add_child(_meter)
+
+	_spectrogram = Spectrogram.new()
+	_spectrogram.source = func(): return Sound.spectrum(_spectrogram.bands)
+	_spectrogram.beat_source = func(): return Sound.beat_pulse
+	add_child(_spectrogram)
 
 	var grid0 := GridContainer.new()
 	grid0.columns = 2

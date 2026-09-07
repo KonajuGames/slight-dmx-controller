@@ -14,6 +14,8 @@ var _analyse_btn: Button
 var _speed_option: OptionButton
 var _progress: ProgressBar
 var _summary: Label
+var _structure: StructureBar
+var _spectrogram: Spectrogram
 var _section_list: ItemList
 var _build_btn: Button
 var _play_btn: Button
@@ -76,8 +78,12 @@ func _ready() -> void:
 	_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	add_child(_summary)
 
+	_structure = StructureBar.new()
+	_structure.seek_requested.connect(func(t: float): AutoShow.seek(t))
+	add_child(_structure)
+
 	_section_list = ItemList.new()
-	_section_list.custom_minimum_size = Vector2(0, 120)
+	_section_list.custom_minimum_size = Vector2(0, 84)
 	_section_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_section_list.item_activated.connect(_seek_to_section)
 	add_child(_section_list)
@@ -114,6 +120,10 @@ func _ready() -> void:
 	_pos_lbl.text = "0:00 / 0:00"
 	add_child(_pos_lbl)
 
+	_spectrogram = Spectrogram.new()
+	_spectrogram.source = func(): return AutoShow.spectrum(_spectrogram.bands)
+	add_child(_spectrogram)
+
 	_status = Label.new()
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	add_child(_status)
@@ -144,6 +154,11 @@ func _process(_delta: float) -> void:
 	_pos_lbl.text = "%s / %s" % [_mmss(pos), _mmss(len)]
 	if not _seeking and len > 0.0:
 		_seek.set_value_no_signal(pos / len)
+	if _structure.analysis != AutoShow.analysis:
+		_structure.set_analysis(AutoShow.analysis)
+	if not is_equal_approx(_structure.song_pos, pos):
+		_structure.song_pos = pos
+		_structure.queue_redraw()
 
 
 # ---------------------------------------------------------------- ACTIONS --

@@ -28,6 +28,9 @@ so no native plugin or GDExtension is required.
 - `sound_reactor.gd` / `sound_panel.gd` — the `SoundReactor` class and
   the Sound tab: maps a band or the beat onto a channel role, with a
   live band meter.
+- `spectrogram.gd` / `structure_bar.gd` — a scrolling FFT heat-map and
+  the analysed-song structure strip, shared by the Sound and Auto Show
+  tabs.
 - `triggers_engine.gd` — the `Triggers` autoload: listens for MIDI
   (Godot's `InputEventMIDI`) and OSC (a UDP listener), fires console
   actions, and sends feedback (LED updates) when a binding's target is
@@ -154,11 +157,12 @@ The mode is saved in the show file.
 ### Sound tab
 
 Pick an **Input** device (system default, or any capture device — hit
-**Rescan** after plugging one in) and the meter shows the live **bass /
-mid / treble / level** energy with a flash on each detected beat.
-**Gain** trims the incoming signal, **Beat sensitivity** sets how much
-louder than the rolling average a transient must be to count as a beat,
-and **Response** trades meter smoothness for snap.
+**Rescan** after plugging one in). The **bass / mid / treble / level**
+meter flashes on each detected beat, and below it a scrolling
+**spectrogram** shows the input's frequency content over the last few
+seconds. **Gain** trims the incoming signal, **Beat sensitivity** sets
+how much louder than the rolling average a transient must be to count as
+a beat, and **Response** trades meter smoothness for snap.
 
 A **reactor** maps one band (or `Level`) onto a channel role across the
 patched fixtures that carry it — same target rules as an effect
@@ -236,7 +240,9 @@ Build a light show from a song's structure, then refine it.
   Drop / Outro around them. The **speed** control trades wait time for
   precision (1× is the song's length, 4× a quarter of it — chroma
   survives the octave shift, so 4× is usually fine). It's still an
-  estimate — expect to nudge a boundary or rename a section.
+  estimate — expect to nudge a boundary or rename a section. The result
+  is shown as a **structure strip** — one coloured block per section with
+  downbeat ticks and a playhead — click anywhere on it to seek.
 - **Build Light Show** adds one **block cue per section** *after* your
   own cues (a rebuild replaces only the generated ones). Fixtures are
   sorted by kind — moving head / wash / strobe — and each section draws
@@ -250,11 +256,13 @@ Build a light show from a song's structure, then refine it.
   **Blackout** cue fired a couple of beats before every drop, and a
   timeline that fires it all on the downbeat.
 - With the run mode set to **Auto Show**, the transport (**Play / Pause /
-  Stop**, a seek bar, click a section to jump) plays the song and runs
-  the show: each section crossfades to its cue on the bar line, one chase
-  and a set of effects switch in per section, the drop is preceded by its
-  blackout. Seeking folds the whole timeline up to that point, so a jump
-  lands on the right look *and* the right chase / effects.
+  Stop**, a seek bar, click the structure strip or a section to jump)
+  plays the song and runs the show: each section crossfades to its cue
+  on the bar line, one chase and a set of effects switch in per section,
+  the drop is preceded by its blackout. A scrolling spectrogram of the
+  song plays under the transport. Seeking folds the whole timeline up to
+  that point, so a jump lands on the right look *and* the right chase /
+  effects.
 
 Everything it makes is normal cues / chases / effects, so you edit them
 like anything else. The song path, analysis and timeline are saved in
@@ -601,10 +609,11 @@ packets to a physical DMX512 signal for your fixtures.
   analysed — STFT chroma + timbre, DP beat tracking, self-similarity
   segmentation with verse/chorus repetition — into per-kind section cues
   that cycle so they don't repeat, three chases, six movement effects and
-  a pre-drop blackout, all played from a timeline locked to playback).
-  Room to grow: an FFT spectrogram / structure view, layering the auto
-  show over hand cues instead of alongside them, palettes learned from
-  the song's key, MIDI-clock or Ableton-Link sync.
+  a pre-drop blackout, all played from a timeline locked to playback,
+  with a scrolling spectrogram and a click-to-seek structure strip).
+  Room to grow: layering the auto show over hand cues instead of
+  alongside them, palettes learned from the song's key, MIDI-clock or
+  Ableton-Link sync.
 - **3D visualizer**: already implemented — a Forward+ SubViewport with
   volumetric beams + real gobo projectors + bloom, GDTF geometry / glTF
   fixture models, glTF set-piece props, spot shadows, saved camera views,
