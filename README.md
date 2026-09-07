@@ -8,8 +8,9 @@ so no native plugin or GDExtension is required.
 ## What's included
 
 - `project.godot` — project config (Forward+ renderer, for volumetric
-  beams), registers `artnet_sender.gd` and `effects_engine.gd` as the
-  `ArtNet` and `Fx` autoload singletons.
+  beams; audio input enabled), registers `artnet_sender.gd`,
+  `sound_engine.gd` and `effects_engine.gd` as the `ArtNet`, `Sound` and
+  `Fx` autoload singletons.
 - `artnet_universe.gd` — the `ArtNetUniverse` class: one universe's
   512-channel buffer plus its own UDP socket and target. `compute_output()`
   folds the effect/chase overrides and grand master into `output` (which
@@ -19,15 +20,20 @@ so no native plugin or GDExtension is required.
   per universe slot (up to 8), the grand master, the cue crossfade
   engine, and `tick()` (recompute every universe's output; transmit if
   asked).
-- `effects_engine.gd` — the `Fx` autoload: runs the chases and waveform
-  effects and composites their combined output into a per-universe
-  override layer.
+- `effects_engine.gd` — the `Fx` autoload: runs the chases, waveform
+  effects and (in Sound Reactive mode) sound reactors, and composites
+  their combined output into a per-universe override layer.
+- `sound_engine.gd` — the `Sound` autoload: captures an audio input,
+  exposes smoothed bass / mid / treble / level energy and a beat signal.
+- `sound_reactor.gd` / `sound_panel.gd` — the `SoundReactor` class and
+  the Sound tab: maps a band or the beat onto a channel role, with a
+  live band meter.
 - `main.tscn` — a single root `Control` node with the GUI script attached.
-- `dmx_controller.gd` — the shell: a top bar (grand master, Sending,
-  add/remove universe, whole-show + preset save/load) above a split
-  view — playback tabs (Cues / Chases / Effects / Groups) on the left, one
-  universe tab each on the right — plus the shared fixture-profile list
-  and the profile new/edit/delete flow.
+- `dmx_controller.gd` — the shell: a top bar (grand master, run mode,
+  Sending, add/remove universe, whole-show + preset save/load) above a
+  split view — playback tabs (Cues / Chases / Effects / Sound / Groups)
+  on the left, one universe tab each on the right — plus the shared
+  fixture-profile list and the profile new/edit/delete flow.
 - `universe_panel.gd` — the `UniversePanel` class: one universe's tab —
   its connection settings, quick RGB row, blackout/full, and fixture
   patch with purpose-built per-fixture controls.
@@ -37,7 +43,9 @@ so no native plugin or GDExtension is required.
 - `cue_list_panel.gd` — the `CueListPanel` class: an ordered cue list
   with GO / Back / Halt, record / update / delete.
 - `chase.gd` / `chase_list_panel.gd` — the `Chase` class and its tab: a
-  tempo-cycled list of captured steps with crossfade and direction.
+  tempo-cycled list of captured steps with crossfade and direction, and
+  an optional beat-sync (steps on each detected beat in Sound Reactive
+  mode).
 - `wave_effect.gd` / `effects_panel.gd` — the `WaveEffect` class and its
   tab: a waveform on one channel role, fanned across the fixtures, in
   Absolute or Pickup (base-value) mode.
@@ -92,14 +100,54 @@ Global controls live in the top bar:
   `{channel: value}` preset still loads, into universe 1. A preset wider
   than the current show adds the missing universes.
 
-## Playback: cues, chases, effects, groups
+## Playback: cues, chases, effects, sound, groups
 
 The left-hand side is a set of playback tabs. They composite on top of
 the base output that the fixture controls write: **cues** *replace* the
 base as they crossfade in; **chases** and **effects** run as a live
 **override layer** on top (highest-takes-precedence between them), so a
 chase or effect can run over a standing cue and stops cleanly without
-disturbing it. **Groups** are just fixture selections that effects use.
+disturbing it. **Groups** are just fixture selections that effects and
+reactors use.
+
+### Run modes
+
+The **Run Mode** dropdown in the top bar switches how the console is
+driven:
+
+- **Cue Mode** (default) — the cue list owns playback; the spacebar
+  fires GO. Chases and effects layer on top as above.
+- **Sound Reactive** — an audio input is monitored and its energy drives
+  the **Sound** tab's reactors (and any beat-synced chases) as an
+  override layer, on top of whatever base look is standing. Cues still
+  hold their last look as that base; the spacebar is disabled.
+
+The mode is saved in the show file.
+
+### Sound tab
+
+Pick an **Input** device (system default, or any capture device — hit
+**Rescan** after plugging one in) and the meter shows the live **bass /
+mid / treble / level** energy with a flash on each detected beat.
+**Gain** trims the incoming signal, **Beat sensitivity** sets how much
+louder than the rolling average a transient must be to count as a beat,
+and **Response** trades meter smoothness for snap.
+
+A **reactor** maps one band (or `Level`) onto a channel role across the
+patched fixtures that carry it — same target rules as an effect
+(universe filter or a fixture group). Its output swings between **Low**
+and **High** DMX values as the band moves from silent to full, shaped by
+**Attack / Release** (rise / fall speed) and spread along the fixture
+list by **Fan**. Two modes:
+
+- **Follow** — output tracks the band continuously (bass → dimmer swell,
+  treble → a colour channel shimmer).
+- **Pulse** — every beat snaps the output to **High**, then it releases
+  (a beat-driven strobe or colour hit).
+
+Arm reactors with **Run**; they only drive output while the run mode is
+Sound Reactive. In the **Chases** tab, **Beat sync** makes a chase step
+once per beat instead of on its BPM (again, only in Sound Reactive mode).
 
 ### Cue list
 
@@ -415,10 +463,15 @@ packets to a physical DMX512 signal for your fixtures.
   library, an online GDTF-Share / OFL browser.
 - **Playback**: cues do split-time crossfades and **track** (a cue stores
   only what it changes; blocks stop the ripple); chases cycle captured
-  steps at a tempo; effects run waveforms (absolute or base-value
-  pickup) on a role across a universe or a fixture group. Room to grow:
-  cue-to-cue auto-follow / wait times, a fade progress bar, MIDI or OSC
-  GO triggers, per-channel track flags in the cue editor.
+  steps at a tempo or on the beat; effects run waveforms (absolute or
+  base-value pickup) on a role across a universe or a fixture group. Room
+  to grow: cue-to-cue auto-follow / wait times, a fade progress bar, MIDI
+  or OSC GO triggers, per-channel track flags in the cue editor.
+- **Run modes**: **Cue Mode** (cue list drives playback) and **Sound
+  Reactive** (an audio input drives band → role reactors and beat-synced
+  chases over the standing base look). Room to grow: an FFT spectrogram
+  view, per-reactor curve shaping, auto-BPM lock, an audio-file input
+  for programming without a live source.
 - **3D visualizer**: already implemented — a Forward+ SubViewport with
   volumetric beams + real gobo projectors + bloom, GDTF geometry / glTF
   fixture models, glTF set-piece props, spot shadows, saved camera views,

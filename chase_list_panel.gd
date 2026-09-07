@@ -13,6 +13,7 @@ var run_check: CheckButton
 var bpm_spin: SpinBox
 var xfade_spin: SpinBox
 var dir_option: OptionButton
+var beat_check: CheckBox
 var status_label: Label
 var _syncing := false
 
@@ -76,6 +77,12 @@ func _ready() -> void:
 		dir_option.add_item(n)
 	dir_option.item_selected.connect(func(i: int): _set_field("direction", i))
 	grid.add_child(dir_option)
+
+	grid.add_child(_lbl("Beat sync"))
+	beat_check = CheckBox.new()
+	beat_check.text = "step on each beat (Sound Reactive mode)"
+	beat_check.toggled.connect(func(on: bool): _set_field("beat_sync", on))
+	grid.add_child(beat_check)
 	add_child(grid)
 
 	var step_btns := _flow()
@@ -232,6 +239,7 @@ func _on_chase_selected(idx: int) -> void:
 	bpm_spin.value = c.bpm
 	xfade_spin.value = round(c.crossfade * 100.0)
 	dir_option.selected = c.direction
+	beat_check.button_pressed = c.beat_sync
 	_syncing = false
 	_refresh_steps()
 
@@ -239,8 +247,9 @@ func _on_chase_selected(idx: int) -> void:
 # ---------------------------------------------------------------- REFRESH --
 
 func _chase_row_text(c: Chase) -> String:
-	return "%s%s  %d steps  %.0f BPM" % [
-		"> " if c.running else "  ", c.name, c.step_count(), c.bpm]
+	var tempo := "beat" if c.beat_sync else "%.0f BPM" % c.bpm
+	return "%s%s  %d steps  %s" % [
+		"> " if c.running else "  ", c.name, c.step_count(), tempo]
 
 
 func _refresh_list_row(i: int) -> void:

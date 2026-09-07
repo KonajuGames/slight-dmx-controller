@@ -15,6 +15,9 @@ var bpm: float = 120.0
 ## step. 0 = hard snap.
 var crossfade: float = 0.0
 var direction: int = DIR_FORWARD
+## When true, the chase advances one step per detected beat instead of by
+## `bpm` — but only while the console is in Sound Reactive run mode.
+var beat_sync: bool = false
 var running: bool = false
 ## steps[i] is an Array (per universe) of { "<channel>": value }.
 var steps: Array = []
@@ -63,6 +66,16 @@ func advance(delta: float) -> void:
 		_elapsed -= st
 		_from = _pos
 		_advance_pos()
+
+
+## Jump to the next step now (used by beat-sync). `_elapsed` is reset so a
+## crossfade, if any, starts from this beat.
+func beat_step() -> void:
+	if steps.size() < 2:
+		return
+	_from = _pos
+	_elapsed = 0.0
+	_advance_pos()
 
 
 func _advance_pos() -> void:
@@ -122,6 +135,7 @@ func to_dict() -> Dictionary:
 		"bpm": bpm,
 		"crossfade": crossfade,
 		"direction": direction,
+		"beat_sync": beat_sync,
 		"steps": steps.duplicate(true),
 	}
 
@@ -132,6 +146,7 @@ static func from_dict(d: Dictionary) -> Chase:
 	c.bpm = float(d.get("bpm", 120.0))
 	c.crossfade = clampf(float(d.get("crossfade", 0.0)), 0.0, 1.0)
 	c.direction = clampi(int(d.get("direction", 0)), 0, 2)
+	c.beat_sync = bool(d.get("beat_sync", false))
 	c.steps = []
 	for s in d.get("steps", []):
 		var look: Array = []

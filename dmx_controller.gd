@@ -28,10 +28,16 @@ var universe_tabs: TabContainer
 var cue_panel: CueListPanel
 var chase_panel: ChaseListPanel
 var fx_panel: EffectsPanel
+var sound_panel: SoundPanel
 var groups_panel: GroupsPanel
 var viz_panel: VisualizerPanel
 var master_slider: HSlider
 var sending_toggle: CheckButton
+var run_mode_option: OptionButton
+
+## Console run mode: 0 = Cue Mode (default), 1 = Sound Reactive.
+const RUN_MODES := ["Cue Mode", "Sound Reactive"]
+var run_mode := 0
 var add_uni_btn: Button
 var remove_uni_btn: Button
 var status_label: Label
@@ -82,18 +88,28 @@ func _ready() -> void:
 	fx_panel.resolve_targets_cb = _resolve_fx_targets
 	fx_panel.group_names_provider = _group_names
 	playback_tabs.add_child(fx_panel)
+
+	sound_panel = SoundPanel.new()
+	sound_panel.resolve_targets_cb = _resolve_fx_targets
+	sound_panel.group_names_provider = _group_names
+	playback_tabs.add_child(sound_panel)
+
 	playback_tabs.add_child(groups_panel)
 	playback_tabs.set_tab_title(0, "Cues")
 	playback_tabs.set_tab_title(1, "Chases")
 	playback_tabs.set_tab_title(2, "Effects")
-	playback_tabs.set_tab_title(3, "Groups")
+	playback_tabs.set_tab_title(3, "Sound")
+	playback_tabs.set_tab_title(4, "Groups")
 
 	groups_panel.groups_changed.connect(fx_panel.refresh_group_options)
+	groups_panel.groups_changed.connect(sound_panel.refresh_group_options)
 	playback_tabs.tab_changed.connect(func(i: int):
-		if i == 3:
+		if i == 4:
 			groups_panel.sync_to_patch()
 		elif i == 2:
-			fx_panel.refresh_group_options())
+			fx_panel.refresh_group_options()
+		elif i == 3:
+			sound_panel.refresh_group_options())
 
 	# Right side: "Patch" (the universe tabs) and the "3D Visualizer".
 	var right_tabs := TabContainer.new()
@@ -117,6 +133,7 @@ func _ready() -> void:
 	_add_universe_tab(ArtNet.get_universe(0))
 	_update_universe_buttons()
 	fx_panel.refresh_universe_options()
+	sound_panel.refresh_universe_options()
 	viz_panel.rebuild()
 
 	_refresh_timer = Timer.new()
@@ -152,6 +169,14 @@ func _build_top_bar() -> Control:
 	master_slider.custom_minimum_size = Vector2(200, 0)
 	master_slider.value_changed.connect(func(v: float): ArtNet.master = v / 255.0)
 	row.add_child(master_slider)
+
+	row.add_child(_label("Run Mode:"))
+	run_mode_option = OptionButton.new()
+	for m in RUN_MODES:
+		run_mode_option.add_item(m)
+	run_mode_option.selected = run_mode
+	run_mode_option.item_selected.connect(_on_run_mode_changed)
+	row.add_child(run_mode_option)
 
 	sending_toggle = CheckButton.new()
 	sending_toggle.text = "Sending"
@@ -225,6 +250,7 @@ func _on_add_universe() -> void:
 	universe_tabs.current_tab = _panels.size() - 1
 	_update_universe_buttons()
 	fx_panel.refresh_universe_options()
+	sound_panel.refresh_universe_options()
 	status_label.text = "Added universe %d." % _panels.size()
 
 
@@ -255,6 +281,7 @@ func _on_remove_universe() -> void:
 	_refresh_tab_titles()
 	_update_universe_buttons()
 	fx_panel.refresh_universe_options()
+	sound_panel.refresh_universe_options()
 	status_label.text = "Removed a universe (%d left)." % _panels.size()
 
 
@@ -269,6 +296,7 @@ func _sync_tabs_to_universes() -> void:
 	_refresh_tab_titles()
 	_update_universe_buttons()
 	fx_panel.refresh_universe_options()
+	sound_panel.refresh_universe_options()
 	if viz_panel:
 		viz_panel.rebuild()
 
@@ -389,9 +417,28 @@ func _on_blackout_all() -> void:
 	Fx.stop_all()
 	chase_panel.sync_ui()
 	fx_panel.sync_ui()
+	sound_panel.sync_ui()
 	for i in range(ArtNet.universe_count()):
 		ArtNet.get_universe(i).set_all(0)
-	status_label.text = "Blackout — all universes, chases and effects stopped."
+	status_label.text = "Blackout — all universes, chases, effects and reactors stopped."
+
+
+## Cue Mode: cues own playback. Sound Reactive: the audio input drives
+## reactors + beat-synced chases on top of the standing base look.
+func _on_run_mode_changed(idx: int) -> void:
+	_set_run_mode(idx)
+	if run_mode == 1:
+		status_label.text = "Sound Reactive — monitoring the audio input. Arm reactors in the Sound tab."
+	else:
+		status_label.text = "Cue Mode — cue list drives playback."
+
+
+func _set_run_mode(idx: int) -> void:
+	run_mode = clampi(idx, 0, RUN_MODES.size() - 1)
+	if run_mode_option.selected != run_mode:
+		run_mode_option.selected = run_mode
+	Fx.sound_reactive = run_mode == 1
+	Sound.active = run_mode == 1
 
 
 func _on_refresh_timeout() -> void:
@@ -404,7 +451,7 @@ func _on_refresh_timeout() -> void:
 ## field or button ate the keypress first.
 func _unhandled_key_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_SPACE:
+		if event.keycode == KEY_SPACE and run_mode == 0:
 			cue_panel.go()
 			get_viewport().set_input_as_handled()
 
@@ -711,9 +758,11 @@ func _refresh_all_profile_options(select_new: bool) -> void:
 func _on_save_show() -> void:
 	var data := {
 		"universes": [],
+		"run_mode": run_mode,
 		"cues": cue_panel.to_dict(),
 		"chases": chase_panel.to_dict(),
 		"effects": fx_panel.to_dict(),
+		"sound": sound_panel.to_dict(),
 		"groups": _groups_to_dict(),
 		"viz": viz_panel.to_dict(),
 	}
@@ -764,6 +813,9 @@ func _on_load_show() -> void:
 	groups_panel.sync_to_patch()
 	fx_panel.from_dict(doc.get("effects", {}))
 	fx_panel.refresh_group_options()
+	sound_panel.from_dict(doc.get("sound", {}))
+	sound_panel.refresh_group_options()
+	_set_run_mode(int(doc.get("run_mode", 0)))
 	viz_panel.rebuild()
 	viz_panel.from_dict(doc.get("viz", {}))
 	status_label.text = "Show loaded (%d universes, %d cues, %d chases, %d effects, %d groups)." % [
