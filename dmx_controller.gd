@@ -522,18 +522,18 @@ func _effect_names() -> Array:
 	return out
 
 
-## The Auto Show generator produced cues, a beat chase, movement effects
-## and a timeline — install them non-destructively (hand-programmed cues,
-## chases and effects are left alone).
+## The Auto Show generator produced cues, chases, movement effects and a
+## timeline — install them non-destructively (hand-programmed cues, chases
+## and effects are left alone; only same-named auto ones are replaced).
 func _apply_auto_show(res: Dictionary) -> void:
 	var new_cues: Array = res["cues"]
 	var first := cue_panel.replace_auto_cues(new_cues)
 
-	var chase: Chase = res["chase"]
-	for i in range(Fx.chases.size() - 1, -1, -1):
-		if Fx.chases[i].name == chase.name:
-			Fx.chases.remove_at(i)
-	Fx.chases.append(chase)
+	for chase in res["chases"]:
+		for i in range(Fx.chases.size() - 1, -1, -1):
+			if Fx.chases[i].name == chase.name:
+				Fx.chases.remove_at(i)
+		Fx.chases.append(chase)
 	chase_panel.sync_ui()
 
 	for eff in res["effects"]:
@@ -545,7 +545,8 @@ func _apply_auto_show(res: Dictionary) -> void:
 	fx_panel.sync_ui()
 
 	AutoShow.set_show(res["timeline"], first)
-	status_label.text = "Auto Show built: %d section cues + a beat chase + movement." % new_cues.size()
+	status_label.text = "Auto Show built: %d section cues, %d chases, %d effects." % [
+		res["cues"].size(), res["chases"].size(), res["effects"].size()]
 
 
 ## A MIDI / OSC binding matched — run its console action.

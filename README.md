@@ -43,8 +43,9 @@ so no native plugin or GDExtension is required.
   detection) into a tempo, beat grid, downbeats and labelled sections;
   the detection maths, result data class, and a small radix-2 FFT.
 - `show_generator.gd` / `auto_show_panel.gd` — turns an analysis + the
-  patch into section cues, a beat chase and pan/tilt movement effects,
-  and the Auto Show tab.
+  patch into per-kind section cues (recipes that cycle so sections don't
+  repeat), three chases, six pan/tilt effects and a timeline, and the
+  Auto Show tab.
 - `main.tscn` — a single root `Control` node with the GUI script attached.
 - `dmx_controller.gd` — the shell: a top bar (grand master, run mode,
   Sending, add/remove universe, whole-show + preset save/load, MIDI/OSC
@@ -141,8 +142,8 @@ driven:
   override layer, on top of whatever base look is standing. Cues still
   hold their last look as that base; the spacebar is disabled.
 - **Auto Show** — a loaded music file plays and fires the generated
-  section cues, beat chase and movement effects from a timeline locked to
-  the playback position. Set up in the **Auto Show** tab.
+  section cues, chases and movement effects from a timeline locked to the
+  playback position. Set up in the **Auto Show** tab.
 
 The mode is saved in the show file.
 
@@ -212,17 +213,23 @@ Build a light show from a song's structure, then refine it.
   survives the octave shift, so 4× is usually fine). It's still an
   estimate — expect to nudge a boundary or rename a section.
 - **Build Light Show** adds one **block cue per section** *after* your
-  own cues (a rebuild replaces only the generated ones) — a
-  section-appropriate look (palette + intensity, strobe on drops) on
-  every patched fixture, moving heads fanned on the big sections — plus a
-  beat-synced **Auto Beat** colour chase and **Auto Move Slow / Fast**
-  pan/tilt effects, and a timeline that fires all of it on the downbeat.
+  own cues (a rebuild replaces only the generated ones). Fixtures are
+  sorted by kind — moving head / wash / strobe — and each section draws
+  a **recipe** giving each kind its own look (colour spread, moving-head
+  position, strobe) plus which chase and movement effect to run. Every
+  label has a small pool of recipes that **cycle by occurrence**, so
+  three choruses get three different treatments and consecutive verses
+  don't repeat. It also generates three chases (**Auto Colour Beat**,
+  **Auto Dimmer Pulse**, **Auto Position Sweep**), six pan/tilt effects
+  (slow / fast circles, a tilt wave, a dimmer breath), a shared
+  **Blackout** cue fired a couple of beats before every drop, and a
+  timeline that fires it all on the downbeat.
 - With the run mode set to **Auto Show**, the transport (**Play / Pause /
   Stop**, a seek bar, click a section to jump) plays the song and runs
-  the show: each section crossfades to its cue on the bar line, the beat
-  chase steps on the beat and the movement effects come in for choruses,
-  drops and bridges. Seeking snaps straight to the look, chase and
-  effects for wherever you land.
+  the show: each section crossfades to its cue on the bar line, one chase
+  and a set of effects switch in per section, the drop is preceded by its
+  blackout. Seeking folds the whole timeline up to that point, so a jump
+  lands on the right look *and* the right chase / effects.
 
 Everything it makes is normal cues / chases / effects, so you edit them
 like anything else. The song path, analysis and timeline are saved in
@@ -293,7 +300,9 @@ of patched fixtures that carry it.
 - **Rate (BPM)**, **Size** (peak-to-peak swing), **Fan (deg)** spreads
   the phase across the fixture list (a chase-across-the-rig), **Phase
   (deg)** offsets the whole effect — run a Pan and a Tilt sine 90° apart
-  for a circle.
+  for a circle. A **Pan / Tilt / Zoom** effect's rate is capped at 60 BPM
+  — the motors can't chase a faster waveform — so switching an effect to
+  one of those roles pulls its rate down if needed.
 - **Run** starts it.
 
 ### Groups
@@ -554,11 +563,12 @@ packets to a physical DMX512 signal for your fixtures.
   Reactive** (an audio input drives band → role reactors and beat-synced
   chases over the standing base look), and **Auto Show** (a music file is
   analysed — STFT chroma + timbre, DP beat tracking, self-similarity
-  segmentation with verse/chorus repetition — into section cues + a beat
-  chase + movement effects that play from a timeline locked to playback).
+  segmentation with verse/chorus repetition — into per-kind section cues
+  that cycle so they don't repeat, three chases, six movement effects and
+  a pre-drop blackout, all played from a timeline locked to playback).
   Room to grow: an FFT spectrogram / structure view, layering the auto
-  show over hand cues instead of alongside them, learned palettes,
-  MIDI-clock or Ableton-Link sync.
+  show over hand cues instead of alongside them, palettes learned from
+  the song's key, MIDI-clock or Ableton-Link sync.
 - **3D visualizer**: already implemented — a Forward+ SubViewport with
   volumetric beams + real gobo projectors + bloom, GDTF geometry / glTF
   fixture models, glTF set-piece props, spot shadows, saved camera views,

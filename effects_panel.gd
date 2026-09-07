@@ -342,6 +342,12 @@ func _set_field(field: String, v) -> void:
 		_rebuild_targets()
 	if field == "group":
 		_update_group_state()
+	if field == "role" or field == "bpm":
+		# pan/tilt/zoom effects are rate-capped — reflect any clamp
+		_syncing = true
+		bpm_spin.max_value = e.max_bpm()
+		bpm_spin.value = e.bpm
+		_syncing = false
 	_refresh_list_row(_sel())
 	effects_changed.emit()
 
@@ -358,6 +364,7 @@ func _on_effect_selected(idx: int) -> void:
 	_select_group(e.group)
 	base_option.selected = e.base_mode
 	wave_option.selected = e.waveform
+	bpm_spin.max_value = e.max_bpm()
 	bpm_spin.value = e.bpm
 	size_spin.value = e.size
 	center_spin.value = e.center

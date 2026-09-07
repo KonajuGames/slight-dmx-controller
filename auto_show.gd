@@ -118,12 +118,7 @@ func seek(t: float) -> void:
 	if _player.playing:
 		_player.seek(t)
 	_rewind(t)
-	# jump straight to the look for wherever we landed
-	if analysis != null:
-		var si := analysis.section_at(t)
-		if si >= 0:
-			cue_fired.emit(cue_base + si)
-			_apply_section_layers(si)
+	_resync(t)      # fire the cue + chase / effect state for where we landed
 	state_changed.emit()
 
 
@@ -145,15 +140,26 @@ func _rewind(t: float) -> void:
 			_next_beat += 1
 
 
-## Re-assert the chase / effect layer state for the section at `si` (used
-## after a seek, so a jump lands on the right layers, not just the cue).
-func _apply_section_layers(si: int) -> void:
-	if analysis == null or si < 0 or si >= analysis.sections.size():
-		return
-	var label: String = analysis.sections[si]["label"]
-	chase_set.emit(ShowGenerator.CHASE_NAME, label in ShowGenerator.BIG)
-	effect_set.emit(ShowGenerator.MOVE_FAST, label in ["Chorus", "Drop"])
-	effect_set.emit(ShowGenerator.MOVE_SLOW, label in ["Bridge", "Build", "Verse"])
+## Fold every timeline event up to `t` and emit the resulting state: the
+## last cue, and the final on/off for each chase and effect. Used after a
+## seek so a jump lands on the right look *and* layers, not just the cue.
+func _resync(t: float) -> void:
+	var last_cue := -1
+	var chase_state := {}
+	var effect_state := {}
+	for ev in timeline:
+		if float(ev["t"]) > t:
+			break
+		match String(ev["kind"]):
+			"cue": last_cue = int(ev["arg"])
+			"chase": chase_state[String(ev["arg"]["name"])] = bool(ev["arg"]["on"])
+			"effect": effect_state[String(ev["arg"]["name"])] = bool(ev["arg"]["on"])
+	if last_cue >= 0:
+		cue_fired.emit(cue_base + last_cue)
+	for n in chase_state:
+		chase_set.emit(n, chase_state[n])
+	for n in effect_state:
+		effect_set.emit(n, effect_state[n])
 
 
 # ------------------------------------------------------------- PLAYBACK --

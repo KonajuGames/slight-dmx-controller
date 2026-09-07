@@ -19,13 +19,18 @@ const BASE_ABSOLUTE := 0  # swing around `center`
 const BASE_PICKUP := 1    # swing around the channel's live base value
 const BASE_MODES := ["Absolute", "Pickup"]
 
+## Roles driven by a physical motor — pan, tilt, zoom heads can't chase a
+## fast waveform, so their rate is capped.
+const MOTOR_ROLES := ["PAN", "PAN_FINE", "TILT", "TILT_FINE", "ZOOM"]
+const MOTOR_MAX_BPM := 60.0
+
 var name: String = "Effect"
-var role: String = "DIMMER"
+var role: String = "DIMMER": set = _set_role
 var universe: int = -1        # -1 = every universe (ignored when `group` is set)
 var group: String = ""       # fixture-group name, "" = universe filter
 var waveform: int = SINE
 var base_mode: int = BASE_ABSOLUTE
-var bpm: float = 60.0
+var bpm: float = 60.0: set = _set_bpm
 var size: float = 128.0       # peak-to-peak swing
 var center: float = 128.0     # midpoint level (Absolute mode)
 var fan_deg: float = 0.0      # phase spread across the target list
@@ -37,6 +42,20 @@ var _targets: Array = []      # [{ "u": int, "ch": int }]
 var _rng := RandomNumberGenerator.new()
 var _rand_vals: Array = []
 var _rand_step := -1
+
+
+## The rate a pan/tilt/zoom effect can actually be run at.
+func max_bpm() -> float:
+	return MOTOR_MAX_BPM if role in MOTOR_ROLES else 1200.0
+
+
+func _set_role(v: String) -> void:
+	role = v
+	_set_bpm(bpm)   # re-clamp for the new role
+
+
+func _set_bpm(v: float) -> void:
+	bpm = clampf(v, 0.0, max_bpm())
 
 
 func set_targets(t: Array) -> void:
