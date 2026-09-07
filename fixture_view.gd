@@ -23,11 +23,17 @@ var _beam_len := 13.0
 
 var _yoke: Node3D            # pan axis
 var _head: Node3D            # tilt axis
-var _head_base := 0.0        # tilt-axis home rotation (rad, X)
+var _yoke_rest := Basis.IDENTITY   # pan-axis basis before DMX pan
+var _head_rest := Basis.IDENTITY   # tilt-axis basis before DMX tilt
 var _ring: MeshInstance3D
 var _geo_nodes := {}
-var _geo_beam_node: Node3D
+var _geo_beam_nodes: Array = []    # every <Beam> geometry node, in tree order
 var _geo_beam_deg := 0.0
+
+## GDTF beams emit along -Z of their geometry; after the Z-up -> Y-up
+## change of basis that becomes -Y. A Godot SpotLight emits -Z, so under a
+## GDTF beam node it needs this fixed -90 deg pitch about X.
+const _GEO_EMIT_ROT := Vector3(-PI / 2.0, 0.0, 0.0)
 
 ## Per head: { node, light, beam (or null), emissive (or null) }
 var _heads: Array = []
@@ -75,13 +81,15 @@ func _resolve_category() -> String:
 	return "generic"
 
 
-func _head_offsets() -> Array:
+## [{ pos: Vector3, rot: Vector3 (radians) }] — one per head, from the
+## profile. A single implicit head when the fixture has no RGB triplets.
+func _head_placements() -> Array:
 	var groups := profile.head_groups(mode)
 	if groups.is_empty():
-		return [Vector3.ZERO]
+		return [{"pos": Vector3.ZERO, "rot": Vector3.ZERO}]
 	var out: Array = []
 	for g in groups:
-		out.append(g["offset"])
+		out.append({"pos": g["offset"], "rot": g.get("rotation", Vector3.ZERO)})
 	return out
 
 
@@ -98,7 +106,7 @@ func _build_from_geometry() -> bool:
 	var mdir := "user://fixture_models/%s" % String(geo.get("models_dir", ""))
 	_spawn_geo(geo["tree"], self, mdir, mm)
 
-	if _geo_beam_node == null:
+	if _geo_beam_nodes.is_empty():
 		for c in get_children():
 			c.queue_free()
 		_geo_nodes.clear()
@@ -106,22 +114,25 @@ func _build_from_geometry() -> bool:
 
 	_yoke = _geo_nodes.get(String(geo.get("pan_geo", "")))
 	_head = _geo_nodes.get(String(geo.get("tilt_geo", "")))
+	if _yoke:
+		_yoke_rest = _yoke.transform.basis
 	if _head:
-		_head_base = deg_to_rad(-90.0)  # tilt home: beam straight down
-		_head.rotation.x = _head_base
+		_head_rest = _head.transform.basis
 	if _geo_beam_deg > 0.0:
 		profile.physical["beam_deg"] = _geo_beam_deg
 
-	_build_heads(_geo_beam_node, Vector3.ZERO, true, false)
+	# one light + cone per <Beam> geometry, oriented by that geometry's
+	# (already converted) world transform
+	for bn in _geo_beam_nodes:
+		_build_geo_head(bn)
 	return true
 
 
 func _spawn_geo(node: Dictionary, parent: Node3D, mdir: String, mmap: Dictionary) -> void:
 	var n := Node3D.new()
 	n.name = String(node.get("name", "geo")) if node.get("name", "") != "" else "geo"
-	var m: Array = node.get("mat", [])
-	if m.size() == 16:
-		n.position = Vector3(float(m[12]), float(m[14]), -float(m[13]))  # Z-up -> Y-up
+	# Full GDTF Position matrix (rotation + translation), converted Z-up -> Y-up.
+	n.transform = FixtureImport._gdtf_transform(node.get("mat", []))
 	parent.add_child(n)
 	if node.get("name", "") != "":
 		_geo_nodes[String(node["name"])] = n
@@ -133,8 +144,8 @@ func _spawn_geo(node: Dictionary, parent: Node3D, mdir: String, mmap: Dictionary
 			n.add_child(scene)
 
 	if String(node.get("kind", "")) == "beam":
-		_geo_beam_node = n
-		_geo_beam_deg = float(node.get("beam_deg", 0.0))
+		_geo_beam_nodes.append(n)
+		_geo_beam_deg = maxf(_geo_beam_deg, float(node.get("beam_deg", 0.0)))
 
 	for c in node.get("children", []):
 		_spawn_geo(c, n, mdir, mmap)
@@ -207,8 +218,8 @@ func _build_schematic() -> void:
 			_build_heads(self, Vector3(0, 0, -0.07), false, true, 65.0)
 		"strip", "bar", "pixel_bar":
 			var span := 0.0
-			for o in _head_offsets():
-				span = maxf(span, absf(o.x) * 2.0)
+			for pl in _head_placements():
+				span = maxf(span, absf(pl["pos"].x) * 2.0)
 			var w := maxf(1.0, span + 0.2)
 			add_child(_box(Vector3(w, 0.09, 0.09), metal))
 			_build_heads(self, Vector3(0, 0, -0.06), false, true, 55.0)
@@ -221,28 +232,35 @@ func _build_schematic() -> void:
 				32.0 if _category == "wash" else 0.0)
 
 
+func _mk_spot(angle_override := 0.0) -> SpotLight3D:
+	var lt := SpotLight3D.new()
+	lt.spot_range = 28.0
+	lt.spot_angle = angle_override * 0.5 if angle_override > 0.0 \
+		else clampf(float(profile.physical.get("beam_deg", 14.0)) * 0.5, 2.0, 60.0)
+	lt.spot_angle_attenuation = 0.6
+	lt.spot_attenuation = 1.2
+	lt.light_energy = 0.0
+	lt.shadow_enabled = shadows
+	lt.light_volumetric_fog_energy = 3.0
+	lt.distance_fade_enabled = true
+	lt.distance_fade_begin = 24.0
+	lt.distance_fade_length = 10.0
+	return lt
+
+
 ## Build one light (+ optional beam cone / emissive glow) per head, each
-## parented at its offset under `carrier`.
+## parented at its offset (and per-head rotation) under `carrier`. Lights
+## emit along the head node's -Z, matching the schematic body.
 func _build_heads(carrier: Node3D, base_at: Vector3, want_cone: bool, want_emissive: bool, angle_override := 0.0) -> void:
-	var offsets := _head_offsets()
-	for i in range(offsets.size()):
+	var places := _head_placements()
+	for i in range(places.size()):
 		var node := Node3D.new()
-		node.position = base_at + offsets[i]
+		node.position = base_at + places[i]["pos"]
+		node.rotation = places[i]["rot"]
 		carrier.add_child(node)
 		var hd := {"node": node, "light": null, "beam": null, "emissive": null}
 
-		var lt := SpotLight3D.new()
-		lt.spot_range = 28.0
-		lt.spot_angle = angle_override * 0.5 if angle_override > 0.0 \
-			else clampf(float(profile.physical.get("beam_deg", 14.0)) * 0.5, 2.0, 60.0)
-		lt.spot_angle_attenuation = 0.6
-		lt.spot_attenuation = 1.2
-		lt.light_energy = 0.0
-		lt.shadow_enabled = shadows
-		lt.light_volumetric_fog_energy = 3.0
-		lt.distance_fade_enabled = true
-		lt.distance_fade_begin = 24.0
-		lt.distance_fade_length = 10.0
+		var lt := _mk_spot(angle_override)
 		node.add_child(lt)
 		hd["light"] = lt
 
@@ -250,11 +268,25 @@ func _build_heads(carrier: Node3D, base_at: Vector3, want_cone: bool, want_emiss
 			hd["beam"] = _mk_beam()
 			node.add_child(hd["beam"])
 		if want_emissive:
-			var sz := Vector3(0.22, 0.14, 0.02) if offsets.size() > 1 else Vector3(0.5, 0.32, 0.02)
+			var sz := Vector3(0.22, 0.14, 0.02) if places.size() > 1 else Vector3(0.5, 0.32, 0.02)
 			hd["emissive"] = _mk_emissive(sz)
 			node.add_child(hd["emissive"])
 
 		_heads.append(hd)
+
+
+## A geometry-path head: a light + cone under one GDTF <Beam> node, pitched
+## so it emits along the beam geometry's -Z (GDTF convention).
+func _build_geo_head(beam_node: Node3D) -> void:
+	var emitter := Node3D.new()
+	emitter.rotation = _GEO_EMIT_ROT
+	beam_node.add_child(emitter)
+
+	var lt := _mk_spot(_geo_beam_deg)
+	emitter.add_child(lt)
+	var beam := _mk_beam()
+	emitter.add_child(beam)
+	_heads.append({"node": emitter, "light": lt, "beam": beam, "emissive": null})
 
 
 func _mk_beam() -> MeshInstance3D:
@@ -350,10 +382,10 @@ func _process(delta: float) -> void:
 	var k := clampf(delta * 8.0, 0.0, 1.0)
 	if _yoke:
 		_cur_pan = lerpf(_cur_pan, deg_to_rad(float(st["pan"])), k)
-		_yoke.rotation.y = _cur_pan
+		_yoke.transform.basis = _yoke_rest * Basis(Vector3.UP, _cur_pan)
 	if _head:
 		_cur_tilt = lerpf(_cur_tilt, deg_to_rad(float(st["tilt"])), k)
-		_head.rotation.x = _head_base + _cur_tilt
+		_head.transform.basis = _head_rest * Basis(Vector3.RIGHT, _cur_tilt)
 
 	var mult := 1.0
 	if st["strobe_hz"] > 0.01:

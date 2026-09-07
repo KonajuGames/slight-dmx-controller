@@ -32,8 +32,10 @@ const PHYSICAL_DEFAULT := {
 	"beam_deg": 14.0,
 	"pan_range": 540.0,
 	"tilt_range": 270.0,
-	## Per-head translation (metres, x/y/z arrays) for multi-head fixtures
-	## — an LED bar's cells, a spider's beams. Empty = single head. Index
+	## Per-head placement for multi-head fixtures — an LED bar's cells, a
+	## spider's beams. Each entry is [x, y, z] (metres) or
+	## [x, y, z, rot_x, rot_y, rot_z] (metres + degrees, Godot XYZ euler,
+	## rotation relative to the first head). Empty = single head. Index
 	## matches the order of RGB triplets in the channel list.
 	"heads": [],
 }
@@ -72,7 +74,10 @@ static func _normalize_physical(p: Dictionary) -> Dictionary:
 	var heads: Array = []
 	for e in p.get("heads", []):
 		if e is Array and e.size() == 3:
-			heads.append([float(e[0]), float(e[1]), float(e[2])])
+			heads.append([float(e[0]), float(e[1]), float(e[2]), 0.0, 0.0, 0.0])
+		elif e is Array and e.size() >= 6:
+			heads.append([float(e[0]), float(e[1]), float(e[2]),
+				float(e[3]), float(e[4]), float(e[5])])
 	return {
 		"category": String(p.get("category", "")),
 		"beam_deg": clampf(float(p.get("beam_deg", 14.0)), 1.0, 120.0),
@@ -82,10 +87,12 @@ static func _normalize_physical(p: Dictionary) -> Dictionary:
 	}
 
 
-## Group the mode's channels into heads: [{ r, g, b, extra:[idx], offset:Vector3 }].
+## Group the mode's channels into heads:
+##   [{ r, g, b, extra:[idx], offset:Vector3, rotation:Vector3 }].
 ## One head per RGB triplet, in channel order; WHITE/AMBER/UV between/after a
-## triplet fold into it. Empty if the fixture has no RGB. Offsets come from
-## `physical.heads`, or a horizontal spread when that's absent.
+## triplet fold into it. Empty if the fixture has no RGB. `offset` (metres)
+## and `rotation` (radians, relative to head 0) come from `physical.heads`,
+## or a horizontal spread with no rotation when that's absent.
 func head_groups(mode_index: int) -> Array:
 	var chans := channels_for_mode(mode_index)
 	var heads: Array = []
@@ -124,8 +131,13 @@ func head_groups(mode_index: int) -> Array:
 	var offs: Array = physical.get("heads", [])
 	var n := full.size()
 	for k in range(n):
+		full[k]["rotation"] = Vector3.ZERO
 		if k < offs.size():
-			full[k]["offset"] = Vector3(offs[k][0], offs[k][1], offs[k][2])
+			var h: Array = offs[k]
+			full[k]["offset"] = Vector3(h[0], h[1], h[2])
+			if h.size() >= 6:
+				full[k]["rotation"] = Vector3(
+					deg_to_rad(h[3]), deg_to_rad(h[4]), deg_to_rad(h[5]))
 		elif n > 1:
 			# no spacing in the definition — space the heads 0.15 m apart
 			full[k]["offset"] = Vector3((k - (n - 1) * 0.5) * 0.15, 0, 0)

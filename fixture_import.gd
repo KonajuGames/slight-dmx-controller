@@ -190,19 +190,36 @@ static func from_gdtf_xml(xml: PackedByteArray, media_reader := Callable()) -> D
 
 # ------------------------------------------------------------ GDTF HEADS --
 
-## Cumulative Y-up translation of every named geometry in the tree.
-static func _geo_offset_map(node, parent_pos := Vector3.ZERO, out := {}) -> Dictionary:
+## GDTF stores a 4x4 as column-major "{c0}{c1}{c2}{c3}" in a right-handed
+## Z-up frame. Godot is right-handed Y-up; the change of basis C maps a
+## GDTF vector (x,y,z) -> (x, z, -y). This returns C * M * C_inverse for
+## the rotation and C * translation for the origin, i.e. the same rigid
+## transform expressed in Godot's axes.
+static func _gdtf_transform(m: Array) -> Transform3D:
+	if not (m is Array) or m.size() != 16:
+		return Transform3D.IDENTITY
+	var cx := Vector3(m[0], m[1], m[2])     # GDTF local X axis
+	var cy := Vector3(m[4], m[5], m[6])     # GDTF local Y axis
+	var cz := Vector3(m[8], m[9], m[10])    # GDTF local Z axis
+	var conv := func(v: Vector3) -> Vector3: return Vector3(v.x, v.z, -v.y)
+	# Godot basis columns: X <- C.cx, Y <- C.cz, Z <- -C.cy  (= C M C^-1)
+	var b := Basis(conv.call(cx), conv.call(cz), -conv.call(cy))
+	if not b.determinant() > 0.0001:
+		b = Basis.IDENTITY
+	else:
+		b = b.orthonormalized()
+	return Transform3D(b, conv.call(Vector3(m[12], m[13], m[14])))
+
+
+## Cumulative Godot-space Transform3D of every named geometry in the tree.
+static func _geo_xform_map(node, parent := Transform3D.IDENTITY, out := {}) -> Dictionary:
 	if node == null:
 		return out
-	var m: Array = node.get("mat", [])
-	var local := Vector3.ZERO
-	if m is Array and m.size() == 16:
-		local = Vector3(float(m[12]), float(m[14]), -float(m[13]))
-	var world: Vector3 = parent_pos + local
+	var world: Transform3D = parent * _gdtf_transform(node.get("mat", []))
 	if String(node.get("name", "")) != "":
 		out[String(node["name"])] = world
 	for c in node.get("children", []):
-		_geo_offset_map(c, world, out)
+		_geo_xform_map(c, world, out)
 	return out
 
 
@@ -214,18 +231,28 @@ static func _gdtf_refs(ft) -> Array:
 			"name": String(gr["attrs"].get("Name", "")),
 			"geometry": String(gr["attrs"].get("Geometry", "")),
 			"dmx_offset": int(brk["attrs"].get("DMXOffset", "0")) if brk else 0,
-			"mat": _gdtf_matrix(String(gr["attrs"].get("Position", ""))),
+			"xform": _gdtf_transform(_gdtf_matrix(String(gr["attrs"].get("Position", "")))),
 		})
 	return out
 
 
-## Per-head translation relative to the fixture origin. Built from the
-## geometries the RGB channels point at, using whichever mode has the most.
+## Euler angles (degrees, Godot XYZ) of `b` relative to `ref` — the extra
+## rotation that turns head 0's orientation into this head's.
+static func _rel_euler(b: Basis, ref: Basis) -> Array:
+	var e := (ref.inverse() * b).orthonormalized().get_euler()
+	return [rad_to_deg(e.x), rad_to_deg(e.y), rad_to_deg(e.z)]
+
+
+## Per-head placement relative to the fixture origin:
+## [ [x, y, z, rot_x, rot_y, rot_z], ... ] — metres and degrees, rotation
+## relative to the first head. Built from the geometries the RGB channels
+## drive, using whichever mode names the most of them.
 static func _gdtf_head_offsets(ft, mode_nodes: Array, geometry: Dictionary, refs: Array) -> Array:
 	if geometry.is_empty() or not geometry.has("tree"):
-		return _ref_head_offsets(refs, geometry)
-	var omap := _geo_offset_map(geometry["tree"])
-	var origin: Vector3 = omap.get(String(geometry["tree"].get("name", "")), Vector3.ZERO)
+		return _ref_head_offsets(refs)
+	var xmap := _geo_xform_map(geometry["tree"])
+	var root_name := String(geometry["tree"].get("name", ""))
+	var origin: Transform3D = xmap.get(root_name, Transform3D.IDENTITY)
 
 	var best: Array = []
 	for mn in mode_nodes:
@@ -239,32 +266,40 @@ static func _gdtf_head_offsets(ft, mode_nodes: Array, geometry: Dictionary, refs
 		if geos.size() > best.size():
 			best = geos
 
-	var out := _ref_head_offsets(refs, geometry)
-	if best.size() >= 2:
-		out = []
-		for g in best:
-			var p: Vector3 = omap.get(g, Vector3.ZERO) - origin
-			out.append([p.x, p.y, p.z])
+	if best.size() < 2:
+		return _ref_head_offsets(refs)
+
+	var inv := origin.affine_inverse()
+	var head0: Transform3D = inv * xmap.get(best[0], origin)
+	var out: Array = []
+	for g in best:
+		var t: Transform3D = inv * xmap.get(g, origin)
+		var rot := _rel_euler(t.basis, head0.basis)
+		out.append([t.origin.x, t.origin.y, t.origin.z, rot[0], rot[1], rot[2]])
 	return out
 
 
-static func _ref_head_offsets(refs: Array, geometry: Dictionary) -> Array:
+## Per-head placement from the <GeometryReference> matrices (a pixel bar /
+## spider defined by references rather than distinct RGB geometries).
+static func _ref_head_offsets(refs: Array) -> Array:
 	if refs.size() < 2:
 		return []
-	var out: Array = []
+	var xf: Array = []
 	for r in refs:
-		var m: Array = r["mat"]
-		if m.size() == 16:
-			out.append([float(m[12]), float(m[14]), -float(m[13])])
-		else:
-			out.append([0.0, 0.0, 0.0])
-	# re-centre on the group's midpoint
+		xf.append(r.get("xform", Transform3D.IDENTITY))
+	# re-centre translation on the group midpoint; keep rotations relative
+	# to the first reference
 	var mid := Vector3.ZERO
-	for o in out:
-		mid += Vector3(o[0], o[1], o[2])
-	mid /= out.size()
-	for i in range(out.size()):
-		out[i] = [out[i][0] - mid.x, out[i][1] - mid.y, out[i][2] - mid.z]
+	for t in xf:
+		mid += (t as Transform3D).origin
+	mid /= xf.size()
+	var ref_basis: Basis = (xf[0] as Transform3D).basis
+	var out: Array = []
+	for t in xf:
+		var tt: Transform3D = t
+		var p := tt.origin - mid
+		var rot := _rel_euler(tt.basis, ref_basis)
+		out.append([p.x, p.y, p.z, rot[0], rot[1], rot[2]])
 	return out
 
 

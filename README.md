@@ -210,10 +210,12 @@ Each channel in a profile carries more than a role:
 Channel roles include `DIMMER`, `RED`/`GREEN`/`BLUE`/`WHITE`/`AMBER`/`UV`,
 `PAN`(`_FINE`), `TILT`(`_FINE`), `ZOOM`, `STROBE`, `GOBO`, `GOBO_ROT`,
 `COLOR_WHEEL` and `GENERIC`. A profile also carries a **physical** block
-(category, beam angle, pan/tilt range, and per-head offsets for
-multi-head fixtures) and, from a geometry-rich GDTF, a `geometry` tree
-(glTF models + pan/tilt axes) — both for the 3D visualizer, filled from a
-GDTF/OFL import or guessed from the roles. Repeated RGB triplets in a
+(category, beam angle, pan/tilt range, and per-head offset **and
+rotation** for multi-head fixtures) and, from a geometry-rich GDTF, a
+`geometry` tree (glTF models + pan/tilt axes) — both for the 3D
+visualizer, filled from a GDTF/OFL import or guessed from the roles. GDTF
+geometry Position matrices are read in full (rotation + translation) and
+converted from GDTF's Z-up frame to Godot's Y-up. Repeated RGB triplets in a
 mode's channel list are treated as separate heads: GDTF
 `<GeometryReference>` blocks are expanded into the flat channel list, and
 OFL `matrix` / `matrixChannels` template channels are instanced per
@@ -329,12 +331,14 @@ the on-screen controls for an unobstructed view.
   **Work light** is a dim fill so you can see the rig with the beams
   down. Bloom is on for bright beams.
 - **Multi-head fixtures**: a profile with more than one RGB triplet
-  (a pixel bar, a multi-eye batten) is drawn as one light source per
-  head, each with its own colour, level and position. Head offsets come
-  from the imported definition — GDTF `<GeometryReference>` matrices or
-  OFL `matrix` pixel grid — or a horizontal spread when the file gives
-  none. The patch list shows one colour picker per head (**Colour 1**,
-  **Colour 2**, …).
+  (a pixel bar, a multi-eye batten, a spider) is drawn as one light
+  source per head, each with its own colour, level, position **and
+  aim**. Head offset and rotation come from the imported definition —
+  GDTF `<GeometryReference>` matrices or the geometries the RGB channels
+  drive, or an OFL `matrix` pixel grid — so a spider's beams fan out the
+  way the fixture does. A horizontal spread with no rotation is used when
+  the file gives none. The patch list shows one colour picker per head
+  (**Colour 1**, **Colour 2**, …).
 - **What each fixture shows**: colour (RGB/W/A/UV additive, or a
   colour-wheel slot's swatch), intensity (its dimmer, or the brightest
   colour channel), pan/tilt (16-bit aware, through the profile's range),
@@ -342,8 +346,9 @@ the on-screen controls for an unobstructed view.
   flicker rate), gobo (an imported GDTF gobo is *projected* through the
   spot) and gobo spin (a `GOBO_ROT` channel rolls the projection). When
   the profile came from a GDTF with `<Geometries>` + glTF models, the
-  real body and pan/tilt axes are used; otherwise a schematic body picked
-  from the `physical` category.
+  real body and pan/tilt axes are used, each geometry placed by its full
+  Position matrix (rotation included, GDTF Z-up → Godot Y-up); otherwise
+  a schematic body picked from the `physical` category.
 - **Render**: **Screenshot** saves a PNG; **Record** writes a PNG
   sequence (with an `assemble.txt` holding the `ffmpeg` command) — both
   land in `user://render/` and open the folder when done.
@@ -417,9 +422,8 @@ packets to a physical DMX512 signal for your fixtures.
 - **3D visualizer**: already implemented — a Forward+ SubViewport with
   volumetric beams + real gobo projectors + bloom, GDTF geometry / glTF
   fixture models, glTF set-piece props, spot shadows, saved camera views,
-  a PNG-sequence recorder, multi-head fixtures (one light per RGB triplet,
-  offsets from the definition file), and MVR import/export, all driven by
-  the live output. Room to grow: proper GDTF matrix orientation (only
-  head translation is used today, not per-head rotation), prism /
-  animation wheels, a real in-app video encoder, timeline scrubbing, an
-  MVR round-trip that survives every consumer.
+  a PNG-sequence recorder, multi-head fixtures (one light per RGB
+  triplet, with offset and aim from the definition file's geometry
+  matrices), and MVR import/export, all driven by the live output. Room
+  to grow: prism / animation wheels, a real in-app video encoder,
+  timeline scrubbing, an MVR round-trip that survives every consumer.
