@@ -40,9 +40,19 @@ var osc_address: String = "/go"
 var action: int = ACT_CUE_GO
 var target: String = ""        # cue number as text, or chase / effect name
 
+# feedback: light this binding's pad when its target is active
+var fb_enabled: bool = false
+var fb_on: int = 127           # note velocity / CC value while active
+var fb_off: int = 0            # ...and while inactive
+
 
 func needs_target() -> bool:
 	return ACTION_NEEDS_TARGET.has(action)
+
+
+## Feedback only makes sense for actions with a steady on/off state.
+func can_feedback() -> bool:
+	return action in [ACT_CUE_GOTO, ACT_CHASE_TOGGLE, ACT_EFFECT_TOGGLE]
 
 
 ## Human-readable summary of what this binding listens for.
@@ -106,6 +116,7 @@ func to_dict() -> Dictionary:
 		"name": name, "enabled": enabled, "source": source,
 		"midi_kind": midi_kind, "midi_channel": midi_channel, "midi_number": midi_number,
 		"osc_address": osc_address, "action": action, "target": target,
+		"fb_enabled": fb_enabled, "fb_on": fb_on, "fb_off": fb_off,
 	}
 
 
@@ -120,4 +131,7 @@ static func from_dict(d: Dictionary) -> Trigger:
 	t.osc_address = String(d.get("osc_address", "/go"))
 	t.action = clampi(int(d.get("action", ACT_CUE_GO)), 0, ACTIONS.size() - 1)
 	t.target = String(d.get("target", ""))
+	t.fb_enabled = bool(d.get("fb_enabled", false))
+	t.fb_on = clampi(int(d.get("fb_on", 127)), 0, 127)
+	t.fb_off = clampi(int(d.get("fb_off", 0)), 0, 127)
 	return t

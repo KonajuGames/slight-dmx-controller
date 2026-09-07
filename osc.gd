@@ -17,6 +17,42 @@ static func parse_packet(data: PackedByteArray) -> Array:
 	return out
 
 
+## Encode one message to an OSC packet. Args may be int, float or String.
+static func encode(address: String, args: Array = []) -> PackedByteArray:
+	var out := _osc_str(address)
+	var tags := ","
+	var body := PackedByteArray()
+	for a in args:
+		if a is int:
+			tags += "i"
+			body.append_array(_i32(int(a)))
+		elif a is float:
+			tags += "f"
+			var b := PackedByteArray()
+			b.resize(4)
+			b.encode_float(0, a)
+			b.reverse()
+			body.append_array(b)
+		else:
+			tags += "s"
+			body.append_array(_osc_str(String(a)))
+	out.append_array(_osc_str(tags))
+	out.append_array(body)
+	return out
+
+
+static func _osc_str(s: String) -> PackedByteArray:
+	var b := s.to_utf8_buffer()
+	b.append(0)
+	while b.size() % 4 != 0:
+		b.append(0)
+	return b
+
+
+static func _i32(v: int) -> PackedByteArray:
+	return PackedByteArray([(v >> 24) & 255, (v >> 16) & 255, (v >> 8) & 255, v & 255])
+
+
 static func _parse(data: PackedByteArray, start: int, end: int, out: Array) -> void:
 	if end - start < 4 or start < 0:
 		return

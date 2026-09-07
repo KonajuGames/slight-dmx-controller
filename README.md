@@ -29,11 +29,15 @@ so no native plugin or GDExtension is required.
   the Sound tab: maps a band or the beat onto a channel role, with a
   live band meter.
 - `triggers_engine.gd` — the `Triggers` autoload: listens for MIDI
-  (Godot's `InputEventMIDI`) and OSC (a UDP listener) and fires console
-  actions.
-- `osc.gd` / `trigger.gd` / `triggers_dialog.gd` — a minimal OSC 1.0
-  reader, the `Trigger` binding class (match + action), and the
-  MIDI/OSC config dialog with a Learn mode.
+  (Godot's `InputEventMIDI`) and OSC (a UDP listener), fires console
+  actions, and sends feedback (LED updates) when a binding's target is
+  active.
+- `osc.gd` / `trigger.gd` / `triggers_dialog.gd` / `feedback_out.gd` — a
+  minimal OSC 1.0 reader/writer, the `Trigger` binding class (match +
+  action + feedback), the config dialog with a Learn mode, and the
+  outbound MIDI/OSC sender.
+- `tools/midi_bridge.py` — forwards sLight's UDP MIDI-feedback packets to
+  a real MIDI port (Godot has no MIDI output).
 - `auto_show.gd` — the `AutoShow` autoload: the Auto Show run mode — plays
   a music file and fires the generated cue list from a timeline locked to
   playback position.
@@ -172,7 +176,7 @@ Arm reactors with **Run**; they only drive output while the run mode is
 Sound Reactive. In the **Chases** tab, **Beat sync** makes a chase step
 once per beat instead of on its BPM (again, only in Sound Reactive mode).
 
-### MIDI / OSC triggers
+### MIDI / OSC triggers & feedback
 
 **Triggers…** in the top bar opens the binding editor. Each **binding**
 maps one incoming message to one console action:
@@ -192,7 +196,21 @@ A note fires on note-on; a CC fires when its value crosses 64 (so a
 momentary button works, a slider mostly won't); an OSC message fires
 unless its first argument is `0` (so TouchOSC's press-then-release
 buttons only trigger on press). The bottom of the dialog shows the last
-message received. Bindings and the MIDI/OSC settings are saved in the
+message received.
+
+**Feedback (LEDs).** Tick **Feedback (LEDs)** at the top and, on a
+Go-to-# / Chase-toggle / Effect-toggle binding, tick **light the pad
+when active** with an **on** / **off** value (a velocity, or a pad
+colour code for RGB grids). While that cue is live / that chase or
+effect is running, the binding's own pad is lit; it clears when the
+state ends, and all pads are cleared on exit. OSC feedback goes straight
+to the device (`OSC →` host / port). Godot has no MIDI *output*, so MIDI
+feedback is sent as UDP to a small bridge — run
+`python tools/midi_bridge.py --port "<your controller>"` (needs
+`pip install mido python-rtmidi`) and point **MIDI → bridge :** at the
+same port (default 9010).
+
+Bindings and all of the MIDI / OSC / feedback settings are saved in the
 show file.
 
 ### Auto Show
@@ -565,9 +583,10 @@ packets to a physical DMX512 signal for your fixtures.
   steps at a tempo or on the beat; effects run waveforms (absolute or
   base-value pickup) on a role across a universe or a fixture group;
   MIDI / OSC bindings fire cue / chase / effect actions with a Learn
-  mode. Room to grow: cue-to-cue auto-follow / wait times, a fade
-  progress bar, per-channel track flags in the cue editor, MIDI feedback
-  to light up controller LEDs.
+  mode and light the controller's pads back (MIDI feedback via a small
+  UDP bridge, OSC feedback direct). Room to grow: cue-to-cue auto-follow
+  / wait times, a fade progress bar, per-channel track flags in the cue
+  editor, standalone feedback bindings (beat / run-mode indicators).
 - **Run modes**: **Cue Mode** (cue list drives playback), **Sound
   Reactive** (an audio input drives band → role reactors and beat-synced
   chases over the standing base look), and **Auto Show** (a music file is

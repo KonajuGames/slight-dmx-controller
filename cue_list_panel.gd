@@ -230,6 +230,11 @@ func _targets_from_state(state: Array) -> Array:
 
 # ---------------------------------------------------------------- PLAYBACK --
 
+## 1-based number of the cue currently live (0 = none). For MIDI feedback.
+func current_number() -> int:
+	return _current + 1 if _current >= 0 else 0
+
+
 func go() -> void:
 	if cues.is_empty():
 		return

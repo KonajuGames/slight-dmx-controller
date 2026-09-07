@@ -164,6 +164,7 @@ func _ready() -> void:
 	_triggers_dialog.visible = false
 	add_child(_triggers_dialog)
 	Triggers.fired.connect(_on_trigger_fired)
+	Triggers.feedback_state_cb = _feedback_state
 
 	_refresh_timer = Timer.new()
 	add_child(_refresh_timer)
@@ -570,6 +571,24 @@ func _on_trigger_fired(action: int, target: String) -> void:
 		Trigger.ACT_CHASE_TOGGLE: chase_panel.toggle_by_name(target)
 		Trigger.ACT_EFFECT_TOGGLE: fx_panel.toggle_by_name(target)
 		Trigger.ACT_BLACKOUT: _on_blackout_all()
+
+
+## Whether a feedback binding's target is currently active — its pad LED
+## follows this.
+func _feedback_state(action: int, target: String) -> bool:
+	var low := target.strip_edges().to_lower()
+	match action:
+		Trigger.ACT_CUE_GOTO:
+			return target.is_valid_int() and cue_panel.current_number() == int(target)
+		Trigger.ACT_CHASE_TOGGLE:
+			for c in Fx.chases:
+				if c.name.to_lower() == low:
+					return c.running
+		Trigger.ACT_EFFECT_TOGGLE:
+			for e in Fx.effects:
+				if e.name.to_lower() == low:
+					return e.running
+	return false
 
 
 func _on_refresh_timeout() -> void:

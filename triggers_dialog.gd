@@ -26,12 +26,21 @@ var _action_option: OptionButton
 var _target_hint: Label
 var _target_edit: LineEdit
 var _target_pick: OptionButton
+var _fb_row_lbl: Label
+var _fb_box: HBoxContainer
+var _fb_check: CheckBox
+var _fb_on: SpinBox
+var _fb_off: SpinBox
 
 var _midi_devices_label: Label
 var _midi_on: CheckBox
 var _osc_on: CheckBox
 var _osc_port: SpinBox
 var _osc_status: Label
+var _fb_enable: CheckBox
+var _fb_midi_port: SpinBox
+var _fb_osc_host: LineEdit
+var _fb_osc_port: SpinBox
 var _activity: Label
 var _editor_col: VBoxContainer
 
@@ -39,9 +48,9 @@ var _syncing := false
 
 
 func _ready() -> void:
-	title = "MIDI / OSC Triggers"
-	size = Vector2i(660, 620)
-	min_size = Vector2i(520, 460)
+	title = "MIDI / OSC Triggers & Feedback"
+	size = Vector2i(740, 640)
+	min_size = Vector2i(560, 480)
 	close_requested.connect(hide)
 	visibility_changed.connect(func(): if visible: _on_shown())
 
@@ -125,8 +134,51 @@ func _build_io_section() -> Control:
 	grid.add_child(_osc_status)
 	grid.add_child(Control.new())
 
+	# --- feedback (out) ---
+	_fb_enable = CheckBox.new()
+	_fb_enable.text = "Feedback (LEDs)"
+	_fb_enable.button_pressed = Triggers.feedback_enabled
+	_fb_enable.toggled.connect(func(_on: bool): _apply_feedback())
+	grid.add_child(_fb_enable)
+	var mrow := HBoxContainer.new()
+	mrow.add_child(_lbl("MIDI → bridge :"))
+	_fb_midi_port = SpinBox.new()
+	_fb_midi_port.min_value = 1
+	_fb_midi_port.max_value = 65535
+	_fb_midi_port.value = Triggers.midi_out_port
+	_fb_midi_port.custom_minimum_size = Vector2(90, 0)
+	mrow.add_child(_fb_midi_port)
+	grid.add_child(mrow)
+	var apply2 := Button.new()
+	apply2.text = "Apply"
+	apply2.pressed.connect(_apply_feedback)
+	grid.add_child(apply2)
+
+	grid.add_child(Control.new())
+	var orow := HBoxContainer.new()
+	orow.add_child(_lbl("OSC →"))
+	_fb_osc_host = LineEdit.new()
+	_fb_osc_host.text = Triggers.osc_out_host
+	_fb_osc_host.custom_minimum_size = Vector2(110, 0)
+	orow.add_child(_fb_osc_host)
+	orow.add_child(_lbl(":"))
+	_fb_osc_port = SpinBox.new()
+	_fb_osc_port.min_value = 1
+	_fb_osc_port.max_value = 65535
+	_fb_osc_port.value = Triggers.osc_out_port
+	_fb_osc_port.custom_minimum_size = Vector2(90, 0)
+	orow.add_child(_fb_osc_port)
+	grid.add_child(orow)
+	grid.add_child(Control.new())
+
 	_refresh_midi_devices()
 	return grid
+
+
+func _apply_feedback() -> void:
+	Triggers.set_feedback(_fb_enable.button_pressed, int(_fb_midi_port.value),
+		_fb_osc_host.text, int(_fb_osc_port.value))
+	_fb_enable.set_pressed_no_signal(Triggers.feedback_enabled)
 
 
 func _apply_osc() -> void:
@@ -283,7 +335,33 @@ func _build_editor_column() -> Control:
 	trow.add_child(_target_pick)
 	ag.add_child(trow)
 
+	_fb_row_lbl = _lbl("Feedback")
+	ag.add_child(_fb_row_lbl)
+	_fb_box = HBoxContainer.new()
+	_fb_check = CheckBox.new()
+	_fb_check.text = "light the pad when active"
+	_fb_check.toggled.connect(func(on: bool): _edit("fb_enabled", on))
+	_fb_box.add_child(_fb_check)
+	_fb_box.add_child(_lbl("  on"))
+	_fb_on = _spin(0, 127, 127)
+	_fb_on.value_changed.connect(func(v: float): _edit("fb_on", int(v)))
+	_fb_box.add_child(_fb_on)
+	_fb_box.add_child(_lbl("off"))
+	_fb_off = _spin(0, 127, 0)
+	_fb_off.value_changed.connect(func(v: float): _edit("fb_off", int(v)))
+	_fb_box.add_child(_fb_off)
+	ag.add_child(_fb_box)
+
 	return col
+
+
+func _spin(lo: int, hi: int, val: int) -> SpinBox:
+	var s := SpinBox.new()
+	s.min_value = lo
+	s.max_value = hi
+	s.value = val
+	s.custom_minimum_size = Vector2(56, 0)
+	return s
 
 
 # --------------------------------------------------------------- ACTIONS --
@@ -360,6 +438,13 @@ func _on_shown() -> void:
 	_refresh_midi_devices()
 	_refresh_list()
 	_sync_editor()
+	_fb_enable.set_pressed_no_signal(Triggers.feedback_enabled)
+	_fb_midi_port.set_value_no_signal(Triggers.midi_out_port)
+	_fb_osc_host.text = Triggers.osc_out_host
+	_fb_osc_port.set_value_no_signal(Triggers.osc_out_port)
+	_osc_on.set_pressed_no_signal(Triggers.osc_enabled)
+	_osc_port.set_value_no_signal(Triggers.osc_port)
+	_midi_on.set_pressed_no_signal(Triggers.midi_enabled)
 
 
 # --------------------------------------------------------------- REFRESH --
@@ -428,6 +513,14 @@ func _sync_editor() -> void:
 		_target_pick.add_item(pick_label)
 		for n in names:
 			_target_pick.add_item(String(n))
+
+	var fb := t.can_feedback()
+	_fb_row_lbl.visible = fb
+	_fb_box.visible = fb
+	if fb:
+		_fb_check.button_pressed = t.fb_enabled
+		_fb_on.value = t.fb_on
+		_fb_off.value = t.fb_off
 	_syncing = false
 
 
