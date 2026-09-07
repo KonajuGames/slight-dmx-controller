@@ -72,7 +72,7 @@ func _ready() -> void:
 	main_vbox.add_child(split)
 
 	var playback_tabs := TabContainer.new()
-	playback_tabs.custom_minimum_size = Vector2(320, 0)
+	playback_tabs.custom_minimum_size = Vector2(336, 0)
 	split.add_child(playback_tabs)
 
 	cue_panel = CueListPanel.new()
@@ -136,6 +136,11 @@ func _ready() -> void:
 	sound_panel.refresh_universe_options()
 	viz_panel.rebuild()
 
+	# Keep tab content off the container edges (the 3D visualizer tab is
+	# meant to be full-bleed, so right_tabs is left alone).
+	_pad_tab_content(playback_tabs)
+	_pad_tab_content(universe_tabs)
+
 	_refresh_timer = Timer.new()
 	add_child(_refresh_timer)
 	_refresh_timer.wait_time = 1.0 / REFRESH_HZ
@@ -144,6 +149,19 @@ func _ready() -> void:
 
 
 # ---------------------------------------------------------------- UI BUILD --
+
+## Inset every tab's content by a few pixels so controls don't sit flush
+## against the container edge. Keeps the theme's panel look, just adds
+## content margins.
+func _pad_tab_content(tc: TabContainer, pad := 8.0) -> void:
+	var base := tc.get_theme_stylebox("panel")
+	var sb: StyleBox = base.duplicate() if base != null else StyleBoxEmpty.new()
+	sb.content_margin_left = pad
+	sb.content_margin_right = pad
+	sb.content_margin_top = pad
+	sb.content_margin_bottom = pad
+	tc.add_theme_stylebox_override("panel", sb)
+
 
 ## Wrap a playback panel so it gets a vertical scrollbar when the window
 ## is too short to show all of its controls. Horizontal scrolling is off —
