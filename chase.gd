@@ -36,8 +36,9 @@ func step_count() -> int:
 	return steps.size()
 
 
-## Append the current live output of every universe as a new step.
-func capture_step() -> void:
+## The current live output of every universe as a step look (per-universe
+## { "<channel>": value }, non-zero only).
+static func _capture_look() -> Array:
 	var look: Array = []
 	for i in range(ArtNet.universe_count()):
 		var u := ArtNet.get_universe(i)
@@ -47,7 +48,36 @@ func capture_step() -> void:
 			if v != 0:
 				d[str(c)] = v
 		look.append(d)
-	steps.append(look)
+	return look
+
+
+## Append the current live output as a new step.
+func capture_step() -> void:
+	steps.append(_capture_look())
+
+
+## Overwrite an existing step with the current live output.
+func update_step(index: int) -> void:
+	if index >= 0 and index < steps.size():
+		steps[index] = _capture_look()
+		reset()
+
+
+## Step `index`'s stored look as a full 512-byte buffer per universe
+## (for "Load Step to Patch").
+func step_buffers(index: int) -> Array:
+	var look: Array = steps[index] if index >= 0 and index < steps.size() else []
+	var out: Array = []
+	for u in range(ArtNet.universe_count()):
+		var buf := PackedByteArray()
+		buf.resize(ArtNetUniverse.DMX_UNIVERSE_SIZE)
+		if u < look.size() and look[u] is Dictionary:
+			for k in look[u]:
+				var c := int(k)
+				if c >= 0 and c < buf.size():
+					buf[c] = clampi(int(look[u][k]), 0, 255)
+		out.append(buf)
+	return out
 
 
 func reset() -> void:

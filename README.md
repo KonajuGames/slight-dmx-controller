@@ -283,6 +283,9 @@ A **chase** is an ordered list of **steps** (captured looks, like cues)
 cycled at a tempo.
 
 - **New Chase**, then dial a look and **Record Step**; repeat.
+- **Load Step to Patch** sets the fixture controls to the selected step,
+  **Update Step** overwrites it from the current live output — the same
+  edit loop as cues. **Delete Step** removes it.
 - **Tempo (BPM)** sets the step rate; **Crossfade (%)** is how much of
   each step is spent fading in from the previous one (0 = hard snap);
   **Direction** is forward / backward / bounce.

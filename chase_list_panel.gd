@@ -6,6 +6,10 @@ extends VBoxContainer
 
 signal chases_changed
 
+## Set by the shell: func(buffers: Array of PackedByteArray) — loads a
+## step's per-universe look into the fixture controls for editing.
+var to_patch_cb := Callable()
+
 var chase_list: ItemList
 var step_list: ItemList
 var name_edit: LineEdit
@@ -90,6 +94,16 @@ func _ready() -> void:
 	rec_btn.text = "Record Step"
 	rec_btn.pressed.connect(_record_step)
 	step_btns.add_child(rec_btn)
+	var upd_step_btn := Button.new()
+	upd_step_btn.text = "Update Step"
+	upd_step_btn.tooltip_text = "Overwrite the selected step with the current live output."
+	upd_step_btn.pressed.connect(_update_step)
+	step_btns.add_child(upd_step_btn)
+	var load_step_btn := Button.new()
+	load_step_btn.text = "Load Step to Patch"
+	load_step_btn.tooltip_text = "Set the fixture controls to the selected step so you can tweak it, then Update Step."
+	load_step_btn.pressed.connect(_load_step_to_patch)
+	step_btns.add_child(load_step_btn)
 	var del_step_btn := Button.new()
 	del_step_btn.text = "Delete Step"
 	del_step_btn.pressed.connect(_delete_step)
@@ -192,6 +206,29 @@ func _delete_step() -> void:
 	_refresh_steps()
 	_refresh_list_row(_sel())
 	chases_changed.emit()
+
+
+func _update_step() -> void:
+	var c := _current()
+	var s := step_list.get_selected_items()
+	if c == null or s.is_empty():
+		return
+	c.update_step(s[0])
+	_refresh_steps()
+	step_list.select(s[0])
+	status_label.text = "Updated step %d of '%s' from live output." % [s[0] + 1, c.name]
+	chases_changed.emit()
+
+
+## Push the selected step's look into the fixture controls so it can be
+## tweaked and re-recorded with Update Step.
+func _load_step_to_patch() -> void:
+	var c := _current()
+	var s := step_list.get_selected_items()
+	if c == null or s.is_empty() or not to_patch_cb.is_valid():
+		return
+	to_patch_cb.call(c.step_buffers(s[0]))
+	status_label.text = "Step %d loaded into the patch — tweak the fixtures, then Update Step." % (s[0] + 1)
 
 
 func _on_run_toggled(on: bool) -> void:
