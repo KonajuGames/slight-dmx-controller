@@ -28,9 +28,16 @@ so no native plugin or GDExtension is required.
 - `sound_reactor.gd` / `sound_panel.gd` — the `SoundReactor` class and
   the Sound tab: maps a band or the beat onto a channel role, with a
   live band meter.
+- `triggers_engine.gd` — the `Triggers` autoload: listens for MIDI
+  (Godot's `InputEventMIDI`) and OSC (a UDP listener) and fires console
+  actions.
+- `osc.gd` / `trigger.gd` / `triggers_dialog.gd` — a minimal OSC 1.0
+  reader, the `Trigger` binding class (match + action), and the
+  MIDI/OSC config dialog with a Learn mode.
 - `main.tscn` — a single root `Control` node with the GUI script attached.
 - `dmx_controller.gd` — the shell: a top bar (grand master, run mode,
-  Sending, add/remove universe, whole-show + preset save/load) above a
+  Sending, add/remove universe, whole-show + preset save/load, MIDI/OSC
+  triggers) above a
   split view — playback tabs (Cues / Chases / Effects / Sound / Groups)
   on the left, one universe tab each on the right — plus the shared
   fixture-profile list and the profile new/edit/delete flow.
@@ -148,6 +155,29 @@ list by **Fan**. Two modes:
 Arm reactors with **Run**; they only drive output while the run mode is
 Sound Reactive. In the **Chases** tab, **Beat sync** makes a chase step
 once per beat instead of on its BPM (again, only in Sound Reactive mode).
+
+### MIDI / OSC triggers
+
+**Triggers…** in the top bar opens the binding editor. Each **binding**
+maps one incoming message to one console action:
+
+- **Source** — **MIDI** (a Note, Control Change or Program Change, on a
+  chosen channel or *Any*) or **OSC** (an address like `/cue/go`). Turn
+  **MIDI input** / **OSC input** on at the top; OSC listens on a UDP port
+  you set (default 9000).
+- **Learn** — click it, then play the pad / move the fader / send the OSC
+  message, and the match fields fill in from what arrived.
+- **Action** — *Cue GO / Back / Halt / Go to #*, *Chase toggle*,
+  *Effect toggle*, or *Blackout all*. Go-to takes a cue number; the
+  chase / effect toggles take a name (or a 1-based index), with a picker
+  populated from what's programmed.
+
+A note fires on note-on; a CC fires when its value crosses 64 (so a
+momentary button works, a slider mostly won't); an OSC message fires
+unless its first argument is `0` (so TouchOSC's press-then-release
+buttons only trigger on press). The bottom of the dialog shows the last
+message received. Bindings and the MIDI/OSC settings are saved in the
+show file.
 
 ### Cue list
 
@@ -466,9 +496,11 @@ packets to a physical DMX512 signal for your fixtures.
 - **Playback**: cues do split-time crossfades and **track** (a cue stores
   only what it changes; blocks stop the ripple); chases cycle captured
   steps at a tempo or on the beat; effects run waveforms (absolute or
-  base-value pickup) on a role across a universe or a fixture group. Room
-  to grow: cue-to-cue auto-follow / wait times, a fade progress bar, MIDI
-  or OSC GO triggers, per-channel track flags in the cue editor.
+  base-value pickup) on a role across a universe or a fixture group;
+  MIDI / OSC bindings fire cue / chase / effect actions with a Learn
+  mode. Room to grow: cue-to-cue auto-follow / wait times, a fade
+  progress bar, per-channel track flags in the cue editor, MIDI feedback
+  to light up controller LEDs.
 - **Run modes**: **Cue Mode** (cue list drives playback) and **Sound
   Reactive** (an audio input drives band → role reactors and beat-synced
   chases over the standing base look). Room to grow: an FFT spectrogram

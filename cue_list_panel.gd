@@ -234,6 +234,13 @@ func go_back() -> void:
 	_fire(clampi(from_idx - 1, 0, cues.size() - 1))
 
 
+## Jump straight to a 1-based cue number (used by MIDI / OSC triggers).
+func go_to_number(n: int) -> void:
+	if cues.is_empty():
+		return
+	_fire(clampi(n - 1, 0, cues.size() - 1))
+
+
 func halt() -> void:
 	ArtNet.stop_fade()
 	status_label.text = "Halted."

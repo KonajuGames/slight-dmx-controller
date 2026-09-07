@@ -280,6 +280,40 @@ func _on_run_toggled(on: bool) -> void:
 	status_label.text = ("Running '%s'." % e.name) if on else ("Stopped '%s'." % e.name)
 
 
+## Toggle an effect's run state by name (MIDI / OSC trigger). Case-
+## insensitive; a numeric key is treated as a 1-based index.
+func toggle_by_name(key: String) -> void:
+	var idx := _find_effect(key)
+	if idx == -1:
+		return
+	var e: WaveEffect = Fx.effects[idx]
+	var on := not e.running
+	if on and resolve_targets_cb.is_valid():
+		e.set_targets(resolve_targets_cb.call(e.role, e.universe, e.group))
+		if e.target_count() == 0:
+			status_label.text = "Trigger: no %s channels patched for '%s'." % [e.role, e.name]
+			return
+	e.running = on
+	_refresh_list_row(idx)
+	if _sel() == idx:
+		_syncing = true
+		run_check.button_pressed = on
+		_syncing = false
+	status_label.text = ("Running '%s'." % e.name) if on else ("Stopped '%s'." % e.name)
+
+
+func _find_effect(key: String) -> int:
+	var low := key.strip_edges().to_lower()
+	for i in range(Fx.effects.size()):
+		if Fx.effects[i].name.to_lower() == low:
+			return i
+	if low.is_valid_int():
+		var n := int(low) - 1
+		if n >= 0 and n < Fx.effects.size():
+			return n
+	return -1
+
+
 func _on_name_edited(t: String) -> void:
 	if _syncing:
 		return

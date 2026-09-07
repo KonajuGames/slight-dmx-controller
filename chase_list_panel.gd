@@ -207,6 +207,37 @@ func _on_run_toggled(on: bool) -> void:
 	status_label.text = ("Running '%s'." % c.name) if on else ("Stopped '%s'." % c.name)
 
 
+## Toggle a chase's run state by name (MIDI / OSC trigger). Case-
+## insensitive; falls back to a 1-based index if `key` is a number.
+func toggle_by_name(key: String) -> void:
+	var idx := _find_chase(key)
+	if idx == -1:
+		return
+	var c: Chase = Fx.chases[idx]
+	var on := not c.running
+	if on:
+		c.reset()
+	c.running = on
+	_refresh_list_row(idx)
+	if _sel() == idx:
+		_syncing = true
+		run_check.button_pressed = on
+		_syncing = false
+	status_label.text = ("Running '%s'." % c.name) if on else ("Stopped '%s'." % c.name)
+
+
+func _find_chase(key: String) -> int:
+	var low := key.strip_edges().to_lower()
+	for i in range(Fx.chases.size()):
+		if Fx.chases[i].name.to_lower() == low:
+			return i
+	if low.is_valid_int():
+		var n := int(low) - 1
+		if n >= 0 and n < Fx.chases.size():
+			return n
+	return -1
+
+
 func _on_name_edited(t: String) -> void:
 	if _syncing:
 		return

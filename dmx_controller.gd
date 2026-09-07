@@ -34,6 +34,7 @@ var viz_panel: VisualizerPanel
 var master_slider: HSlider
 var sending_toggle: CheckButton
 var run_mode_option: OptionButton
+var _triggers_dialog: TriggersDialog
 
 ## Console run mode: 0 = Cue Mode (default), 1 = Sound Reactive.
 const RUN_MODES := ["Cue Mode", "Sound Reactive"]
@@ -141,6 +142,14 @@ func _ready() -> void:
 	_pad_tab_content(playback_tabs)
 	_pad_tab_content(universe_tabs)
 
+	# MIDI / OSC GO triggers.
+	_triggers_dialog = TriggersDialog.new()
+	_triggers_dialog.chase_names_provider = _chase_names
+	_triggers_dialog.effect_names_provider = _effect_names
+	_triggers_dialog.visible = false
+	add_child(_triggers_dialog)
+	Triggers.fired.connect(_on_trigger_fired)
+
 	_refresh_timer = Timer.new()
 	add_child(_refresh_timer)
 	_refresh_timer.wait_time = 1.0 / REFRESH_HZ
@@ -165,12 +174,10 @@ func _pad_tab_content(tc: TabContainer, pad := 8.0) -> void:
 
 ## Wrap a playback panel so it gets a vertical scrollbar when the window
 ## is too short to show all of its controls. Horizontal scrolling is off —
-## the panels already wrap their rows to the available width. The panel's
-## `name` carries through so `TabContainer` still labels the tab from it
-## (we also set titles explicitly).
+## the panels already wrap their rows to the available width. Tab titles
+## are set explicitly by the caller.
 func _scrollable(panel: Control) -> ScrollContainer:
 	var sc := ScrollContainer.new()
-	sc.name = panel.name
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	sc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -252,6 +259,11 @@ func _build_top_bar() -> Control:
 	load_preset.text = "Load Preset"
 	load_preset.pressed.connect(_on_load_preset)
 	row.add_child(load_preset)
+
+	var triggers_btn := Button.new()
+	triggers_btn.text = "Triggers…"
+	triggers_btn.pressed.connect(func(): _triggers_dialog.popup_centered())
+	row.add_child(triggers_btn)
 
 	col.add_child(row)
 
@@ -474,6 +486,34 @@ func _set_run_mode(idx: int) -> void:
 		run_mode_option.selected = run_mode
 	Fx.sound_reactive = run_mode == 1
 	Sound.active = run_mode == 1
+
+
+# ------------------------------------------------------ MIDI / OSC TRIGGERS --
+
+func _chase_names() -> Array:
+	var out: Array = []
+	for c in Fx.chases:
+		out.append(c.name)
+	return out
+
+
+func _effect_names() -> Array:
+	var out: Array = []
+	for e in Fx.effects:
+		out.append(e.name)
+	return out
+
+
+## A MIDI / OSC binding matched — run its console action.
+func _on_trigger_fired(action: int, target: String) -> void:
+	match action:
+		Trigger.ACT_CUE_GO: cue_panel.go()
+		Trigger.ACT_CUE_BACK: cue_panel.go_back()
+		Trigger.ACT_CUE_HALT: cue_panel.halt()
+		Trigger.ACT_CUE_GOTO: cue_panel.go_to_number(int(target) if target.is_valid_int() else 1)
+		Trigger.ACT_CHASE_TOGGLE: chase_panel.toggle_by_name(target)
+		Trigger.ACT_EFFECT_TOGGLE: fx_panel.toggle_by_name(target)
+		Trigger.ACT_BLACKOUT: _on_blackout_all()
 
 
 func _on_refresh_timeout() -> void:
@@ -798,6 +838,7 @@ func _on_save_show() -> void:
 		"chases": chase_panel.to_dict(),
 		"effects": fx_panel.to_dict(),
 		"sound": sound_panel.to_dict(),
+		"triggers": Triggers.to_dict(),
 		"groups": _groups_to_dict(),
 		"viz": viz_panel.to_dict(),
 	}
@@ -850,6 +891,7 @@ func _on_load_show() -> void:
 	fx_panel.refresh_group_options()
 	sound_panel.from_dict(doc.get("sound", {}))
 	sound_panel.refresh_group_options()
+	Triggers.from_dict(doc.get("triggers", {}))
 	_set_run_mode(int(doc.get("run_mode", 0)))
 	viz_panel.rebuild()
 	viz_panel.from_dict(doc.get("viz", {}))
