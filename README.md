@@ -98,8 +98,8 @@ so no native plugin or GDExtension is required.
 - `visualizer_panel.gd` — the `VisualizerPanel` class: the 3D Visualizer
   tab — SubViewport world with volumetric fog, orbit camera + saved
   views, rooms, trusses, glTF props, placement, screenshot / frame
-  recorder, MVR import/export, and a Pop Out button that hands the panel
-  to the shell to reparent into its own window.
+  recorder, MVR import/export, and a "Dock to Main" button (the shell
+  reparents the panel into its own window when its tab is dragged off).
 - `fixture_profile.gd` — the `FixtureProfile` class: one or more DMX
   *modes*, each an ordered channel list. Every channel has a role
   (`DIMMER`, `RED`, `PAN`, ...) plus a default/home value, min/max
@@ -546,11 +546,12 @@ the on-screen controls for an unobstructed view.
 - **Render**: **Screenshot** saves a PNG; **Record** writes a PNG
   sequence (with an `assemble.txt` holding the `ffmpeg` command) — both
   land in `user://render/` and open the folder when done.
-- **Pop Out Window** tears the visualizer into its own OS window — drag
-  it to a second monitor for front-of-house while the console stays on
-  the main screen. The button becomes **Dock to Main** (in the floating
-  window); closing the window also docks it. Whether it's floating and
-  where the window sits are saved with the show.
+- **Pop out**: drag the **3D Visualizer** tab off the tab bar and it
+  tears into its own OS window — put it on a second monitor for
+  front-of-house while the console stays on the main screen. To dock it
+  again, drag the window's title back over the tab bar (it lights up),
+  press **Dock to Main** in its toolbar, or just close the window.
+  Whether it's floating and where the window sits are saved with the show.
 - **MVR**: **Import MVR...** reads a `.mvr` — patches every `<Fixture>`
   at its address with its bundled GDTF and drops its trusses in. **Export
   MVR...** writes the current rig back out (a scene description plus a

@@ -12,8 +12,9 @@ const ROOMS := {
 }
 const HAZE_MAX := 0.05
 
-## Toolbar "Pop Out" / "Dock" button — the shell moves this panel between
-## the tab and its own window.
+## "Dock to Main" button (shown only while floating) — the shell moves
+## this panel between the right-hand tab and its own window. Popping *out*
+## is done by dragging the tab.
 signal popout_pressed
 
 var panels: Array = []   # shared reference to the shell's _panels
@@ -206,10 +207,10 @@ func _btn(text: String, cb: Callable) -> Button:
 	return b
 
 
-## Relabel the toolbar button for the shell's dock state.
+## Show the "Dock to Main" button only while the panel is in its own window.
 func set_floating(floating: bool) -> void:
 	if _popout_btn:
-		_popout_btn.text = "Dock to Main" if floating else "Pop Out Window"
+		_popout_btn.visible = floating
 
 
 func _build_overlay() -> void:
@@ -295,7 +296,8 @@ func _build_overlay() -> void:
 	_rec_label = _mklabel("")
 	r3.add_child(_rec_label)
 
-	_popout_btn = _btn("Pop Out Window", func(): popout_pressed.emit())
+	_popout_btn = _btn("Dock to Main", func(): popout_pressed.emit())
+	_popout_btn.visible = false
 	r3.add_child(_popout_btn)
 
 	# --- selected-item properties ---

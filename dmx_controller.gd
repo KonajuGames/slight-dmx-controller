@@ -144,10 +144,12 @@ func _ready() -> void:
 	viz_panel.panels = _panels
 	viz_panel.mvr_import_cb = _do_mvr_import
 	viz_panel.mvr_export_cb = _do_mvr_export
-	viz_panel.popout_pressed.connect(_toggle_viz_popout)
+	viz_panel.popout_pressed.connect(_dock_viz)
 	_right_tabs.add_child(viz_panel)
 	_right_tabs.set_tab_title(0, "Patch")
 	_right_tabs.set_tab_title(_VIZ_TAB, "3D Visualizer")
+	_right_tabs.get_tab_bar().gui_input.connect(_on_right_tabbar_input)
+	set_process(false)
 
 	_load_available_profiles()
 
@@ -198,12 +200,32 @@ func _pad_tab_content(tc: TabContainer, pad := 8.0) -> void:
 ## The 3D Visualizer can live in its own OS window (drag it to a second
 ## monitor for front-of-house). It's the same VisualizerPanel node,
 ## reparented between `_right_tabs` and a `Window`.
+##
+## Tear-off: drag the "3D Visualizer" tab off the tab bar. Re-dock: drag
+## the window's title back over the tab bar (it lights up), close the
+## window, or press "Dock to Main" in it.
 
-func _toggle_viz_popout() -> void:
-	if _viz_window == null:
-		_pop_out_viz()
-	else:
-		_dock_viz()
+var _viz_tab_grab := false
+var _viz_last_pos := Vector2i.ZERO
+var _viz_move_frames := 0
+var _viz_still_frames := 0
+
+
+func _on_right_tabbar_input(event: InputEvent) -> void:
+	if _viz_window != null:
+		return
+	var tb := _right_tabs.get_tab_bar()
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			_viz_tab_grab = tb.get_tab_idx_at_point(event.position) == _VIZ_TAB
+		elif _viz_tab_grab:
+			_viz_tab_grab = false
+			# released clearly away from the tab bar -> tear it off (a small
+			# margin so a nudge or a mis-click doesn't detach it)
+			if not Rect2(Vector2.ZERO, tb.size).grow(28.0).has_point(event.position):
+				_pop_out_viz()
+	elif event is InputEventMouseButton and not event.pressed:
+		_viz_tab_grab = false
 
 
 func _pop_out_viz(rect := Rect2i()) -> void:
@@ -212,11 +234,17 @@ func _pop_out_viz(rect := Rect2i()) -> void:
 	var w := Window.new()
 	w.title = "sLight — 3D Visualizer"
 	w.min_size = Vector2i(480, 320)
-	if rect.size.x > 0 and rect.size.y > 0:
-		w.position = rect.position
+	var scr := DisplayServer.screen_get_usable_rect(get_window().current_screen)
+	if rect.size.x > 200 and rect.size.y > 200:
 		w.size = rect.size
+		w.position = rect.position
 	else:
 		w.size = Vector2i(1000, 620)
+		# drop it under the pointer, title bar clear of the screen edge
+		w.position = Vector2i(DisplayServer.mouse_get_position()) - Vector2i(180, 6)
+	w.position = Vector2i(
+		clampi(w.position.x, scr.position.x + 8, scr.position.x + scr.size.x - 120),
+		clampi(w.position.y, scr.position.y + 36, scr.position.y + scr.size.y - 80))
 	w.close_requested.connect(_dock_viz)
 	add_child(w)
 
@@ -224,9 +252,13 @@ func _pop_out_viz(rect := Rect2i()) -> void:
 	w.add_child(viz_panel)
 	viz_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_viz_window = w
+	_viz_last_pos = w.position
+	_viz_move_frames = 0
+	_viz_still_frames = 0
 	viz_panel.set_floating(true)
-	# Only "Patch" is left — hide the now-pointless tab strip.
-	_right_tabs.tabs_visible = false
+	set_process(true)
+	# "Patch" is the only tab left; it doubles as the re-dock drop zone.
+	status_label.text = "3D Visualizer popped out — drag its title onto the tab bar to dock, or close it."
 
 
 func _dock_viz() -> void:
@@ -234,15 +266,47 @@ func _dock_viz() -> void:
 		return
 	var w := _viz_window
 	_viz_window = null                       # guard against close_requested re-entry
+	set_process(false)
+	_right_tabs.get_tab_bar().self_modulate = Color.WHITE
 	if viz_panel.get_parent() == w:
 		w.remove_child(viz_panel)
 		_right_tabs.add_child(viz_panel)
 		_right_tabs.move_child(viz_panel, _VIZ_TAB)
 		_right_tabs.set_tab_title(_VIZ_TAB, "3D Visualizer")
 		_right_tabs.current_tab = _VIZ_TAB
-	_right_tabs.tabs_visible = true
 	viz_panel.set_floating(false)
 	w.queue_free()
+
+
+## While the visualizer floats, watch its window: when the user drags its
+## title over the tab bar and lets go, dock it back.
+func _process(_delta: float) -> void:
+	if _viz_window == null:
+		return
+	var pos := _viz_window.position
+	var over := _viz_title_over_tab_bar()
+	if pos != _viz_last_pos:
+		_viz_last_pos = pos
+		_viz_move_frames += 1
+		_viz_still_frames = 0
+	elif _viz_move_frames >= 3:
+		_viz_still_frames += 1
+		if _viz_still_frames >= 18:
+			_viz_move_frames = 0
+			if over:
+				_dock_viz()
+				return
+	_right_tabs.get_tab_bar().self_modulate = (
+		Color(0.55, 0.8, 1.0) if (over and _viz_move_frames >= 3) else Color.WHITE)
+
+
+func _viz_title_over_tab_bar() -> bool:
+	var tb := _right_tabs.get_tab_bar()
+	var zone := Rect2i(
+		get_window().position + Vector2i(tb.global_position),
+		Vector2i(int(_right_tabs.size.x), maxi(int(tb.size.y), 28) + 16))
+	# the window's own top strip (client-area top ≈ just under the OS title)
+	return zone.intersects(Rect2i(_viz_window.position, Vector2i(_viz_window.size.x, 6)))
 
 
 func _viz_window_dict() -> Dictionary:
@@ -263,7 +327,7 @@ func _apply_viz_window(d: Dictionary) -> void:
 		rect = Rect2i(int(ra[0]), int(ra[1]), int(ra[2]), int(ra[3]))
 	if want_float and _viz_window == null:
 		_pop_out_viz(rect)
-	elif want_float and _viz_window != null and rect.size.x > 0:
+	elif want_float and _viz_window != null and rect.size.x > 200:
 		_viz_window.position = rect.position
 		_viz_window.size = rect.size
 	elif not want_float and _viz_window != null:
