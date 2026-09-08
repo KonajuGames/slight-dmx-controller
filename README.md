@@ -437,8 +437,11 @@ Fixture**. Its panel appears below with the right controls automatically:
   wire, so you can fade the fixture without disturbing the colour you
   set. It homes to full (so a homed fixture acts like one whose real
   dimmer is open).
-- **Home** resets every control in that fixture to its channel defaults;
-  **Remove** deletes it.
+- **Flash** (hold) drives that fixture to full white — dimmer and every
+  R/G/B/W channel to full for each head, a colour wheel to its open slot
+  — and snaps the affected channels back to exactly what they were on
+  release. **Home** resets every control in that fixture to its channel
+  defaults; **Remove** deletes it.
 
 **Custom profiles**: **New...** opens a dialog where you name the
 profile, add one or more modes, and add channels one at a time. Each

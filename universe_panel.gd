@@ -520,6 +520,27 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 	]
 	header.add_child(title)
 
+	# Flash: full white for as long as the button is held, then put the
+	# affected channels back exactly as they were.
+	var flash_targets := _flash_targets(chans)
+	var flash_saved := {}
+	var flash_btn := Button.new()
+	flash_btn.text = "Flash"
+	flash_btn.disabled = flash_targets.is_empty()
+	flash_btn.button_down.connect(func():
+		if not flash_saved.is_empty():
+			return
+		for ix in flash_targets:
+			flash_saved[ix] = sender.get_channel(start + ix)
+			sender.set_channel(start + ix, flash_targets[ix])
+	)
+	flash_btn.button_up.connect(func():
+		for ix in flash_saved:
+			sender.set_channel(start + ix, flash_saved[ix])
+		flash_saved.clear()
+	)
+	header.add_child(flash_btn)
+
 	var home_btn := Button.new()
 	home_btn.text = "Home"
 	home_btn.pressed.connect(func():
@@ -724,6 +745,40 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 
 func _bufv(buf: PackedByteArray, i: int) -> int:
 	return int(buf[i]) if i >= 0 and i < buf.size() else 0
+
+
+## Local channel index -> value for a "full white" flash: dimmer + every
+## R/G/B/W channel to full (so each head goes white), amber / UV to zero
+## when there's a white to keep pure, and a colour wheel to its open slot.
+func _flash_targets(chans: Array) -> Dictionary:
+	var out := {}
+	var has_white := false
+	for ch in chans:
+		if String(ch["role"]) == "WHITE":
+			has_white = true
+	for k in range(chans.size()):
+		var ch: Dictionary = chans[k]
+		match String(ch["role"]):
+			"DIMMER", "RED", "GREEN", "BLUE", "WHITE":
+				out[k] = int(ch["max"])
+			"AMBER", "UV":
+				if has_white:
+					out[k] = int(ch["min"])
+			"COLOR_WHEEL":
+				var wv := _white_slot(ch)
+				if wv >= 0:
+					out[k] = wv
+	return out
+
+
+## The DMX value that sits in a colour wheel's "open" / "white" slot, or
+## -1 if the channel has no such slot.
+func _white_slot(ch: Dictionary) -> int:
+	for r in ch.get("ranges", []):
+		var label := String(r["label"]).to_lower()
+		if "white" in label or "open" in label:
+			return int((int(r["lo"]) + int(r["hi"])) / 2.0)
+	return -1
 
 
 ## Describe one pan/tilt axis: its coarse channel, its fine partner (-1 if
