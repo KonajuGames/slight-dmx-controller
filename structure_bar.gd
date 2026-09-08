@@ -9,7 +9,8 @@ signal seek_requested(seconds: float)
 var analysis: SongAnalysis
 var song_pos := 0.0
 
-const _LABEL_HUE := {
+## Section label -> base hue. Shared with WaveHeatmap.
+const LABEL_HUE := {
 	"Intro": Color(0.20, 0.35, 0.75), "Verse": Color(0.20, 0.55, 0.55),
 	"Chorus": Color(0.85, 0.45, 0.15), "Bridge": Color(0.55, 0.25, 0.70),
 	"Build": Color(0.55, 0.55, 0.58), "Drop": Color(0.80, 0.20, 0.20),
@@ -46,7 +47,7 @@ func _draw() -> void:
 	for sec in analysis.sections:
 		var x0: float = float(sec["start"]) / dur * w
 		var x1: float = float(sec["end"]) / dur * w
-		var base: Color = _LABEL_HUE.get(String(sec["label"]), Color(0.3, 0.3, 0.35))
+		var base: Color = LABEL_HUE.get(String(sec["label"]), Color(0.3, 0.3, 0.35))
 		var col := base.lerp(base.lightened(0.35), clampf(float(sec["energy"]), 0.0, 1.0))
 		draw_rect(Rect2(x0, 0, maxf(x1 - x0, 1.0), h), col)
 		draw_line(Vector2(x0, 0), Vector2(x0, h), Color(0, 0, 0, 0.35), 1.0)

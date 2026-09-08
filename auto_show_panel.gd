@@ -15,7 +15,7 @@ var _speed_option: OptionButton
 var _progress: ProgressBar
 var _summary: Label
 var _structure: StructureBar
-var _spectrogram: Spectrogram
+var _wave: WaveHeatmap
 var _section_list: ItemList
 var _build_btn: Button
 var _play_btn: Button
@@ -82,6 +82,10 @@ func _ready() -> void:
 	_structure.seek_requested.connect(func(t: float): AutoShow.seek(t))
 	add_child(_structure)
 
+	_wave = WaveHeatmap.new()
+	_wave.seek_requested.connect(func(t: float): AutoShow.seek(t))
+	add_child(_wave)
+
 	_section_list = ItemList.new()
 	_section_list.custom_minimum_size = Vector2(0, 84)
 	_section_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -120,10 +124,6 @@ func _ready() -> void:
 	_pos_lbl.text = "0:00 / 0:00"
 	add_child(_pos_lbl)
 
-	_spectrogram = Spectrogram.new()
-	_spectrogram.source = func(): return AutoShow.spectrum(_spectrogram.bands)
-	add_child(_spectrogram)
-
 	_status = Label.new()
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	add_child(_status)
@@ -159,6 +159,11 @@ func _process(_delta: float) -> void:
 	if not is_equal_approx(_structure.song_pos, pos):
 		_structure.song_pos = pos
 		_structure.queue_redraw()
+	if _wave.analysis != AutoShow.analysis:
+		_wave.set_analysis(AutoShow.analysis)
+	if not is_equal_approx(_wave.song_pos, pos):
+		_wave.song_pos = pos
+		_wave.queue_redraw()
 
 
 # ---------------------------------------------------------------- ACTIONS --

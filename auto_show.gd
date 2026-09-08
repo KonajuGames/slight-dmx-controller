@@ -25,30 +25,15 @@ var cue_base := 1                          ## 1-based number of section 0's cue
 
 var _player: AudioStreamPlayer
 var _analyzer: SongAnalyzer
-var _mon: AudioEffectSpectrumAnalyzerInstance
 var _resume := 0.0
 var _next_ev := 0
 var _next_beat := 0
-
-const MON_BUS := "AutoShowMon"
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 
-	# a monitoring bus (routes to Master, so it's still audible) with a
-	# spectrum analyzer, for the spectrogram
-	var idx := AudioServer.bus_count
-	AudioServer.add_bus(idx)
-	AudioServer.set_bus_name(idx, MON_BUS)
-	var sa := AudioEffectSpectrumAnalyzer.new()
-	sa.buffer_length = 0.12
-	sa.fft_size = AudioEffectSpectrumAnalyzer.FFT_SIZE_2048
-	AudioServer.add_bus_effect(idx, sa)
-	_mon = AudioServer.get_bus_effect_instance(idx, 0)
-
 	_player = AudioStreamPlayer.new()
-	_player.bus = MON_BUS
 	add_child(_player)
 	_analyzer = SongAnalyzer.new()
 	add_child(_analyzer)
@@ -81,26 +66,6 @@ func song_name() -> String:
 
 func song_length() -> float:
 	return _player.stream.get_length() if _player.stream else 0.0
-
-
-## `n` log-spaced band energies (0..1) of the playing song, for the
-## spectrogram. Zeros when nothing is playing.
-func spectrum(n := 40) -> PackedFloat32Array:
-	var out := PackedFloat32Array()
-	out.resize(n)
-	if _mon == null or not _player.playing or _player.stream_paused:
-		return out
-	var lo := 40.0
-	var ratio: float = pow(16000.0 / lo, 1.0 / n)
-	var f := lo
-	for i in range(n):
-		var f2 := f * ratio
-		var mag := _mon.get_magnitude_for_frequency_range(
-			f, f2, AudioEffectSpectrumAnalyzerInstance.MAGNITUDE_MAX)
-		var lin: float = (mag.x + mag.y) * 0.5
-		out[i] = clampf((linear_to_db(maxf(lin, 1e-6)) + 66.0) / 60.0, 0.0, 1.0)
-		f = f2
-	return out
 
 
 func analyse(speed := 4.0) -> void:

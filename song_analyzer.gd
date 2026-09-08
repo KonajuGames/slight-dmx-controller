@@ -24,6 +24,7 @@ const BUS := "SongAnalysis"
 const N_FFT := 2048
 const HOP := 1024
 const ONSET_DECIM := 128          # onset-envelope hop, in capture samples
+const WAVE_COLS := 1024           # columns in the whole-song waveform view
 
 var _player: AudioStreamPlayer
 var _cap: AudioEffectCapture
@@ -137,7 +138,8 @@ func _detect() -> SongAnalysis:
 	a.path = _path
 	a.duration = _dur
 
-	var frames := _stft()                          # { chroma, rms, centroid, flux }
+	var frames := _stft()                          # { chroma, rms, centroid, flux, blo, bmid, bhi }
+	_build_wave(a, frames)
 	var onset := _onset_env()
 	var onset_hz := _rate / float(ONSET_DECIM)
 
@@ -236,7 +238,9 @@ func _stft() -> Dictionary:
 	var half := N_FFT / 2 + 1
 
 	var bin_pc := PackedInt32Array()
+	var bin_band := PackedInt32Array()             # 0 = bass, 1 = mid, 2 = air
 	bin_pc.resize(half)
+	bin_band.resize(half)
 	for k in range(half):
 		var f_song := (k * _rate / N_FFT) / _speed
 		if f_song < 55.0 or f_song > 2000.0:
@@ -244,11 +248,15 @@ func _stft() -> Dictionary:
 		else:
 			var midi := 69.0 + 12.0 * log(f_song / 440.0) / log(2.0)
 			bin_pc[k] = ((int(round(midi)) % 12) + 12) % 12
+		bin_band[k] = 0 if f_song < 250.0 else (1 if f_song < 2500.0 else 2)
 
 	var chroma: Array = []
 	var rms := PackedFloat32Array()
 	var centroid := PackedFloat32Array()
 	var flux := PackedFloat32Array()
+	var blo := PackedFloat32Array()
+	var bmid := PackedFloat32Array()
+	var bhi := PackedFloat32Array()
 	var prev := PackedFloat32Array()
 	for fr in range(nframes):
 		var spec := FFT.magnitude(_pcm, fr * HOP, N_FFT)
@@ -258,11 +266,13 @@ func _stft() -> Dictionary:
 		var cnum := 0.0
 		var cden := 0.0
 		var fx := 0.0
+		var eb := [0.0, 0.0, 0.0]
 		for k in range(spec.size()):
 			var m := spec[k]
 			e += m * m
 			cnum += k * m
 			cden += m
+			eb[bin_band[k]] += m * m
 			var pc := bin_pc[k]
 			if pc >= 0:
 				c[pc] += m
@@ -278,8 +288,65 @@ func _stft() -> Dictionary:
 		rms.append(sqrt(e / spec.size()))
 		centroid.append(cnum / cden if cden > 0.0 else 0.0)
 		flux.append(fx)
+		blo.append(sqrt(eb[0]))
+		bmid.append(sqrt(eb[1]))
+		bhi.append(sqrt(eb[2]))
 		prev = spec
-	return {"chroma": chroma, "rms": rms, "centroid": centroid, "flux": flux}
+	return {
+		"chroma": chroma, "rms": rms, "centroid": centroid, "flux": flux,
+		"blo": blo, "bmid": bmid, "bhi": bhi,
+	}
+
+
+## Whole-song waveform envelope for the Auto Show wave view: WAVE_COLS
+## columns spanning the track, each with a loudness peak and a bass / mid /
+## air balance. Fed straight from the STFT frames (capture time maps
+## linearly to song time).
+func _build_wave(a: SongAnalysis, frames: Dictionary) -> void:
+	var rms: PackedFloat32Array = frames["rms"]
+	var blo: PackedFloat32Array = frames["blo"]
+	var bmid: PackedFloat32Array = frames["bmid"]
+	var bhi: PackedFloat32Array = frames["bhi"]
+	var nf := rms.size()
+	a.wave_lo = PackedFloat32Array()
+	a.wave_mid = PackedFloat32Array()
+	a.wave_hi = PackedFloat32Array()
+	a.wave_peak = PackedFloat32Array()
+	if nf == 0:
+		return
+	a.wave_lo.resize(WAVE_COLS)
+	a.wave_mid.resize(WAVE_COLS)
+	a.wave_hi.resize(WAVE_COLS)
+	a.wave_peak.resize(WAVE_COLS)
+	var pk_max := 1e-9
+	var bnd_max := 1e-9
+	for c in range(WAVE_COLS):
+		var f0 := c * nf / WAVE_COLS
+		var f1 := maxi(f0 + 1, (c + 1) * nf / WAVE_COLS)
+		var sl := 0.0
+		var sm := 0.0
+		var sh := 0.0
+		var pk := 0.0
+		for i in range(f0, mini(f1, nf)):
+			sl += blo[i]
+			sm += bmid[i]
+			sh += bhi[i]
+			pk = maxf(pk, rms[i])
+		var n := float(maxi(1, mini(f1, nf) - f0))
+		sl /= n
+		sm /= n
+		sh /= n
+		a.wave_lo[c] = sl
+		a.wave_mid[c] = sm
+		a.wave_hi[c] = sh
+		a.wave_peak[c] = pk
+		pk_max = maxf(pk_max, pk)
+		bnd_max = maxf(bnd_max, maxf(sl, maxf(sm, sh)))
+	for c in range(WAVE_COLS):
+		a.wave_lo[c] /= bnd_max
+		a.wave_mid[c] /= bnd_max
+		a.wave_hi[c] /= bnd_max
+		a.wave_peak[c] /= pk_max
 
 
 ## Time-domain onset envelope for beat tracking: the positive change in

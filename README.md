@@ -28,9 +28,11 @@ so no native plugin or GDExtension is required.
 - `sound_reactor.gd` / `sound_panel.gd` — the `SoundReactor` class and
   the Sound tab: maps a band or the beat onto a channel role, with a
   live band meter.
-- `spectrogram.gd` / `structure_bar.gd` — a scrolling FFT heat-map and
-  the analysed-song structure strip, shared by the Sound and Auto Show
-  tabs.
+- `spectrogram.gd` — a scrolling FFT heat-map for the live input on the
+  Sound tab.
+- `structure_bar.gd` / `wave_heatmap.gd` — the analysed-song structure
+  strip and a whole-song colour-coded waveform (loudness height, spectral
+  hue), stacked on the Auto Show tab.
 - `triggers_engine.gd` — the `Triggers` autoload: listens for MIDI
   (Godot's `InputEventMIDI`) and OSC (a UDP listener), fires console
   actions, and sends feedback (LED updates) when a binding's target is
@@ -242,7 +244,9 @@ Build a light show from a song's structure, then refine it.
   survives the octave shift, so 4× is usually fine). It's still an
   estimate — expect to nudge a boundary or rename a section. The result
   is shown as a **structure strip** — one coloured block per section with
-  downbeat ticks and a playhead — click anywhere on it to seek.
+  downbeat ticks and a playhead — over a **waveform** of the whole track
+  (bar height is loudness, colour is the bass / mid / air balance, with
+  the section tints behind it). Click either to seek.
 - **Build Light Show** adds one **block cue per section** *after* your
   own cues (a rebuild replaces only the generated ones). Fixtures are
   sorted by kind — moving head / wash / strobe — and each section draws
@@ -259,10 +263,9 @@ Build a light show from a song's structure, then refine it.
   Stop**, a seek bar, click the structure strip or a section to jump)
   plays the song and runs the show: each section crossfades to its cue
   on the bar line, one chase and a set of effects switch in per section,
-  the drop is preceded by its blackout. A scrolling spectrogram of the
-  song plays under the transport. Seeking folds the whole timeline up to
-  that point, so a jump lands on the right look *and* the right chase /
-  effects.
+  the drop is preceded by its blackout. Seeking folds the whole timeline
+  up to that point, so a jump lands on the right look *and* the right
+  chase / effects.
 
 Everything it makes is normal cues / chases / effects, so you edit them
 like anything else. The song path, analysis and timeline are saved in
@@ -610,7 +613,7 @@ packets to a physical DMX512 signal for your fixtures.
   segmentation with verse/chorus repetition — into per-kind section cues
   that cycle so they don't repeat, three chases, six movement effects and
   a pre-drop blackout, all played from a timeline locked to playback,
-  with a scrolling spectrogram and a click-to-seek structure strip).
+  with a click-to-seek structure strip and whole-song waveform).
   Room to grow: layering the auto show over hand cues instead of
   alongside them, palettes learned from the song's key, MIDI-clock or
   Ableton-Link sync.
