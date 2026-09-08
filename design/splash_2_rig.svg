@@ -1,0 +1,51 @@
+<svg width="1024" height="512" viewBox="0 0 1024 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="s2Bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0f1420"/>
+      <stop offset="1" stop-color="#080a10"/>
+    </linearGradient>
+    <linearGradient id="s2R" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ff4d6a" stop-opacity="0.6"/><stop offset="1" stop-color="#ff4d6a" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="s2G" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd27a" stop-opacity="0.62"/><stop offset="1" stop-color="#ffd27a" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="s2B" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#37c0ff" stop-opacity="0.58"/><stop offset="1" stop-color="#37c0ff" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="s2P" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.42"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="s2S" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffc24b"/><stop offset="0.5" stop-color="#ff4d8d"/><stop offset="1" stop-color="#37d0ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="512" fill="url(#s2Bg)"/>
+
+  <!-- truss -->
+  <rect x="0" y="30" width="1024" height="13" fill="#1e2536"/>
+  <rect x="0" y="30" width="1024" height="4" fill="#313c56"/>
+
+  <!-- crossing beams: A sweeps right, C sweeps left, B centre -->
+  <polygon points="250,42 286,42 548,344 316,344" fill="url(#s2R)"/>
+  <polygon points="748,42 784,42 712,344 480,344" fill="url(#s2B)"/>
+  <polygon points="493,42 529,42 586,344 438,344" fill="url(#s2G)"/>
+
+  <ellipse cx="432" cy="345" rx="150" ry="19" fill="url(#s2P)"/>
+  <ellipse cx="596" cy="345" rx="150" ry="19" fill="url(#s2P)"/>
+
+  <!-- fixtures -->
+  <g fill="#2b3450">
+    <rect x="245" y="40" width="46" height="16" rx="4"/>
+    <rect x="488" y="40" width="46" height="16" rx="4"/>
+    <rect x="743" y="40" width="46" height="16" rx="4"/>
+  </g>
+
+  <!-- wordmark, centred, common baseline y=452 -->
+  <g transform="translate(48 0)">
+    <path d="M403 402 c0 -13 -18 -17 -30 -9 c-13 8 -10 25 8 31 c18 6 21 22 5 32 c-13 8 -33 4 -38 -8"
+          fill="none" stroke="url(#s2S)" stroke-width="17" stroke-linecap="round"/>
+    <text x="418" y="452" font-family="Segoe UI, Arial, sans-serif" font-size="84" font-weight="700" fill="#f2f5ff">Light</text>
+  </g>
+  <text x="356" y="488" font-family="Segoe UI, Arial, sans-serif" font-size="19" letter-spacing="6" fill="#6f7ba0">DMX  LIGHTING  CONTROLLER</text>
+</svg>
