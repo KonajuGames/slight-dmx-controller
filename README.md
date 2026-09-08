@@ -417,8 +417,10 @@ Fixture**. Its panel appears below with the right controls automatically:
   slider that splits across the two DMX channels on output.
 - A **Pan** and a **Tilt** channel together become one 2D pad — drag the
   puck to aim the head, pan on the horizontal axis, tilt on the vertical
-  (up = higher value). 16-bit pan/tilt is split across its channels the
-  same way. The readout under the pad shows the raw values.
+  (up = higher value). The mouse wheel nudges the puck one snapped step
+  for fine work (vertical wheel = tilt, **Shift**+wheel = pan). 16-bit
+  pan/tilt is split across its channels the same way. The readout under
+  the pad shows the raw values.
 - A channel with named ranges becomes a slot dropdown plus a trim slider
   (they stay in sync — moving the slider re-selects the slot it lands in).
   Each item carries a little icon: an imported picture if the slot has

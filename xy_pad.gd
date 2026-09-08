@@ -1,14 +1,19 @@
 class_name XYPad
 extends Control
 ## A pan / tilt trackpad. Drag the puck to set two values at once: pan on
-## the horizontal axis, tilt on the vertical (up = higher value). Values
-## are normalised 0..1; the caller maps them to the fixture's channels.
-## `changed(x, y)` fires while dragging; `set_value_silent` moves the puck
-## without signalling.
+## the horizontal axis, tilt on the vertical (up = higher value). The
+## mouse wheel nudges the puck one snapped step for fine work — vertical
+## wheel moves tilt, Shift+wheel (or a horizontal wheel) moves pan.
+## Values are normalised 0..1; the caller maps them to the fixture's
+## channels. `changed(x, y)` fires on any change from the user;
+## `set_value_silent` moves the puck without signalling.
 
 signal changed(x: float, y: float)
 
 var value := Vector2(0.5, 0.5)          ## 0..1, y is bottom-up
+## Wheel step, in normalised units. 1/256 ≈ one step of an 8-bit channel,
+## or one step of a 16-bit channel's coarse byte.
+var wheel_step := 1.0 / 256.0
 var _drag := false
 
 const _KNOB := 7.0
@@ -27,14 +32,46 @@ func set_value_silent(v: Vector2) -> void:
 
 
 func _gui_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		if event.pressed:
-			_drag = true
-			set_process(true)
-			_apply_pos(event.position)
-		else:
-			_drag = false
-			set_process(false)
+	if not (event is InputEventMouseButton):
+		return
+	match event.button_index:
+		MOUSE_BUTTON_LEFT:
+			if event.pressed:
+				_drag = true
+				set_process(true)
+				_apply_pos(event.position)
+			else:
+				_drag = false
+				set_process(false)
+		MOUSE_BUTTON_WHEEL_UP:
+			if event.pressed:
+				_nudge(event.shift_pressed, 1.0)
+				accept_event()
+		MOUSE_BUTTON_WHEEL_DOWN:
+			if event.pressed:
+				_nudge(event.shift_pressed, -1.0)
+				accept_event()
+		MOUSE_BUTTON_WHEEL_RIGHT:
+			if event.pressed:
+				_nudge(true, 1.0)
+				accept_event()
+		MOUSE_BUTTON_WHEEL_LEFT:
+			if event.pressed:
+				_nudge(true, -1.0)
+				accept_event()
+
+
+## One wheel notch: step the puck onto the next `wheel_step` grid line.
+## `horizontal` sends it along pan (X) instead of tilt (Y).
+func _nudge(horizontal: bool, dir: float) -> void:
+	var v := value
+	if horizontal:
+		v.x = snappedf(v.x + dir * wheel_step, wheel_step)
+	else:
+		v.y = snappedf(v.y + dir * wheel_step, wheel_step)
+	value = v.clamp(Vector2.ZERO, Vector2.ONE)
+	queue_redraw()
+	changed.emit(value.x, value.y)
 
 
 ## While dragging, follow the mouse even when it leaves the control.
