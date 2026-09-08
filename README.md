@@ -479,6 +479,10 @@ left `GENERIC`, undefined DMX slots become `GENERIC` placeholders, and
 the status line reports how many approximations were made (details go to
 the Godot log). Open the result with **Edit...** to check and adjust it.
 
+Pan and Tilt channels default to the middle of their range (so a patched
+moving head parks centre stage) unless the GDTF or OFL definition gives
+an explicit default.
+
 Custom profiles are shared across every universe tab and persist in
 `user://fixture_profiles/`. The fixture list itself is saved as part of
 the whole-show file (see **Save/Load Show** above), including each

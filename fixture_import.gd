@@ -483,6 +483,8 @@ static func _dmx_int(v: String) -> int:
 	return int(v.split("/")[0])
 
 
+## The channel's home DMX value, or -1 if the GDTF states none (the caller
+## then falls back to a role-appropriate default).
 static func _gdtf_default(dc, funcs: Array) -> int:
 	var chosen = null
 	var initial := String(dc["attrs"].get("InitialFunction", ""))
@@ -494,10 +496,9 @@ static func _gdtf_default(dc, funcs: Array) -> int:
 				break
 	if chosen == null and not funcs.is_empty():
 		chosen = funcs[0]
-	if chosen == null:
-		return 0
-	var d := String(chosen["attrs"].get("Default", "0/1"))
-	return _dmx_int(d)
+	if chosen == null or not chosen["attrs"].has("Default"):
+		return -1
+	return _dmx_int(String(chosen["attrs"]["Default"]))
 
 
 ## Pick the wheel slot a ChannelFunction refers to: explicit
@@ -557,9 +558,10 @@ static func _gdtf_mode(mn, wheels: Dictionary, warnings: Array, refs: Array = []
 
 		var role := _role_for(attr)
 		var cname := attr if attr != "" else "Ch %d" % offs[0]
-		var dval := _gdtf_default(dc, funcs)
+		var dval := _gdtf_default(dc, funcs)          # -1 when the GDTF gives none
+		var has_default := dval >= 0
 		var is16 := dval > 255 or offs.size() >= 2
-		var coarse_default := (dval >> 8) if dval > 255 else dval
+		var coarse_default := (dval >> 8) if dval > 255 else maxi(dval, 0)
 		var fine_default := (dval & 0xFF) if dval > 255 else 0
 
 		var ranges: Array = []
@@ -588,19 +590,25 @@ static func _gdtf_mode(mn, wheels: Dictionary, warnings: Array, refs: Array = []
 					"color": color, "image": image,
 				})
 
-		slots[offs[0]] = {
-			"name": cname, "role": role,
-			"default": clampi(coarse_default, 0, 255), "fine": false, "ranges": ranges,
+		# Leave "default" unset when the GDTF states none, so the profile
+		# can fall back per role (pan / tilt park in the middle).
+		var coarse_slot := {
+			"name": cname, "role": role, "fine": false, "ranges": ranges,
 		}
+		if has_default:
+			coarse_slot["default"] = clampi(coarse_default, 0, 255)
+		slots[offs[0]] = coarse_slot
 		if is_module:
 			module_slots[offs[0]] = slots[offs[0]]
 		footprint = maxi(footprint, offs[0])
 		for k in range(1, offs.size()):
-			slots[offs[k]] = {
+			var fine_slot := {
 				"name": "%s fine" % cname, "role": _fine_role(role),
-				"default": clampi(fine_default if k == 1 else 0, 0, 255),
 				"fine": true, "ranges": [],
 			}
+			if has_default:
+				fine_slot["default"] = clampi(fine_default if k == 1 else 0, 0, 255)
+			slots[offs[k]] = fine_slot
 			if is_module:
 				module_slots[offs[k]] = slots[offs[k]]
 			footprint = maxi(footprint, offs[k])
@@ -748,11 +756,14 @@ static func _ofl_channel(cname: String, cdef: Dictionary, wheels: Dictionary, wa
 				"color": _ofl_cap_color(cap, wheel_slots),
 			})
 
-	return {
-		"name": cname, "role": role,
-		"default": _ofl_num(cdef.get("defaultValue", 0)),
-		"fine": false, "ranges": ranges,
+	var ch := {
+		"name": cname, "role": role, "fine": false, "ranges": ranges,
 	}
+	# No explicit default -> let the profile decide per role (pan / tilt
+	# park in the middle rather than at 0).
+	if cdef.has("defaultValue"):
+		ch["default"] = _ofl_num(cdef["defaultValue"])
+	return ch
 
 
 ## Ordered pixels of an OFL `matrix` object: [{key, pos:Vector3}] with pos in

@@ -150,6 +150,11 @@ func head_groups(mode_index: int) -> Array:
 # Every channel dict is forced into the same complete shape so the rest
 # of the code never has to test for missing keys.
 
+## Roles whose home value is the middle of the range when the definition
+## doesn't give an explicit default (a moving head parks centre stage).
+const _CENTRE_DEFAULT_ROLES := ["PAN", "TILT"]
+
+
 static func _normalize_channel(c: Dictionary) -> Dictionary:
 	var lo := clampi(int(c.get("min", 0)), 0, 255)
 	var hi := clampi(int(c.get("max", 255)), 0, 255)
@@ -158,12 +163,19 @@ static func _normalize_channel(c: Dictionary) -> Dictionary:
 		lo = hi
 		hi = tmp
 
+	var role := String(c.get("role", "GENERIC"))
+	var default_val := 0
+	if c.get("default", null) != null:
+		default_val = int(c["default"])
+	elif role in _CENTRE_DEFAULT_ROLES:
+		default_val = int(round((lo + hi) / 2.0))
+
 	var ch := {
 		"name": String(c.get("name", "Ch")),
-		"role": String(c.get("role", "GENERIC")),
+		"role": role,
 		"min": lo,
 		"max": hi,
-		"default": clampi(int(c.get("default", 0)), lo, hi),
+		"default": clampi(default_val, lo, hi),
 		"fine": bool(c.get("fine", false)),
 		"ranges": [],
 	}
