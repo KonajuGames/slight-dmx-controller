@@ -12,6 +12,10 @@ const ROOMS := {
 }
 const HAZE_MAX := 0.05
 
+## Toolbar "Pop Out" / "Dock" button — the shell moves this panel between
+## the tab and its own window.
+signal popout_pressed
+
 var panels: Array = []   # shared reference to the shell's _panels
 ## Shell handlers for the whole-rig formats (they touch the patch).
 var mvr_import_cb := Callable()   # func(path: String) -> String  (status/error)
@@ -64,6 +68,7 @@ var _fov_spin: SpinBox
 var _ortho_check: CheckButton
 var _rec_btn: Button
 var _rec_label: Label
+var _popout_btn: Button
 var _prop_panel: PanelContainer
 var _prop_title: Label
 var _px: SpinBox
@@ -201,6 +206,12 @@ func _btn(text: String, cb: Callable) -> Button:
 	return b
 
 
+## Relabel the toolbar button for the shell's dock state.
+func set_floating(floating: bool) -> void:
+	if _popout_btn:
+		_popout_btn.text = "Dock to Main" if floating else "Pop Out Window"
+
+
 func _build_overlay() -> void:
 	_toolbar = PanelContainer.new()
 	_toolbar.position = Vector2(8, 8)
@@ -283,6 +294,9 @@ func _build_overlay() -> void:
 	r3.add_child(_rec_btn)
 	_rec_label = _mklabel("")
 	r3.add_child(_rec_label)
+
+	_popout_btn = _btn("Pop Out Window", func(): popout_pressed.emit())
+	r3.add_child(_popout_btn)
 
 	# --- selected-item properties ---
 	_prop_panel = PanelContainer.new()

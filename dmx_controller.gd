@@ -32,6 +32,11 @@ var sound_panel: SoundPanel
 var auto_show_panel: AutoShowPanel
 var groups_panel: GroupsPanel
 var viz_panel: VisualizerPanel
+## The right-hand tabs (Patch + 3D Visualizer) and, while the visualizer
+## is popped out, its own window.
+var _right_tabs: TabContainer
+var _viz_window: Window
+const _VIZ_TAB := 1
 var master_slider: HSlider
 var sending_toggle: CheckButton
 var run_mode_option: OptionButton
@@ -128,20 +133,21 @@ func _ready() -> void:
 	AutoShow.beat.connect(Fx._on_beat)
 
 	# Right side: "Patch" (the universe tabs) and the "3D Visualizer".
-	var right_tabs := TabContainer.new()
-	right_tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	split.add_child(right_tabs)
+	_right_tabs = TabContainer.new()
+	_right_tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	split.add_child(_right_tabs)
 
 	universe_tabs = TabContainer.new()
-	right_tabs.add_child(universe_tabs)
+	_right_tabs.add_child(universe_tabs)
 
 	viz_panel = VisualizerPanel.new()
 	viz_panel.panels = _panels
 	viz_panel.mvr_import_cb = _do_mvr_import
 	viz_panel.mvr_export_cb = _do_mvr_export
-	right_tabs.add_child(viz_panel)
-	right_tabs.set_tab_title(0, "Patch")
-	right_tabs.set_tab_title(1, "3D Visualizer")
+	viz_panel.popout_pressed.connect(_toggle_viz_popout)
+	_right_tabs.add_child(viz_panel)
+	_right_tabs.set_tab_title(0, "Patch")
+	_right_tabs.set_tab_title(_VIZ_TAB, "3D Visualizer")
 
 	_load_available_profiles()
 
@@ -186,6 +192,82 @@ func _pad_tab_content(tc: TabContainer, pad := 8.0) -> void:
 	sb.content_margin_top = pad
 	sb.content_margin_bottom = pad
 	tc.add_theme_stylebox_override("panel", sb)
+
+
+## ------------------------------------------------- VISUALIZER POP-OUT --
+## The 3D Visualizer can live in its own OS window (drag it to a second
+## monitor for front-of-house). It's the same VisualizerPanel node,
+## reparented between `_right_tabs` and a `Window`.
+
+func _toggle_viz_popout() -> void:
+	if _viz_window == null:
+		_pop_out_viz()
+	else:
+		_dock_viz()
+
+
+func _pop_out_viz(rect := Rect2i()) -> void:
+	if _viz_window != null:
+		return
+	var w := Window.new()
+	w.title = "sLight — 3D Visualizer"
+	w.min_size = Vector2i(480, 320)
+	if rect.size.x > 0 and rect.size.y > 0:
+		w.position = rect.position
+		w.size = rect.size
+	else:
+		w.size = Vector2i(1000, 620)
+	w.close_requested.connect(_dock_viz)
+	add_child(w)
+
+	_right_tabs.remove_child(viz_panel)
+	w.add_child(viz_panel)
+	viz_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_viz_window = w
+	viz_panel.set_floating(true)
+	# Only "Patch" is left — hide the now-pointless tab strip.
+	_right_tabs.tabs_visible = false
+
+
+func _dock_viz() -> void:
+	if _viz_window == null:
+		return
+	var w := _viz_window
+	_viz_window = null                       # guard against close_requested re-entry
+	if viz_panel.get_parent() == w:
+		w.remove_child(viz_panel)
+		_right_tabs.add_child(viz_panel)
+		_right_tabs.move_child(viz_panel, _VIZ_TAB)
+		_right_tabs.set_tab_title(_VIZ_TAB, "3D Visualizer")
+		_right_tabs.current_tab = _VIZ_TAB
+	_right_tabs.tabs_visible = true
+	viz_panel.set_floating(false)
+	w.queue_free()
+
+
+func _viz_window_dict() -> Dictionary:
+	if _viz_window == null:
+		return {"floating": false}
+	return {
+		"floating": true,
+		"rect": [_viz_window.position.x, _viz_window.position.y,
+			_viz_window.size.x, _viz_window.size.y],
+	}
+
+
+func _apply_viz_window(d: Dictionary) -> void:
+	var want_float := bool(d.get("floating", false))
+	var rect := Rect2i()
+	var ra = d.get("rect", null)
+	if ra is Array and ra.size() == 4:
+		rect = Rect2i(int(ra[0]), int(ra[1]), int(ra[2]), int(ra[3]))
+	if want_float and _viz_window == null:
+		_pop_out_viz(rect)
+	elif want_float and _viz_window != null and rect.size.x > 0:
+		_viz_window.position = rect.position
+		_viz_window.size = rect.size
+	elif not want_float and _viz_window != null:
+		_dock_viz()
 
 
 ## Wrap a playback panel so it gets a vertical scrollbar when the window
@@ -925,6 +1007,7 @@ func _on_save_show() -> void:
 		"auto_show": AutoShow.to_dict(),
 		"groups": _groups_to_dict(),
 		"viz": viz_panel.to_dict(),
+		"viz_window": _viz_window_dict(),
 	}
 	for p in _panels:
 		data["universes"].append(p.patch_dict())
@@ -981,6 +1064,7 @@ func _on_load_show() -> void:
 	_set_run_mode(int(doc.get("run_mode", 0)))
 	viz_panel.rebuild()
 	viz_panel.from_dict(doc.get("viz", {}))
+	_apply_viz_window(doc.get("viz_window", {}))
 	status_label.text = "Show loaded (%d universes, %d cues, %d chases, %d effects, %d groups)." % [
 		n, cue_panel.cues.size(), Fx.chases.size(), Fx.effects.size(), groups.size()]
 

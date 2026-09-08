@@ -38,6 +38,7 @@ Triggers="*res://triggers_engine.gd"
 
 window/size/viewport_width=1366
 window/size/viewport_height=820
+window/subwindows/embed_subwindows=false
 
 [dotnet]
 
