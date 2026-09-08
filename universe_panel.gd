@@ -649,6 +649,32 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 			push_intensity.call(b_idx)
 		)
 
+	# A fixture with both a Pan and a Tilt channel gets a single 2D pad
+	# instead of two sliders — drag the puck to aim the head.
+	var pan_i := -1
+	var tilt_i := -1
+	for k in range(chans.size()):
+		if handled.has(k):
+			continue
+		match String(chans[k]["role"]):
+			"PAN":
+				if pan_i == -1:
+					pan_i = k
+			"TILT":
+				if tilt_i == -1:
+					tilt_i = k
+	if pan_i != -1 and tilt_i != -1:
+		var pan_spec := _axis_spec(chans, pan_i)
+		var tilt_spec := _axis_spec(chans, tilt_i)
+		controls_row.add_child(_build_xy_pad(
+			start, pan_spec, tilt_spec, reset_callables, apply_callables))
+		handled[pan_i] = true
+		handled[tilt_i] = true
+		if pan_spec["fine"] != -1:
+			handled[pan_spec["fine"]] = true
+		if tilt_spec["fine"] != -1:
+			handled[tilt_spec["fine"]] = true
+
 	var ci := 0
 	while ci < chans.size():
 		if handled.has(ci):
@@ -698,6 +724,76 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 
 func _bufv(buf: PackedByteArray, i: int) -> int:
 	return int(buf[i]) if i >= 0 and i < buf.size() else 0
+
+
+## Describe one pan/tilt axis: its coarse channel, its fine partner (-1 if
+## 8-bit), the value range and the home value. 16-bit axes run 0..65535.
+func _axis_spec(chans: Array, idx: int) -> Dictionary:
+	var ch: Dictionary = chans[idx]
+	if idx + 1 < chans.size() and bool(chans[idx + 1].get("fine", false)):
+		return {
+			"coarse": idx, "fine": idx + 1, "lo": 0, "hi": 65535,
+			"default": (int(ch["default"]) << 8) | int(chans[idx + 1]["default"]),
+		}
+	return {
+		"coarse": idx, "fine": -1,
+		"lo": int(ch["min"]), "hi": int(ch["max"]), "default": int(ch["default"]),
+	}
+
+
+func _axis_from_buf(buf: PackedByteArray, start: int, spec: Dictionary) -> int:
+	if spec["fine"] != -1:
+		return (_bufv(buf, start + spec["coarse"]) << 8) | _bufv(buf, start + spec["fine"])
+	return _bufv(buf, start + spec["coarse"])
+
+
+## Pan/Tilt as one 2D pad: X = pan, Y = tilt (up = higher value). Writes
+## both axes (splitting 16-bit ones across their two channels) whenever the
+## puck moves, and follows Home / Load to Patch.
+func _build_xy_pad(start: int, pan: Dictionary, tilt: Dictionary, reset_callables: Array, apply_callables: Array) -> Control:
+	var box := VBoxContainer.new()
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_child(_centered_label("Pan / Tilt"))
+
+	var pad := XYPad.new()
+	box.add_child(pad)
+
+	var val_lbl := _centered_label("")
+	box.add_child(val_lbl)
+
+	var write_axis := func(spec: Dictionary, norm: float) -> int:
+		var span: int = spec["hi"] - spec["lo"]
+		var v: int = clampi(spec["lo"] + int(round(norm * span)), spec["lo"], spec["hi"])
+		if spec["fine"] != -1:
+			sender.set_channel(start + spec["coarse"], (v >> 8) & 0xFF)
+			sender.set_channel(start + spec["fine"], v & 0xFF)
+		else:
+			sender.set_channel(start + spec["coarse"], v)
+		return v
+
+	var norm_of := func(spec: Dictionary, v: int) -> float:
+		return clampf(float(v - spec["lo"]) / maxi(1, spec["hi"] - spec["lo"]), 0.0, 1.0)
+
+	var push := func(nx: float, ny: float):
+		var pv: int = write_axis.call(pan, nx)
+		var tv: int = write_axis.call(tilt, ny)
+		val_lbl.text = "P%d  T%d" % [pv, tv]
+
+	pad.changed.connect(func(nx: float, ny: float): push.call(nx, ny))
+
+	reset_callables.append(func():
+		var nx: float = norm_of.call(pan, pan["default"])
+		var ny: float = norm_of.call(tilt, tilt["default"])
+		pad.set_value_silent(Vector2(nx, ny))
+		push.call(nx, ny)
+	)
+	apply_callables.append(func(buf: PackedByteArray):
+		var nx: float = norm_of.call(pan, _axis_from_buf(buf, start, pan))
+		var ny: float = norm_of.call(tilt, _axis_from_buf(buf, start, tilt))
+		pad.set_value_silent(Vector2(nx, ny))
+		push.call(nx, ny)
+	)
+	return box
 
 
 ## Plain 8-bit channel: a vertical slider clamped to [min, max]. When

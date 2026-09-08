@@ -66,6 +66,8 @@ so no native plugin or GDExtension is required.
 - `universe_panel.gd` — the `UniversePanel` class: one universe's tab —
   its connection settings, quick RGB row, blackout/full, and fixture
   patch with purpose-built per-fixture controls.
+- `xy_pad.gd` — the `XYPad` control: the draggable pan / tilt trackpad
+  used for moving-head fixtures in the patch.
 - `cue.gd` — the `Cue` class: a stored look (every universe's non-zero
   channels) plus split fade-in / fade-out times; captures from and
   renders back to the live buffers.
@@ -413,6 +415,10 @@ Fixture**. Its panel appears below with the right controls automatically:
   picker per head, labelled **Colour 1**, **Colour 2**, …
 - A channel + its fine partner become one high-resolution (0–65535)
   slider that splits across the two DMX channels on output.
+- A **Pan** and a **Tilt** channel together become one 2D pad — drag the
+  puck to aim the head, pan on the horizontal axis, tilt on the vertical
+  (up = higher value). 16-bit pan/tilt is split across its channels the
+  same way. The readout under the pad shows the raw values.
 - A channel with named ranges becomes a slot dropdown plus a trim slider
   (they stay in sync — moving the slider re-selects the slot it lands in).
   Each item carries a little icon: an imported picture if the slot has
