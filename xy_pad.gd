@@ -11,11 +11,11 @@ signal changed(x: float, y: float)
 var value := Vector2(0.5, 0.5)          ## 0..1, y is bottom-up
 var _drag := false
 
-const _KNOB := 6.0
+const _KNOB := 7.0
 
 
 func _ready() -> void:
-	custom_minimum_size = Vector2(116, 116)
+	custom_minimum_size = Vector2(168, 168)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	set_process(false)
 
