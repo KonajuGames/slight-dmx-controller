@@ -127,7 +127,7 @@ func _ready() -> void:
 		elif i == 3:
 			sound_panel.refresh_group_options())
 
-	AutoShow.cue_fired.connect(func(n: int): cue_panel.go_to_number(n))
+	AutoShow.section_changed.connect(func(i: int): auto_show_panel.highlight_section(i))
 	AutoShow.chase_set.connect(func(nm: String, on: bool): chase_panel.set_running_by_name(nm, on))
 	AutoShow.effect_set.connect(func(nm: String, on: bool): fx_panel.set_running_by_name(nm, on))
 	AutoShow.beat.connect(Fx._on_beat)
@@ -671,13 +671,11 @@ func _effect_names() -> Array:
 	return out
 
 
-## The Auto Show generator produced cues, chases, movement effects and a
-## timeline — install them non-destructively (hand-programmed cues, chases
-## and effects are left alone; only same-named auto ones are replaced).
+## The Auto Show generator produced a per-section layer, chases, movement
+## effects and a timeline. The cue list is untouched — Auto Show plays as
+## a layer over whatever the operator's cues are doing. Chases / effects
+## replace only same-named auto ones.
 func _apply_auto_show(res: Dictionary) -> void:
-	var new_cues: Array = res["cues"]
-	var first := cue_panel.replace_auto_cues(new_cues)
-
 	for chase in res["chases"]:
 		for i in range(Fx.chases.size() - 1, -1, -1):
 			if Fx.chases[i].name == chase.name:
@@ -693,9 +691,9 @@ func _apply_auto_show(res: Dictionary) -> void:
 		Fx.effects.append(eff)
 	fx_panel.sync_ui()
 
-	AutoShow.set_show(res["timeline"], first)
-	status_label.text = "Auto Show built: %d section cues, %d chases, %d effects." % [
-		res["cues"].size(), res["chases"].size(), res["effects"].size()]
+	AutoShow.set_show(res["looks"], res["timeline"])
+	status_label.text = "Auto Show built: %d section looks, %d chases, %d effects — plays over your cues." % [
+		res["looks"].size(), res["chases"].size(), res["effects"].size()]
 
 
 ## "Load to Patch" — write a cue's or chase step's per-universe look into

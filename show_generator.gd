@@ -1,17 +1,18 @@
 class_name ShowGenerator
 extends RefCounted
-## Turns a `SongAnalysis` + the live patch into a starter light show.
+## Turns a `SongAnalysis` + the live patch into a light show that plays as
+## a *layer over* the operator's own cues (it never touches the cue list).
 ##
 ## Fixtures are sorted by kind (moving head / wash / strobe / dimmer) and
 ## each section gets a **recipe** — a look for each kind plus which chase
 ## and movement effect to run. Every label has a small pool of recipes
 ## that cycle by occurrence, so consecutive verses / choruses / drops
-## don't repeat. Drops get a short blackout a couple of beats before the
-## hit.
+## don't repeat. Drops get a short blackout of the auto layer a couple of
+## beats before the hit.
 ##
-## Output: { cues, chases, effects, timeline }. Generated cues carry
-## `Cue.auto = true` (a rebuild replaces only those); the timeline
-## addresses sections by index, the shell maps that to a cue number.
+## Output: { looks, chases, effects, timeline }. `looks[i]` is the
+## per-universe channel map for section `i`; AutoShow crossfades between
+## them and composites the result under the chase / effect layer.
 
 # ---- colours ----
 const _WARM := Color(1.00, 0.55, 0.20)
@@ -114,10 +115,10 @@ const RECIPES := {
 }
 
 
-## -> { cues, chases, effects, timeline }
+## -> { looks, chases, effects, timeline }
 static func build(a: SongAnalysis, panels: Array) -> Dictionary:
 	var fixtures := _collect(panels)
-	var cues: Array = []
+	var looks: Array = []              # section index -> per-universe { str(ch): value }
 	var timeline: Array = []
 	var seen := {}                     # label -> how many times used
 
@@ -135,38 +136,22 @@ static func build(a: SongAnalysis, panels: Array) -> Dictionary:
 		var per_uni := _blank(panels.size())
 		for fx in fixtures:
 			_apply_recipe(per_uni, fx, recipe, e)
-
-		var fade: float = float(FADE.get(label, 2.0))
-		var cue := Cue.new("%d. %s%s" % [i + 1, label, ("" if occ == 0 else " %d" % (occ + 1))],
-			fade, fade + 0.4)
-		cue.auto = true
-		cue.set_levels(per_uni)
-		cues.append(cue)
+		looks.append(_look_from(per_uni))
 
 		var t := _section_start(a, sec)
 		if label == "Drop" and t > bar:
-			timeline.append({"t": t - bar * 0.5, "kind": "blackout", "arg": 0})
-		timeline.append({"t": t, "kind": "cue", "arg": i})
+			timeline.append({"t": t - bar * 0.5, "kind": "blackout"})
+		timeline.append({"t": t, "kind": "section", "arg": i,
+			"fade": float(FADE.get(label, 2.0)), "label": label})
 		for ch in ALL_CHASES:
 			timeline.append({"t": t, "kind": "chase", "arg": {"name": ch, "on": ch == recipe["chase"]}})
 		var on_fx: Array = FX_SETS.get(recipe["fx"], [])
 		for fxn in FX.keys():
 			timeline.append({"t": t, "kind": "effect", "arg": {"name": fxn, "on": fxn in on_fx}})
 
-	# the shared blackout cue, appended last; resolve its timeline events
-	var bo := Cue.new("◦ Blackout", 0.04, 0.04)
-	bo.auto = true
-	bo.set_levels(_blank(panels.size()))
-	cues.append(bo)
-	var bo_index := cues.size() - 1
-	for ev in timeline:
-		if ev["kind"] == "blackout":
-			ev["kind"] = "cue"
-			ev["arg"] = bo_index
-
 	timeline.sort_custom(func(x, y): return float(x["t"]) < float(y["t"]))
 	return {
-		"cues": cues,
+		"looks": looks,
 		"chases": _chases(panels, fixtures, a.bpm),
 		"effects": _effects(a.bpm),
 		"timeline": timeline,

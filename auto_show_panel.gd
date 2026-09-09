@@ -205,13 +205,23 @@ func _seek_to_section(idx: int) -> void:
 		AutoShow.seek(float(a.sections[idx]["start"]))
 
 
+## Mark the section the auto layer is currently on (-1 = none / blackout).
+func highlight_section(idx: int) -> void:
+	if _section_list == null:
+		return
+	_section_list.deselect_all()
+	if idx >= 0 and idx < _section_list.item_count:
+		_section_list.select(idx)
+		_section_list.ensure_current_is_visible()
+
+
 func _build() -> void:
 	var a := AutoShow.analysis
 	if a == null or not apply_show_cb.is_valid():
 		return
 	var panels: Array = panels_provider.call() if panels_provider.is_valid() else []
 	apply_show_cb.call(ShowGenerator.build(a, panels))
-	_status.text = "Built %d section cues (added after your own). Switch to Auto Show mode and Play." % a.sections.size()
+	_status.text = "Built a %d-section layer. Set the run mode to Auto Show and Play — it rides over your cues." % a.sections.size()
 
 
 # ---------------------------------------------------------------- HELPERS --

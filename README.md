@@ -50,17 +50,18 @@ so no native plugin or GDExtension is required.
 - `tools/midi_bridge.py` — forwards sLight's UDP MIDI-feedback packets to
   a real MIDI port (Godot has no MIDI output).
 - `auto_show.gd` — the `AutoShow` autoload: the Auto Show run mode — plays
-  a music file and fires the generated cue list from a timeline locked to
-  playback position.
+  a music file and drives a crossfading section layer (plus the generated
+  chases / effects) from a timeline locked to playback position;
+  `ArtNet.tick()` composites it over the operator's cues.
 - `song_analyzer.gd` / `song_detect.gd` / `song_analysis.gd` / `fft.gd` —
   analyses a music file (STFT chroma + timbre, a dynamic-programming beat
   tracker, self-similarity segmentation with verse/chorus repetition
   detection) into a tempo, beat grid, downbeats and labelled sections;
   the detection maths, result data class, and a small radix-2 FFT.
 - `show_generator.gd` / `auto_show_panel.gd` — turns an analysis + the
-  patch into per-kind section cues (recipes that cycle so sections don't
-  repeat), three chases, six pan/tilt effects and a timeline, and the
-  Auto Show tab.
+  patch into a per-kind section-look layer (recipes that cycle so
+  sections don't repeat), three chases, six pan/tilt effects and a
+  timeline, and the Auto Show tab.
 - `main.tscn` — a single root `Control` node with the GUI script attached.
 - `dmx_controller.gd` — the shell: a top bar (grand master, run mode,
   Sending, add/remove universe, whole-show + preset save/load, MIDI/OSC
@@ -264,29 +265,29 @@ Build a light show from a song's structure, then refine it.
   downbeat ticks and a playhead — over a **waveform** of the whole track
   (bar height is loudness, colour is the bass / mid / air balance, with
   the section tints behind it). Click either to seek.
-- **Build Light Show** adds one **block cue per section** *after* your
-  own cues (a rebuild replaces only the generated ones). Fixtures are
-  sorted by kind — moving head / wash / strobe — and each section draws
-  a **recipe** giving each kind its own look (colour spread, moving-head
-  position, strobe) plus which chase and movement effect to run. Every
-  label has a small pool of recipes that **cycle by occurrence**, so
-  three choruses get three different treatments and consecutive verses
-  don't repeat. It also generates three chases (**Auto Colour Beat**,
-  **Auto Dimmer Pulse**, **Auto Position Sweep**), six pan/tilt effects
-  (slow / fast circles, a tilt wave, a dimmer breath), a shared
-  **Blackout** cue fired a couple of beats before every drop, and a
-  timeline that fires it all on the downbeat.
+- **Build Light Show** produces a **per-section layer** — it does *not*
+  touch the cue list. Fixtures are sorted by kind — moving head / wash /
+  strobe — and each section draws a **recipe** giving each kind its own
+  look (colour spread, moving-head position, strobe) plus which chase and
+  movement effect to run. Every label has a small pool of recipes that
+  **cycle by occurrence**, so three choruses get three different
+  treatments and consecutive verses don't repeat. It also generates three
+  chases (**Auto Colour Beat**, **Auto Dimmer Pulse**, **Auto Position
+  Sweep**) and six pan/tilt effects (slow / fast circles, a tilt wave, a
+  dimmer breath). A rebuild replaces only the same-named auto chases /
+  effects.
 - With the run mode set to **Auto Show**, the transport (**Play / Pause /
   Stop**, a seek bar, click the structure strip or a section to jump)
-  plays the song and runs the show: each section crossfades to its cue
-  on the bar line, one chase and a set of effects switch in per section,
-  the drop is preceded by its blackout. Seeking folds the whole timeline
-  up to that point, so a jump lands on the right look *and* the right
-  chase / effects.
+  plays the song and runs the show **as a layer over your own cues**:
+  `ArtNet.tick()` composites the crossfading section look over whatever
+  the cue list is doing, then the chase / effect layer over that. So you
+  keep programming and running cues by hand and Auto Show rides on top —
+  colour, movement, strobe, section accents, with the auto layer cut for
+  a couple of beats before every drop. Seeking folds the timeline up to
+  that point so a jump lands on the right section and layers.
 
-Everything it makes is normal cues / chases / effects, so you edit them
-like anything else. The song path, analysis and timeline are saved in
-the show file.
+The chases and effects it makes are normal ones you can edit. The song
+path, analysis, section looks and timeline are saved in the show file.
 
 ### Cue list
 
@@ -679,12 +680,12 @@ on a machine without the extension falls back to Art-Net.
   Reactive** (an audio input drives band → role reactors and beat-synced
   chases over the standing base look), and **Auto Show** (a music file is
   analysed — STFT chroma + timbre, DP beat tracking, self-similarity
-  segmentation with verse/chorus repetition — into per-kind section cues
-  that cycle so they don't repeat, three chases, six movement effects and
-  a pre-drop blackout, all played from a timeline locked to playback,
-  with a click-to-seek structure strip and whole-song waveform).
-  Room to grow: layering the auto show over hand cues instead of
-  alongside them, palettes learned from the song's key, MIDI-clock or
+  segmentation with verse/chorus repetition — into a per-kind section
+  layer that cycles so sections don't repeat, three chases, six movement
+  effects and a pre-drop blackout, all played from a timeline locked to
+  playback **as a layer over the operator's own cues**, with a
+  click-to-seek structure strip and whole-song waveform).
+  Room to grow: palettes learned from the song's key, MIDI-clock or
   Ableton-Link sync.
 - **3D visualizer**: already implemented — a Forward+ SubViewport with
   volumetric beams + real gobo projectors + bloom, GDTF geometry / glTF

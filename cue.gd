@@ -20,9 +20,6 @@ var fade_up: float = 3.0
 var fade_down: float = 3.0
 var levels: Array = []
 var tracking: bool = false
-## True for cues built by the Auto Show generator — a rebuild replaces
-## only these, leaving hand-programmed cues alone.
-var auto: bool = false
 
 
 func _init(p_label: String = "", p_fade_up: float = 3.0, p_fade_down: float = 3.0) -> void:
@@ -98,7 +95,6 @@ func to_dict() -> Dictionary:
 		"fade_up": fade_up,
 		"fade_down": fade_down,
 		"tracking": tracking,
-		"auto": auto,
 		"levels": levels.duplicate(true),
 	}
 
@@ -111,7 +107,6 @@ static func from_dict(d: Dictionary) -> Cue:
 	# Older show files predate tracking — load their cues as blocks so they
 	# play back exactly as they did before.
 	c.tracking = bool(d.get("tracking", false))
-	c.auto = bool(d.get("auto", false))
 	c.levels = []
 	for entry in d.get("levels", []):
 		var ud := {}
