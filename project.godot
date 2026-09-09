@@ -29,6 +29,7 @@ driver/enable_input=true
 [autoload]
 
 ArtNet="*res://artnet_sender.gd"
+UsbDmx="*res://usb_dmx_bridge.gd"
 Sound="*res://sound_engine.gd"
 Fx="*res://effects_engine.gd"
 AutoShow="*res://auto_show.gd"

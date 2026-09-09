@@ -16,6 +16,9 @@ so no native plugin or GDExtension is required.
   folds the effect/chase overrides and grand master into `output` (which
   the 3D view reads); `transmit()` puts that on the wire as an `ArtDMX`
   packet.
+- `usb_dmx_bridge.gd` — the `UsbDmx` autoload: optional USB-DMX universe
+  output via the `addons/usb_dmx` GDExtension (FTDI D2XX). A no-op when
+  the extension isn't built.
 - `artnet_sender.gd` — the `ArtNet` autoload: manages one `ArtNetUniverse`
   per universe slot (up to 8), the grand master, the cue crossfade
   engine, and `tick()` (recompute every universe's output; transmit if
@@ -115,6 +118,14 @@ its own IP, port, and Art-Net universe number (several tabs may target
 the same number on different IPs), its own fixture patch, and its own
 512-channel buffer. New universes are numbered to the first free Art-Net
 number.
+
+Each tab's **Output** selector routes that universe to **Art-Net** (the
+IP / port / universe number) or to a **USB DMX** interface — pick a
+device and its interface type (Auto / Open DMX / Enttec Pro), **Rescan**
+to refresh the list, **Apply Connection**. USB output needs the
+`usb_dmx` GDExtension built (`addons/usb_dmx/BUILD.md`); until then the
+option is greyed out and every universe stays on Art-Net. See
+[Output: Art-Net or USB DMX](#output-art-net-or-usb-dmx).
 
 Global controls live in the top bar:
 
@@ -602,15 +613,37 @@ a DIY ESP32 Art-Net node, or a lighting desk's Art-Net input) on your
 network, set the matching universe, and the gateway converts the Ethernet
 packets to a physical DMX512 signal for your fixtures.
 
+## Output: Art-Net or USB DMX
+
+A universe's **Output** selector (connection row) chooses where its frames
+go. **Art-Net** is the default. **USB DMX** streams straight to an FTDI
+USB interface through the optional `usb_dmx` GDExtension — no gateway,
+no network:
+
+- **Enttec DMX USB Pro** / Mk2, **DMXKing ultraDMX**, most "pro" boxes —
+  a framed message; the interface's microcontroller generates the DMX
+  timing. Reliable.
+- **Enttec Open DMX USB** (bare FT232) — the extension generates the
+  BREAK / MAB and streams raw 250 k 8N2. USB latency makes the timing
+  jittery: fine for LED pars, marginal for moving heads.
+
+Build it once with `python addons/usb_dmx/build.py` (needs SCons + a C++
+toolchain; clones `godot-cpp`). The FTDI **D2XX runtime** must be present
+on the machine that *runs* the app — it ships with the FTDI/Enttec
+driver and is loaded dynamically. Details in `addons/usb_dmx/BUILD.md`.
+The `UsbDmx` autoload wraps the extension and no-ops cleanly when it
+isn't built, so the rest of the app is unaffected. The chosen output
+(and device serial + interface type) is saved in the show file; loading
+a USB show on a machine without the extension falls back to Art-Net.
+
 ## Extending it
 
 - **sACN (E1.31)** instead of Art-Net: same idea, different packet format
   and multicast address — swap out `ArtNetUniverse.transmit()` for an
   sACN-formatted packet.
-- **Direct USB DMX interfaces** (e.g. ENTTEC USB Pro) instead of a network
-  gateway: these need serial/USB access, which Godot doesn't expose
-  natively — you'd need a GDExtension wrapping a serial library, since
-  pure GDScript can't talk to USB DMX widgets directly.
+- **More USB backends**: `addons/usb_dmx` uses FTDI D2XX. A `libusb`
+  backend (uDMX, generic FTDI) would slot in behind the same
+  `UsbDmxOutput` interface.
 - **Fixture profiles**: already implemented — `FixtureProfile` carries
   per-mode channel lists with roles, defaults, min/max, 16-bit fine
   pairs, named value ranges with swatch/gobo icons, and physical hints;

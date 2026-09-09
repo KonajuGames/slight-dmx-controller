@@ -1,0 +1,15 @@
+godot-cpp/
+bin/
+.sconsign.dblite
+*.os
+*.obj
+*.o
+*.pdb
+*.exp
+*.ilk
+compile_commands.json
+
+# activated by build.py once the library is built
+usb_dmx.gdextension
+usb_dmx.gdextension.uid
+*.obj.import

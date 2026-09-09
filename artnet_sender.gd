@@ -68,6 +68,8 @@ func add_universe() -> ArtNetUniverse:
 func remove_universe(idx: int) -> void:
 	if idx < 0 or idx >= universes.size() or universes.size() <= 1:
 		return
+	if universes[idx].usb_serial != "":
+		UsbDmx.unroute(universes[idx].usb_serial)
 	universes[idx].close()
 	universes.remove_at(idx)
 
@@ -79,7 +81,10 @@ func set_universe_count(n: int) -> void:
 	while universes.size() < n:
 		add_universe()
 	while universes.size() > n:
-		universes[universes.size() - 1].close()
+		var last := universes[universes.size() - 1]
+		if last.usb_serial != "":
+			UsbDmx.unroute(last.usb_serial)
+		last.close()
 		universes.remove_at(universes.size() - 1)
 
 
@@ -94,9 +99,13 @@ func tick(transmit: bool = true) -> void:
 	var layers: Array = Fx.compose(universes.size(), bases)
 	for i in range(universes.size()):
 		var ov: Dictionary = layers[i] if i < layers.size() else {}
-		universes[i].compute_output(master, ov)
+		var u := universes[i]
+		u.compute_output(master, ov)
 		if transmit:
-			universes[i].transmit()
+			if u.usb_serial != "":
+				UsbDmx.send(u.usb_serial, u.output)   # USB, not Art-Net
+			else:
+				u.transmit()
 
 
 func send_all() -> void:

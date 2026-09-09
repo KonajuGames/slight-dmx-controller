@@ -1,0 +1,23 @@
+#!/usr/bin/env python
+# Build the usb_dmx GDExtension. Needs godot-cpp checked out at
+# addons/usb_dmx/godot-cpp (see build.py / BUILD.md).
+#
+#   python -m SCons platform=windows target=template_debug
+#   python -m SCons platform=windows target=template_release
+
+import os
+
+env = SConscript("godot-cpp/SConstruct")
+
+env.Append(CPPPATH=["src/"])
+sources = Glob("src/*.cpp")
+
+if env["platform"] == "windows":
+    env.Append(LIBS=["winmm"])          # timeBeginPeriod / timeEndPeriod
+elif env["platform"] in ("linux", "android"):
+    env.Append(LIBS=["dl"])             # dlopen / dlsym
+
+libname = "libusb_dmx{}{}".format(env["suffix"], env["SHLIBSUFFIX"])
+library = env.SharedLibrary("bin/{}".format(libname), source=sources)
+
+Default(library)

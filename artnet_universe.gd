@@ -19,6 +19,12 @@ var target_port := ARTNET_PORT_DEFAULT
 var artnet_universe := 0
 var connected := false
 
+## Output routing. When `usb_serial` is non-empty this universe's frames
+## go to that FTDI USB-DMX interface (via the UsbDmx bridge) instead of
+## Art-Net. `usb_mode` is UsbDmx.MODE_* (auto / open-dmx / enttec-pro).
+var usb_serial := ""
+var usb_mode := 0
+
 var _sequence := 0
 var dmx_data := PackedByteArray()
 ## The last frame actually put on the wire: dmx_data with the effect/chase
