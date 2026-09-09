@@ -42,9 +42,7 @@ var _cam_views: Array = []   # [{name, target:[x,y,z], yaw, pitch, dist, fov, or
 var _prop_root: Node3D
 
 # recorder
-var _recording := false
-var _rec_dir := ""
-var _rec_frame := 0
+var _rec: VideoRec = null
 var _rec_accum := 0.0
 
 # interaction
@@ -830,8 +828,6 @@ func _set_shadows(on: bool) -> void:
 
 # ------------------------------------------------- RENDER / RECORD / MVR --
 
-const REC_FPS := 30.0
-
 
 func _screenshot() -> void:
 	var img := _vp.get_texture().get_image()
@@ -845,30 +841,31 @@ func _screenshot() -> void:
 
 
 func _toggle_record() -> void:
-	if _recording:
-		_recording = false
+	if _rec != null:
+		var s := _rec.stop()
+		_rec = null
 		_rec_btn.text = "Record"
-		_rec_label.text = "%d frames" % _rec_frame
-		OS.shell_open(ProjectSettings.globalize_path(_rec_dir))
+		_rec_label.text = s
+		OS.shell_open(ProjectSettings.globalize_path("user://render"))
 		return
-	_rec_dir = "user://render/rec_" + _stamp()
-	DirAccess.make_dir_recursive_absolute(_rec_dir)
-	var h := FileAccess.open(_rec_dir + "/assemble.txt", FileAccess.WRITE)
-	if h:
-		h.store_string("ffmpeg -framerate %d -i frame_%%05d.png -c:v libx264 -pix_fmt yuv420p out.mp4\n" % int(REC_FPS))
-		h.close()
-	_rec_frame = 0
+	var img := _vp.get_texture().get_image()
+	if img == null:
+		_rec_label.text = "no image to record"
+		return
+	_rec = VideoRec.new()
+	var out := _rec.start("user://render", img.get_width(), img.get_height())
+	if out == "":
+		_rec = null
+		_rec_label.text = "recorder failed to start"
+		return
 	_rec_accum = 0.0
-	_recording = true
 	_rec_btn.text = "Stop"
+	_rec_label.text = "REC → %s%s" % [out.get_file(), "" if _rec.is_mp4() else "  (PNG — build video_rec)"]
 
 
 func _capture_frame() -> void:
-	var img := _vp.get_texture().get_image()
-	if img == null:
-		return
-	img.save_png("%s/frame_%05d.png" % [_rec_dir, _rec_frame])
-	_rec_frame += 1
+	if _rec != null:
+		_rec.push(_vp.get_texture().get_image())
 
 
 func _stamp() -> String:
@@ -922,13 +919,15 @@ func _process(delta: float) -> void:
 	# and colour stay smooth; otherwise the 30 Hz refresh tick is enough.
 	if is_visible_in_tree():
 		ArtNet.tick(false)
-	if _recording:
+	if _rec != null:
 		_rec_accum += delta
-		var step := 1.0 / REC_FPS
-		while _rec_accum >= step:
+		var step := 1.0 / VideoRec.FPS
+		var grabbed := 0
+		while _rec_accum >= step and grabbed < 3:   # cap catch-up so a hitch doesn't spiral
 			_rec_accum -= step
 			_capture_frame()
-		_rec_label.text = "REC  %d" % _rec_frame
+			grabbed += 1
+		_rec_label.text = "REC  %d" % _rec.frame_count()
 
 
 func _notification(what: int) -> void:

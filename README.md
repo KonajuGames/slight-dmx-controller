@@ -105,7 +105,8 @@ so no native plugin or GDExtension is required.
 - `visualizer_panel.gd` — the `VisualizerPanel` class: the 3D Visualizer
   tab — SubViewport world with volumetric fog, orbit camera + saved
   views, rooms, trusses, glTF props, placement, screenshot / frame
-  recorder, MVR import/export, and a "Dock to Main" button (the shell
+  MP4 / PNG recorder (`video_rec.gd` + the optional `video_rec`
+  GDExtension), MVR import/export, and a "Dock to Main" button (the shell
   reparents the panel into its own window when its tab is dragged off).
 - `fixture_profile.gd` — the `FixtureProfile` class: one or more DMX
   *modes*, each an ordered channel list. Every channel has a role
@@ -560,9 +561,12 @@ the on-screen controls for an unobstructed view.
   real body and pan/tilt axes are used, each geometry placed by its full
   Position matrix (rotation included, GDTF Z-up → Godot Y-up); otherwise
   a schematic body picked from the `physical` category.
-- **Render**: **Screenshot** saves a PNG; **Record** writes a PNG
-  sequence (with an `assemble.txt` holding the `ffmpeg` command) — both
-  land in `user://render/` and open the folder when done.
+- **Render**: **Screenshot** saves a PNG. **Record** writes an `.mp4`
+  (H.264) straight from the viewport via the optional `video_rec`
+  GDExtension (minih264 + minimp4 — no FFmpeg); without it built, Record
+  falls back to a PNG sequence + an `assemble.txt` ffmpeg line. Both land
+  in `user://render/` and open the folder when done. See
+  `addons/video_rec/BUILD.md`.
 - **Pop out**: drag the **3D Visualizer** tab off the tab bar and it
   tears into its own OS window — put it on a second monitor for
   front-of-house while the console stays on the main screen. To dock it

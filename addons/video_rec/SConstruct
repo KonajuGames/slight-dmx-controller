@@ -1,0 +1,27 @@
+#!/usr/bin/env python
+# Build the video_rec GDExtension (minih264 + minimp4).
+#   python -m SCons platform=windows target=template_debug
+#   python -m SCons platform=windows target=template_release
+# godot_cpp=<path> points at a godot-cpp checkout (build.py fills this in;
+# it reuses addons/usb_dmx/godot-cpp when present).
+
+import os
+
+godot_cpp = ARGUMENTS.get("godot_cpp", "godot-cpp")
+env = SConscript(godot_cpp + "/SConstruct")
+
+env.Append(CPPPATH=["src/", "third_party/"])
+# minimp4's SPS/PPS-id transcoder redefines minih264's bitstream helpers
+# (bs_t, h264e_bs_*). We feed a single encoder that already emits correct
+# ids, so turn it off — everywhere, since it changes struct layout.
+env.Append(CPPDEFINES=["MINIMP4_TRANSCODE_SPS_ID=0"])
+# minih264 / minimp4 are C; the Godot glue is C++.
+sources = Glob("src/*.cpp") + Glob("src/*.c")
+
+if env["platform"] in ("linux", "android"):
+    env.Append(LIBS=["pthread"])
+
+libname = "libvideo_rec{}{}".format(env["suffix"], env["SHLIBSUFFIX"])
+library = env.SharedLibrary("bin/{}".format(libname), source=sources)
+
+Default(library)
