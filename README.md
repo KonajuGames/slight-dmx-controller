@@ -4,8 +4,10 @@ A ready-to-run Godot 4 project with a GUI for controlling DMX lighting
 fixtures. Each universe outputs over **Art-Net** or **sACN (E1.31)** —
 both plain UDP, no plugin needed — or, with the optional `addons/usb_dmx`
 GDExtension built, straight to a **USB DMX interface** (Enttec, Open DMX,
-uDMX). A second optional GDExtension, `addons/video_rec`, records the 3D
-view to MP4. The app runs fine without either.
+uDMX). Two more optional GDExtensions speed things up locally:
+`addons/video_rec` records the 3D view to MP4, and `addons/song_dsp`
+decodes and analyses a music file for the Auto Show in C++ instead of
+playing it 4× through a capture bus. The app runs fine without any of them.
 
 ## What's included
 
@@ -59,7 +61,10 @@ view to MP4. The app runs fine without either.
   analyses a music file (STFT chroma + timbre, a dynamic-programming beat
   tracker, self-similarity segmentation with verse/chorus repetition
   detection) into a tempo, beat grid, downbeats and labelled sections;
-  the detection maths, result data class, and a small radix-2 FFT.
+  the detection maths, result data class, and a small radix-2 FFT. With
+  the `addons/song_dsp` GDExtension built, the decode + STFT + onset +
+  waveform front-end runs in C++ on a worker thread; otherwise the track
+  is played 4× through a muted capture bus first.
 - `show_generator.gd` / `auto_show_panel.gd` — turns an analysis + the
   patch into a per-kind section-look layer (recipes that cycle so
   sections don't repeat), three chases, six pan/tilt effects and a
@@ -112,10 +117,11 @@ view to MP4. The app runs fine without either.
 - `video_rec.gd` — the `VideoRec` class: records the visualizer to an
   `.mp4` (H.264) through the optional `addons/video_rec` GDExtension, or
   a PNG sequence + `ffmpeg` line when it isn't built.
-- `addons/usb_dmx/` and `addons/video_rec/` — the two optional
-  GDExtensions (C++): USB DMX output (FTDI D2XX + libusb) and the MP4
-  encoder (minih264 + minimp4). Each has a `build.py` and a `BUILD.md`;
-  both ship disabled so an unbuilt checkout is quiet.
+- `addons/usb_dmx/`, `addons/video_rec/` and `addons/song_dsp/` — the
+  optional GDExtensions (C++): USB DMX output (FTDI D2XX + libusb), the MP4
+  encoder (minih264 + minimp4), and the song decode + analysis front-end
+  (minimp3 + stb_vorbis). Each has a `build.py` and a `BUILD.md`; all ship
+  disabled so an unbuilt checkout is quiet.
 - `fixture_profile.gd` — the `FixtureProfile` class: one or more DMX
   *modes*, each an ordered channel list. Every channel has a role
   (`DIMMER`, `RED`, `PAN`, ...) plus a default/home value, min/max
@@ -258,17 +264,19 @@ show file.
 Build a light show from a song's structure, then refine it.
 
 - **Load Song…** picks an MP3, OGG or WAV.
-- **Analyse** plays it fast and muted, captures the audio, and runs a
-  short-time Fourier transform for a beat-synchronous **chroma** (pitch)
-  and timbre feature stream. From that it estimates the tempo, tracks the
-  beat with dynamic programming (so beats lock to real onsets and don't
-  drift), finds the downbeat, and segments the song with a
-  self-similarity / novelty analysis — then labels the sections by
+- **Analyse** runs a short-time Fourier transform for a beat-synchronous
+  **chroma** (pitch) and timbre feature stream. From that it estimates the
+  tempo, tracks the beat with dynamic programming (so beats lock to real
+  onsets and don't drift), finds the downbeat, and segments the song with
+  a self-similarity / novelty analysis — then labels the sections by
   **repetition and energy**: the recurring loud part is the **Chorus**,
   the recurring quieter part the **Verse**, with Intro / Bridge / Build /
-  Drop / Outro around them. The **speed** control trades wait time for
-  precision (1× is the song's length, 4× a quarter of it — chroma
-  survives the octave shift, so 4× is usually fine). It's still an
+  Drop / Outro around them. With the `addons/song_dsp` GDExtension built,
+  the file is decoded and the front-end runs in C++ on a worker thread — a
+  few seconds, UI stays live. Without it, the track is first played 4×
+  through a muted bus to capture the audio (the **speed** control trades
+  that wait for precision: 1× is the song's length, 4× a quarter of it —
+  chroma survives the octave shift, so 4× is usually fine). It's still an
   estimate — expect to nudge a boundary or rename a section. The result
   is shown as a **structure strip** — one coloured block per section with
   downbeat ticks and a playhead — over a **waveform** of the whole track
@@ -692,10 +700,11 @@ on a machine without the extension falls back to Art-Net.
   Reactive** (an audio input drives band → role reactors and beat-synced
   chases over the standing base look), and **Auto Show** (a music file is
   analysed — STFT chroma + timbre, DP beat tracking, self-similarity
-  segmentation with verse/chorus repetition — into a per-kind section
-  layer that cycles so sections don't repeat, three chases, six movement
-  effects and a pre-drop blackout, all played from a timeline locked to
-  playback **as a layer over the operator's own cues**, with a
+  segmentation with verse/chorus repetition, in C++ off-thread with the
+  `song_dsp` GDExtension or a 4× capture pass without it — into a per-kind
+  section layer that cycles so sections don't repeat, three chases, six
+  movement effects and a pre-drop blackout, all played from a timeline
+  locked to playback **as a layer over the operator's own cues**, with a
   click-to-seek structure strip and whole-song waveform).
   Room to grow: palettes learned from the song's key, MIDI-clock or
   Ableton-Link sync.

@@ -1,0 +1,14 @@
+godot-cpp/
+bin/
+.sconsign.dblite
+*.os
+*.obj
+*.o
+*.pdb
+*.exp
+*.ilk
+compile_commands.json
+
+# activated by build.py once the library is built
+song_dsp.gdextension
+song_dsp.gdextension.uid

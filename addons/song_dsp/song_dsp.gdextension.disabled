@@ -1,0 +1,14 @@
+[configuration]
+
+entry_symbol = "song_dsp_library_init"
+compatibility_minimum = "4.3"
+reloadable = true
+
+[libraries]
+
+windows.debug.x86_64 = "res://addons/song_dsp/bin/libsong_dsp.windows.template_debug.x86_64.dll"
+windows.release.x86_64 = "res://addons/song_dsp/bin/libsong_dsp.windows.template_release.x86_64.dll"
+linux.debug.x86_64 = "res://addons/song_dsp/bin/libsong_dsp.linux.template_debug.x86_64.so"
+linux.release.x86_64 = "res://addons/song_dsp/bin/libsong_dsp.linux.template_release.x86_64.so"
+macos.debug = "res://addons/song_dsp/bin/libsong_dsp.macos.template_debug.dylib"
+macos.release = "res://addons/song_dsp/bin/libsong_dsp.macos.template_release.dylib"

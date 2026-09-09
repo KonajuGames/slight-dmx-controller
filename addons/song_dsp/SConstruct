@@ -1,0 +1,24 @@
+#!/usr/bin/env python
+# Build the song_dsp GDExtension (minimp3 + stb_vorbis audio decode +
+# the STFT / onset / waveform front-end for SongAnalyzer).
+#   python -m SCons platform=windows target=template_debug
+#   python -m SCons platform=windows target=template_release
+# godot_cpp=<path> points at a godot-cpp checkout (build.py fills this in;
+# it reuses a sibling addon's godot-cpp when present).
+
+godot_cpp = ARGUMENTS.get("godot_cpp", "godot-cpp")
+env = SConscript(godot_cpp + "/SConstruct")
+
+env.Append(CPPPATH=["src/", "third_party/"])
+
+# minimp3 / stb_vorbis are C; the Godot glue is C++. Each decoder sits in
+# its own .c file so their macro soup never meets.
+sources = Glob("src/*.cpp") + Glob("src/*.c")
+
+if env["platform"] in ("linux", "android"):
+    env.Append(LIBS=["pthread"])
+
+libname = "libsong_dsp{}{}".format(env["suffix"], env["SHLIBSUFFIX"])
+library = env.SharedLibrary("bin/{}".format(libname), source=sources)
+
+Default(library)

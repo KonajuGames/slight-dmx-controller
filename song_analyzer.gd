@@ -15,6 +15,11 @@ extends Node
 ##
 ## Fast playback pitches the audio up by whole octaves (2× / 4×), which
 ## leaves the chroma unchanged; times are scaled back to song time.
+##
+## With the optional `song_dsp` GDExtension built, the file is decoded and
+## the STFT / onset / waveform front-end is run in C++ off the main thread
+## instead — no muted-playback capture, analysis in a few seconds. Build
+## it with `addons/song_dsp/build.py`.
 
 signal progress(fraction: float)
 signal finished(analysis: SongAnalysis)
@@ -25,6 +30,14 @@ const N_FFT := 2048
 const HOP := 1024
 const ONSET_DECIM := 128          # onset-envelope hop, in capture samples
 const WAVE_COLS := 1024           # columns in the whole-song waveform view
+
+const _FAST_EXTS := ["mp3", "ogg", "oga", "wav"]
+
+var _force_capture := false       # set when the fast path bails to the slow one
+var _fast_thread: Thread
+var _fast_sf = null               # SongFeatures (extension present)
+var _fast_result: SongAnalysis
+var _fast_error := ""
 
 var _player: AudioStreamPlayer
 var _cap: AudioEffectCapture
@@ -39,6 +52,12 @@ var _pcm := PackedFloat32Array()  # mono, capture-rate, pitch-shifted
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+
+
+func _exit_tree() -> void:
+	if _fast_thread != null:
+		_fast_thread.wait_to_finish()
+		_fast_thread = null
 
 
 static func load_stream(path: String) -> AudioStream:
@@ -61,9 +80,21 @@ static func load_stream(path: String) -> AudioStream:
 	return null
 
 
+static func fast_available() -> bool:
+	return ClassDB.class_exists("SongFeatures")
+
+
+func _fast_can_handle(path: String) -> bool:
+	return fast_available() and path.get_extension().to_lower() in _FAST_EXTS
+
+
 func analyse(path: String, speed := 4.0) -> void:
 	if _running:
 		return
+	if not _force_capture and _fast_can_handle(path):
+		_analyse_fast(path)
+		return
+	_force_capture = false
 	var stream := load_stream(path)
 	if stream == null:
 		failed.emit("Unsupported or unreadable audio (try MP3 or OGG).")
@@ -87,6 +118,156 @@ func analyse(path: String, speed := 4.0) -> void:
 	_player.play()
 
 
+# ===================================================== FAST (song_dsp) ==
+
+func _analyse_fast(path: String) -> void:
+	_path = path
+	_running = true
+	_fast_result = null
+	_fast_error = ""
+	_fast_sf = ClassDB.instantiate("SongFeatures")
+	if _fast_sf == null:
+		_running = false
+		_force_capture = true
+		analyse(path, 4.0)
+		return
+	progress.emit(0.02)
+	_fast_thread = Thread.new()
+	_fast_thread.start(_fast_work.bind(path))
+
+
+func _fast_work(path: String) -> void:
+	var d: Dictionary = _fast_sf.analyze_file(path, N_FFT, HOP, WAVE_COLS)
+	if bool(d.get("ok", false)):
+		_dur = float(d.get("duration", _dur))
+		_fast_result = _detect_from_frames(d)
+	else:
+		_fast_error = String(d.get("error", ""))
+	call_deferred("_fast_finish")
+
+
+func _fast_finish() -> void:
+	if _fast_thread != null:
+		_fast_thread.wait_to_finish()
+		_fast_thread = null
+	_fast_sf = null
+	_running = false
+	if _fast_result != null:
+		progress.emit(1.0)
+		finished.emit(_fast_result)
+		return
+	# the extension couldn't handle this file — fall back to the capture path
+	push_warning("song_dsp: %s — falling back to playback analysis"
+		% (_fast_error if _fast_error != "" else "decode failed"))
+	_force_capture = true
+	analyse(_path, 4.0)
+
+
+## Turn the C++ STFT / onset / waveform frames into a SongAnalysis: the
+## same detection maths as _detect(), but everything is already in song
+## time (no fast-playback scaling) and the wave comes ready-made.
+func _detect_from_frames(d: Dictionary) -> SongAnalysis:
+	var a := SongAnalysis.new()
+	a.path = _path
+	a.duration = float(d["duration"])
+
+	var rate: float = float(d["rate"])
+	var nframes: int = int(d["nframes"])
+	var chroma_flat: PackedFloat32Array = d["chroma"]
+	var rms: PackedFloat32Array = d["rms"]
+	var centroid: PackedFloat32Array = d["centroid"]
+	var flux: PackedFloat32Array = d["flux"]
+	var onset: PackedFloat32Array = d["onset"]
+	var onset_hz: float = float(d["onset_hz"])
+
+	a.wave_lo = d["wave_lo"]
+	a.wave_mid = d["wave_mid"]
+	a.wave_hi = d["wave_hi"]
+	a.wave_peak = d["wave_peak"]
+
+	var chroma: Array = []
+	chroma.resize(nframes)
+	for f in range(nframes):
+		var row := PackedFloat32Array()
+		row.resize(12)
+		for k in range(12):
+			row[k] = chroma_flat[f * 12 + k]
+		chroma[f] = row
+
+	var bpm := SongDetect.estimate_tempo(onset, onset_hz, 120.0)
+	var beats := SongDetect.dp_beats(onset, onset_hz, bpm)
+	if beats.size() < 8:
+		beats = PackedFloat32Array()
+		var p := 60.0 / bpm
+		var t := 0.0
+		while t < a.duration:
+			beats.append(t)
+			t += p
+
+	var frame_hz := rate / float(HOP)
+	var bchroma: Array = []
+	var benergy := PackedFloat32Array()
+	var btimbre: Array = []
+	for i in range(beats.size()):
+		var t0: float = beats[i]
+		var t1: float = beats[i + 1] if i + 1 < beats.size() else t0 + 60.0 / bpm
+		var f0 := int(t0 * frame_hz)
+		var f1 := maxi(f0 + 1, int(t1 * frame_hz))
+		bchroma.append(_avg_rows(chroma, f0, f1))
+		benergy.append(_avg(rms, f0, f1))
+		btimbre.append([_avg(centroid, f0, f1), _avg(flux, f0, f1)])
+
+	_normalise(benergy)
+	var cen := PackedFloat32Array()
+	var flx := PackedFloat32Array()
+	for v in btimbre:
+		cen.append(v[0])
+		flx.append(v[1])
+	_normalise(cen)
+	_normalise(flx)
+
+	var db_phase := SongDetect.downbeat_phase(bchroma)
+
+	var feats: Array = []
+	for i in range(beats.size()):
+		var v := PackedFloat32Array()
+		var c: PackedFloat32Array = bchroma[i]
+		for x in c:
+			v.append(x * 1.6)
+		v.append(cen[i] * 0.5)
+		v.append(flx[i] * 0.5)
+		v.append(benergy[i] * 0.8)
+		feats.append(v)
+
+	var segs := SongDetect.segment(feats, benergy, beats, db_phase, a.duration)
+
+	a.beat_times = beats.duplicate()
+	a.downbeats = PackedFloat32Array()
+	for i in range(beats.size()):
+		if i % 4 == db_phase:
+			a.downbeats.append(beats[i])
+	a.sections = []
+	for s in segs:
+		a.sections.append({
+			"start": clampf(float(s["start"]), 0.0, a.duration),
+			"end": clampf(float(s["end"]), 0.0, a.duration),
+			"label": s["label"], "energy": s["energy"], "cluster": s["cluster"],
+		})
+	if not a.sections.is_empty():
+		a.sections[0]["start"] = 0.0
+		a.sections[-1]["end"] = a.duration
+
+	var iv: Array = []
+	for i in range(1, a.beat_times.size()):
+		iv.append(a.beat_times[i] - a.beat_times[i - 1])
+	iv.sort()
+	if not iv.is_empty():
+		a.bpm = snappedf(60.0 / maxf(iv[iv.size() / 2], 0.01), 0.1)
+	else:
+		a.bpm = bpm
+	return a
+
+
 func _setup_bus() -> void:
 	if _bus_idx < 0:
 		_bus_idx = AudioServer.bus_count
@@ -105,6 +286,10 @@ func _setup_bus() -> void:
 
 func _process(_delta: float) -> void:
 	if not _running:
+		return
+	if _fast_thread != null:
+		if _fast_sf != null:
+			progress.emit(clampf(_fast_sf.get_progress(), 0.02, 0.99))
 		return
 	var avail := _cap.get_frames_available()
 	if avail > 0:
