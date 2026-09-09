@@ -70,8 +70,8 @@ so no native plugin or GDExtension is required.
   on the left, one universe tab each on the right — plus the shared
   fixture-profile list and the profile new/edit/delete flow.
 - `universe_panel.gd` — the `UniversePanel` class: one universe's tab —
-  its connection settings, quick RGB row, blackout/full, and fixture
-  patch with purpose-built per-fixture controls.
+  its connection settings, blackout/full, and fixture patch with
+  purpose-built per-fixture controls.
 - `xy_pad.gd` — the `XYPad` control: the draggable pan / tilt trackpad
   used for moving-head fixtures in the patch.
 - `cue.gd` — the `Cue` class: a stored look (every universe's non-zero
@@ -509,11 +509,10 @@ profile file is later deleted. Older single-mode profile JSON still loads
 — a bare channel list is read as one "Default" mode.
 
 There's no raw per-channel slider list — all control happens through
-patched fixtures (plus the quick RGB row for a one-off trio of channels).
-The fixture controls write to the buffer rather than reading back from
-it, so loading a preset updates the live output but won't move the
-sliders/pickers. The cue list's **Load to Patch** is the exception — it
-pulls the controls to a stored look so you can edit it.
+patched fixtures. The fixture controls write to the buffer rather than
+reading back from it, so loading a preset updates the live output but
+won't move the sliders/pickers. The cue list's **Load to Patch** is the
+exception — it pulls the controls to a stored look so you can edit it.
 
 ## 3D Visualizer
 

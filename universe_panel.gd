@@ -40,8 +40,6 @@ var usb_device_option: OptionButton
 var usb_mode_option: OptionButton
 var _usb_devices: Array = []
 var status_label: Label
-var rgb_start_spin: SpinBox
-var rgb_picker: ColorPickerButton
 var profile_option: OptionButton
 var mode_option: OptionButton
 var fixture_name_edit: LineEdit
@@ -54,7 +52,6 @@ func _ready() -> void:
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 	add_child(_build_connection_row())
-	add_child(_build_rgb_row())
 	add_child(_build_action_row())
 	add_child(HSeparator.new())
 	add_child(_build_fixture_patch_section())
@@ -334,24 +331,6 @@ func _rescan_usb() -> void:
 		usb_device_option.add_item("%s  (%s)" % [d["description"], d["serial"]])
 	if keep >= 0 and keep < _usb_devices.size():
 		usb_device_option.selected = keep
-
-
-func _build_rgb_row() -> Control:
-	var row := _flow()
-	row.add_child(_label("Quick RGB channels — start channel:"))
-	rgb_start_spin = SpinBox.new()
-	rgb_start_spin.min_value = 1
-	rgb_start_spin.max_value = CHANNEL_MAX - 2
-	rgb_start_spin.value = 1
-	row.add_child(rgb_start_spin)
-
-	rgb_picker = ColorPickerButton.new()
-	rgb_picker.color = Color.WHITE
-	rgb_picker.custom_minimum_size = Vector2(60, 24)
-	rgb_picker.color_changed.connect(_on_rgb_color_changed)
-	row.add_child(rgb_picker)
-
-	return row
 
 
 func _build_action_row() -> Control:
@@ -1143,13 +1122,6 @@ func apply_connection() -> void:
 				ip_edit.text, int(port_spin.value), int(artnet_uni_spin.value)])
 
 	_sync_output_ui()
-
-
-func _on_rgb_color_changed(color: Color) -> void:
-	var start := int(rgb_start_spin.value) - 1
-	sender.set_channel(start, int(round(color.r * 255)))
-	sender.set_channel(start + 1, int(round(color.g * 255)))
-	sender.set_channel(start + 2, int(round(color.b * 255)))
 
 
 func blackout_universe() -> void:
