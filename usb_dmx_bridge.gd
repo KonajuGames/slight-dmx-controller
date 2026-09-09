@@ -8,11 +8,13 @@ extends Node
 ## harmless no-op, so the rest of the app doesn't care.
 
 const MODE_AUTO := 0
-const MODE_OPEN_DMX := 1
-const MODE_ENTTEC_PRO := 2
-const MODE_NAMES := ["Auto", "Open DMX", "Enttec Pro"]
+const MODE_OPEN_DMX := 1     # bare FTDI, FTDI D2XX backend
+const MODE_ENTTEC_PRO := 2   # framed FTDI, FTDI D2XX backend
+const MODE_UDMX := 3         # anyma uDMX, libusb backend
+const MODE_NAMES := ["Auto", "Open DMX", "Enttec Pro", "uDMX"]
 
-## True once the extension is loaded and the FTDI D2XX library is present.
+## True once the extension is loaded and at least one backend library
+## (FTDI D2XX or libusb) is present.
 var available := false
 
 var _probe = null              # a UsbDmxOutput, for enumeration / driver check
@@ -25,9 +27,9 @@ func _ready() -> void:
 		available = _probe != null and _probe.driver_available()
 
 	if available:
-		print("UsbDmx: FTDI D2XX ready")
+		print("UsbDmx: ready")
 	elif _probe != null:
-		print("UsbDmx: extension loaded, but no FTDI D2XX runtime — see addons/usb_dmx/BUILD.md")
+		print("UsbDmx: extension loaded, but no FTDI D2XX / libusb runtime — see addons/usb_dmx/BUILD.md")
 	else:
 		print("UsbDmx: extension not built — see addons/usb_dmx/BUILD.md")
 

@@ -1,16 +1,25 @@
 # usb_dmx — USB DMX output GDExtension
 
-Adds a `UsbDmxOutput` class backed by the FTDI **D2XX** driver, so a
-universe can be sent to a USB DMX interface instead of Art-Net:
+Adds a `UsbDmxOutput` class so a universe can be sent to a USB DMX
+interface instead of Art-Net. Two backends, both loaded at run time
+(dynamically — neither is needed to *build*):
 
+**FTDI D2XX** (`ftd2xx.dll` / `libftd2xx.so` / `.dylib`):
 - **Enttec DMX USB Pro** (and Mk2, DMXKing ultraDMX, …) — framed
   `0x7E … 0xE7` message, the interface's MCU generates the DMX timing.
 - **Enttec Open DMX USB** (bare FT232) — the extension generates the
   BREAK / MAB and streams raw 250 k 8N2. Works, but USB latency makes the
   timing jittery; fine for LED fixtures, less so for movers.
 
-The app runs fine without this built — the "USB DMX" output option is
-just disabled and `UsbDmx.available` is `false`.
+**libusb** (`libusb-1.0.dll` / `libusb-1.0.so.0` / `.dylib`):
+- **anyma uDMX** — one vendor control transfer per frame. EP0 is slow, so
+  a full universe refreshes at ~20-25 Hz. On Windows the device needs a
+  WinUSB / libusb driver bound (the uDMX installer usually does this;
+  otherwise use Zadig).
+
+Devices are enumerated from whichever backends are present and shown in
+one list. The app runs fine without the extension built — the "USB DMX"
+output option is disabled and `UsbDmx.available` is `false`.
 
 ## Requirements
 
@@ -21,12 +30,13 @@ just disabled and `UsbDmx.available` is `false`.
     let SCons find MSVC automatically.
   - Linux: gcc or clang, `libdl` (standard)
   - macOS: Xcode command-line tools
-- The FTDI **D2XX runtime** on the machine that *runs* the app
-  (`ftd2xx.dll` / `libftd2xx.so` / `libftd2xx.dylib`). It ships with the
-  FTDI "CDM" / D2XX driver package and is loaded at runtime — it is **not**
-  needed to build. Get it from <https://ftdichip.com/drivers/d2xx-drivers/>.
-  On Windows the Enttec/FTDI VCP driver install already places it in
-  `System32`.
+- On the machine that *runs* the app, at least one backend library:
+  - FTDI **D2XX** (`ftd2xx.dll` / `libftd2xx.*`) — ships with the FTDI
+    "CDM" / D2XX or Enttec driver; on Windows the VCP driver install puts
+    it in `System32`. <https://ftdichip.com/drivers/d2xx-drivers/>
+  - **libusb-1.0** — from the OS package manager, or bundled with the
+    uDMX driver on Windows. Only needed for uDMX.
+  Neither is needed to build.
 
 ## Build
 
@@ -65,13 +75,15 @@ and the USB output choice is greyed out.
   through D2XX with the stock FTDI driver — no Zadig needed.
 - **Open DMX USB** also works through D2XX with the stock driver. Do **not**
   swap it to WinUSB with Zadig; that breaks D2XX.
+- **uDMX** needs a WinUSB / libusb driver (its own installer, or Zadig).
+  That's separate from the FTDI devices above.
 
 ## API (from GDScript)
 
 ```gdscript
 var out := UsbDmxOutput.new()
 if out.driver_available():
-    for d in out.list_devices():        # {index, description, serial, guessed_mode}
+    for d in out.list_devices():   # {serial, description, backend, guessed_mode}
         print(d)
     out.open_serial(d.serial, UsbDmxOutput.MODE_AUTO)
     out.set_fps(40)

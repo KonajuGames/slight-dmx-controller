@@ -1,9 +1,10 @@
 #include "usb_dmx_output.h"
 #include "ftd2xx_dyn.h"
+#include "libusb_dyn.h"
 
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
-#include <godot_cpp/variant/utility_functions.hpp>
+#include <godot_cpp/variant/string.hpp>
 
 #include <chrono>
 #include <cstring>
@@ -16,6 +17,11 @@
 
 using namespace godot;
 using namespace std::chrono;
+
+// anyma uDMX — shared "Free VID/PID" (16C0:05DC); confirm by product string.
+static const uint16_t UDMX_VID = 0x16C0;
+static const uint16_t UDMX_PID = 0x05DC;
+static const uint8_t UDMX_CMD_SET_CHANNEL_RANGE = 2;
 
 // ---- 1 ms timer resolution on Windows so the pacing sleep isn't ~15 ms --
 namespace {
@@ -37,6 +43,10 @@ void sleep_until(steady_clock::time_point t) {
 	if (t > now) {
 		std::this_thread::sleep_for(t - now);
 	}
+}
+
+String udmx_fallback_id(usbdmx::Libusb &u, usbdmx::libusb_device *dev) {
+	return String("udmx:") + itos(u.get_bus_number(dev)) + ":" + itos(u.get_device_address(dev));
 }
 } // namespace
 
@@ -60,6 +70,9 @@ void UsbDmxOutput::_bind_methods() {
 	BIND_ENUM_CONSTANT(MODE_AUTO);
 	BIND_ENUM_CONSTANT(MODE_OPEN_DMX);
 	BIND_ENUM_CONSTANT(MODE_ENTTEC_PRO);
+	BIND_ENUM_CONSTANT(MODE_UDMX);
+	BIND_ENUM_CONSTANT(BACKEND_FTDI);
+	BIND_ENUM_CONSTANT(BACKEND_LIBUSB);
 }
 
 // --------------------------------------------------------------- setup --
@@ -81,41 +94,94 @@ String UsbDmxOutput::get_status() {
 }
 
 bool UsbDmxOutput::driver_available() {
-	return usbdmx::ftdi().load();
+	return usbdmx::ftdi().load() || usbdmx::libusb().load();
 }
+
+void UsbDmxOutput::_start_worker() {
+	_running.store(true);
+	_thread = std::thread(&UsbDmxOutput::_worker, this);
+}
+
+// --------------------------------------------------------- enumeration --
 
 TypedArray<Dictionary> UsbDmxOutput::list_devices() {
 	TypedArray<Dictionary> out;
+
+	// --- FTDI (D2XX): Open DMX, Enttec Pro, DMXKing ---
 	usbdmx::Ftdi &f = usbdmx::ftdi();
-	if (!f.load()) {
-		return out;
-	}
-	usbdmx::FT_ULONG n = 0;
-	if (f.CreateDeviceInfoList(&n) != 0 || n == 0) {
-		return out;
-	}
-	std::vector<usbdmx::FT_DEVICE_LIST_INFO_NODE> nodes(n);
-	if (f.GetDeviceInfoList(nodes.data(), &n) != 0) {
-		return out;
-	}
-	for (usbdmx::FT_ULONG i = 0; i < n; i++) {
-		String desc = String::utf8(nodes[i].Description);
-		String serial = String::utf8(nodes[i].SerialNumber);
-		if (serial.is_empty()) {
-			continue; // already open elsewhere, or not addressable by serial
+	if (f.load()) {
+		usbdmx::FT_ULONG n = 0;
+		if (f.CreateDeviceInfoList(&n) == 0 && n > 0) {
+			std::vector<usbdmx::FT_DEVICE_LIST_INFO_NODE> nodes(n);
+			if (f.GetDeviceInfoList(nodes.data(), &n) == 0) {
+				for (usbdmx::FT_ULONG i = 0; i < n; i++) {
+					String desc = String::utf8(nodes[i].Description);
+					String serial = String::utf8(nodes[i].SerialNumber);
+					if (serial.is_empty()) {
+						continue;
+					}
+					int guess = MODE_OPEN_DMX;
+					String du = desc.to_upper();
+					if (du.contains("PRO") || du.contains("DMXKING") || du.contains("ULTRADMX")) {
+						guess = MODE_ENTTEC_PRO;
+					}
+					Dictionary d;
+					d["serial"] = serial;
+					d["description"] = desc;
+					d["backend"] = (int)BACKEND_FTDI;
+					d["guessed_mode"] = guess;
+					out.push_back(d);
+				}
+			}
 		}
-		int guess = MODE_OPEN_DMX;
-		String du = desc.to_upper();
-		if (du.contains("PRO") || du.contains("DMXKING") || du.contains("ULTRADMX")) {
-			guess = MODE_ENTTEC_PRO;
-		}
-		Dictionary d;
-		d["index"] = (int)i;
-		d["description"] = desc;
-		d["serial"] = serial;
-		d["guessed_mode"] = guess;
-		out.push_back(d);
 	}
+
+	// --- libusb: anyma uDMX ---
+	usbdmx::Libusb &u = usbdmx::libusb();
+	if (u.load()) {
+		usbdmx::libusb_device **list = nullptr;
+		intptr_t n = u.get_device_list(u.ctx, &list);
+		for (intptr_t i = 0; i < n; i++) {
+			usbdmx::libusb_device_descriptor desc;
+			if (u.get_device_descriptor(list[i], &desc) != 0) {
+				continue;
+			}
+			if (desc.idVendor != UDMX_VID || desc.idProduct != UDMX_PID) {
+				continue;
+			}
+			Dictionary d;
+			d["backend"] = (int)BACKEND_LIBUSB;
+			d["guessed_mode"] = (int)MODE_UDMX;
+			usbdmx::libusb_device_handle *h = nullptr;
+			if (u.open(list[i], &h) == 0 && h) {
+				unsigned char prod[256] = {0};
+				unsigned char ser[256] = {0};
+				if (desc.iProduct) {
+					u.get_string_descriptor_ascii(h, desc.iProduct, prod, sizeof(prod));
+				}
+				if (desc.iSerialNumber) {
+					u.get_string_descriptor_ascii(h, desc.iSerialNumber, ser, sizeof(ser));
+				}
+				u.close(h);
+				String product = String::utf8((const char *)prod);
+				if (!product.to_upper().contains("UDMX")) {
+					continue; // some other 16C0:05DC device
+				}
+				String serial = String::utf8((const char *)ser);
+				d["serial"] = serial.is_empty() ? udmx_fallback_id(u, list[i]) : serial;
+				d["description"] = product;
+			} else {
+				// present but can't be opened (needs a WinUSB/libusb driver)
+				d["serial"] = udmx_fallback_id(u, list[i]);
+				d["description"] = String("uDMX? (install a libusb driver)");
+			}
+			out.push_back(d);
+		}
+		if (list) {
+			u.free_device_list(list, 1);
+		}
+	}
+
 	return out;
 }
 
@@ -123,12 +189,9 @@ TypedArray<Dictionary> UsbDmxOutput::list_devices() {
 
 bool UsbDmxOutput::open(int device_index, int mode) {
 	TypedArray<Dictionary> devs = list_devices();
-	for (int i = 0; i < devs.size(); i++) {
-		Dictionary d = devs[i];
-		if ((int)d["index"] == device_index) {
-			String serial_str = d["serial"];
-			return open_serial(serial_str, mode);
-		}
+	if (device_index >= 0 && device_index < devs.size()) {
+		String serial_str = Dictionary(devs[device_index])["serial"];
+		return open_serial(serial_str, mode);
 	}
 	_set_status("device not found");
 	return false;
@@ -137,33 +200,39 @@ bool UsbDmxOutput::open(int device_index, int mode) {
 bool UsbDmxOutput::open_serial(const String &serial, int mode) {
 	close();
 
+	int be = BACKEND_FTDI;
+	int guess = MODE_OPEN_DMX;
+	TypedArray<Dictionary> devs = list_devices();
+	for (int i = 0; i < devs.size(); i++) {
+		Dictionary d = devs[i];
+		if (String(d["serial"]) == serial) {
+			be = (int)d["backend"];
+			guess = (int)d["guessed_mode"];
+			break;
+		}
+	}
+	int m = (mode == MODE_AUTO) ? guess : mode;
+	if (be == BACKEND_LIBUSB || m == MODE_UDMX) {
+		return _open_udmx(serial);
+	}
+	return _open_ftdi(serial, m);
+}
+
+bool UsbDmxOutput::_open_ftdi(const String &serial, int mode) {
 	usbdmx::Ftdi &f = usbdmx::ftdi();
 	if (!f.load()) {
-		_set_status("FTDI driver not installed");
+		_set_status("FTDI D2XX driver not installed");
 		return false;
 	}
 
 	CharString cs = serial.utf8();
 	usbdmx::FT_HANDLE h = nullptr;
-	// OpenEx takes a non-const pointer even for BY_SERIAL_NUMBER.
 	if (f.OpenEx((void *)cs.get_data(), usbdmx::FT_OPEN_BY_SERIAL_NUMBER, &h) != 0 || h == nullptr) {
 		_set_status("could not open " + serial);
 		return false;
 	}
 
-	int m = mode;
-	if (m == MODE_AUTO) {
-		m = MODE_OPEN_DMX;
-		TypedArray<Dictionary> devs = list_devices();
-		for (int i = 0; i < devs.size(); i++) {
-			Dictionary d = devs[i];
-			String s = d["serial"];
-			if (s == serial) {
-				m = (int)d["guessed_mode"];
-				break;
-			}
-		}
-	}
+	int m = (mode == MODE_UDMX || mode == MODE_AUTO) ? MODE_OPEN_DMX : mode;
 	_mode.store(m);
 
 	f.ResetDevice(h);
@@ -179,11 +248,67 @@ bool UsbDmxOutput::open_serial(const String &serial, int mode) {
 	f.Purge(h, usbdmx::FT_PURGE_RX | usbdmx::FT_PURGE_TX);
 
 	_handle = h;
+	_backend = BACKEND_FTDI;
 	_link_ok.store(true);
 	_set_status(String(m == MODE_ENTTEC_PRO ? "open (Enttec Pro)" : "open (Open DMX)") + " — " + serial);
+	_start_worker();
+	return true;
+}
 
-	_running.store(true);
-	_thread = std::thread(&UsbDmxOutput::_worker, this);
+bool UsbDmxOutput::_open_udmx(const String &serial) {
+	usbdmx::Libusb &u = usbdmx::libusb();
+	if (!u.load()) {
+		_set_status("libusb not installed");
+		return false;
+	}
+	usbdmx::libusb_device **list = nullptr;
+	intptr_t n = u.get_device_list(u.ctx, &list);
+	usbdmx::libusb_device_handle *h = nullptr;
+	for (intptr_t i = 0; i < n && h == nullptr; i++) {
+		usbdmx::libusb_device_descriptor desc;
+		if (u.get_device_descriptor(list[i], &desc) != 0) {
+			continue;
+		}
+		if (desc.idVendor != UDMX_VID || desc.idProduct != UDMX_PID) {
+			continue;
+		}
+		usbdmx::libusb_device_handle *th = nullptr;
+		if (u.open(list[i], &th) != 0 || th == nullptr) {
+			continue;
+		}
+		unsigned char ser[256] = {0};
+		if (desc.iSerialNumber) {
+			u.get_string_descriptor_ascii(th, desc.iSerialNumber, ser, sizeof(ser));
+		}
+		String cand = String::utf8((const char *)ser);
+		if (cand.is_empty()) {
+			cand = udmx_fallback_id(u, list[i]);
+		}
+		if (cand == serial) {
+			h = th;
+		} else {
+			u.close(th);
+		}
+	}
+	if (list) {
+		u.free_device_list(list, 1);
+	}
+	if (h == nullptr) {
+		_set_status("could not open " + serial);
+		return false;
+	}
+
+	if (u.set_auto_detach_kernel_driver) {
+		u.set_auto_detach_kernel_driver(h, 1);
+	}
+	u.claim_interface(h, 0); // best effort — uDMX only has EP0
+
+	_handle = h;
+	_backend = BACKEND_LIBUSB;
+	_mode.store(MODE_UDMX);
+	_link_ok.store(true);
+	_set_status("open (uDMX) — " + serial);
+	_start_worker();
 	return true;
 }
 
@@ -193,9 +318,18 @@ void UsbDmxOutput::close() {
 		_thread.join();
 	}
 	if (_handle) {
-		usbdmx::ftdi().Close(_handle);
+		if (_backend == BACKEND_LIBUSB) {
+			usbdmx::Libusb &u = usbdmx::libusb();
+			if (u.ok) {
+				u.release_interface((usbdmx::libusb_device_handle *)_handle, 0);
+				u.close((usbdmx::libusb_device_handle *)_handle);
+			}
+		} else {
+			usbdmx::ftdi().Close(_handle);
+		}
 		_handle = nullptr;
 	}
+	_backend = BACKEND_FTDI;
 	_link_ok.store(false);
 	_set_status("closed");
 }
@@ -245,13 +379,18 @@ void UsbDmxOutput::_worker() {
 			std::memcpy(frame + 1, _buf, 512);
 		}
 
-		bool ok = (_mode.load() == MODE_ENTTEC_PRO)
-				? _write_enttec_pro(frame)
-				: _write_open_dmx(frame);
+		int m = _mode.load();
+		bool ok;
+		if (m == MODE_UDMX) {
+			ok = _write_udmx(frame);
+		} else if (m == MODE_ENTTEC_PRO) {
+			ok = _write_enttec_pro(frame);
+		} else {
+			ok = _write_open_dmx(frame);
+		}
 		if (!ok) {
 			_link_ok.store(false);
 			_set_status("write failed — device disconnected?");
-			// keep the thread alive but idle; close() joins it
 			std::this_thread::sleep_for(milliseconds(250));
 			continue;
 		}
@@ -259,7 +398,7 @@ void UsbDmxOutput::_worker() {
 		next += microseconds(1000000 / _fps.load());
 		auto now = steady_clock::now();
 		if (next < now) {
-			next = now; // fell behind, don't spiral
+			next = now; // fell behind (uDMX EP0 is slow) — don't spiral
 		}
 		sleep_until(next);
 	}
@@ -294,4 +433,17 @@ bool UsbDmxOutput::_write_enttec_pro(const uint8_t *frame513) {
 	msg[4 + PAYLOAD] = 0xE7;
 	usbdmx::FT_ULONG wrote = 0;
 	return usbdmx::ftdi().Write(_handle, msg, MSG_LEN, &wrote) == 0 && (int)wrote == MSG_LEN;
+}
+
+bool UsbDmxOutput::_write_udmx(const uint8_t *frame513) {
+	// uDMX SetChannelRange: bmRequestType = vendor|host-to-device|device,
+	// wValue = channel count, wIndex = first channel, data = the values
+	// (no start code). One control transfer per frame — EP0 is slow, so
+	// the effective refresh rate is ~20-25 Hz for a full universe.
+	const uint16_t count = 512;
+	int r = usbdmx::libusb().control_transfer(
+			(usbdmx::libusb_device_handle *)_handle,
+			0x40, UDMX_CMD_SET_CHANNEL_RANGE, count, 0,
+			(unsigned char *)(frame513 + 1), count, 250);
+	return r >= 0;
 }

@@ -17,8 +17,8 @@ so no native plugin or GDExtension is required.
   the 3D view reads); `transmit()` puts that on the wire as an `ArtDMX`
   packet.
 - `usb_dmx_bridge.gd` — the `UsbDmx` autoload: optional USB-DMX universe
-  output via the `addons/usb_dmx` GDExtension (FTDI D2XX). A no-op when
-  the extension isn't built.
+  output via the `addons/usb_dmx` GDExtension (FTDI D2XX + libusb/uDMX
+  backends). A no-op when the extension isn't built.
 - `sacn.gd` — the `Sacn` class: builds E1.31 (streaming ACN) Data packets
   and the universe multicast address. Used by `ArtNetUniverse` when a
   universe's output is set to sACN.
@@ -628,30 +628,32 @@ sACN row. The source CID is generated once and saved with the show so
 receivers see one stable source. Works with QLC+, most consoles, ETC
 gear, DMXKing/Enttec sACN nodes, etc.
 
-**USB DMX** streams straight to an FTDI USB interface through the optional
-`usb_dmx` GDExtension — no gateway, no network:
+**USB DMX** streams straight to a USB interface through the optional
+`usb_dmx` GDExtension — no gateway, no network. Two backends:
 
-- **Enttec DMX USB Pro** / Mk2, **DMXKing ultraDMX**, most "pro" boxes —
-  a framed message; the interface's microcontroller generates the DMX
-  timing. Reliable.
-- **Enttec Open DMX USB** (bare FT232) — the extension generates the
-  BREAK / MAB and streams raw 250 k 8N2. USB latency makes the timing
-  jittery: fine for LED pars, marginal for moving heads.
+- **FTDI D2XX** — **Enttec DMX USB Pro** / Mk2, **DMXKing ultraDMX** and
+  other "pro" boxes (a framed message, the interface's MCU does the DMX
+  timing — reliable), and **Enttec Open DMX USB** (bare FT232 — the
+  extension generates the BREAK / MAB and streams raw 250 k 8N2; USB
+  latency makes it jittery, fine for LED pars, marginal for movers).
+- **libusb** — **anyma uDMX** (one vendor control transfer per frame;
+  EP0 is slow so it refreshes at ~20–25 Hz).
 
-Build it once with `python addons/usb_dmx/build.py` (needs SCons + a C++
-toolchain; clones `godot-cpp`). The FTDI **D2XX runtime** must be present
-on the machine that *runs* the app — it ships with the FTDI/Enttec
-driver and is loaded dynamically. Details in `addons/usb_dmx/BUILD.md`.
-The `UsbDmx` autoload wraps the extension and no-ops cleanly when it
-isn't built, so the rest of the app is unaffected. The chosen output
-(and device serial + interface type) is saved in the show file; loading
-a USB show on a machine without the extension falls back to Art-Net.
+Devices from whichever backends are installed show in one list; pick
+**Auto** to let it guess the interface type, or force one. Build it once
+with `python addons/usb_dmx/build.py` (needs SCons + a C++ toolchain;
+clones `godot-cpp`). The backend library (`ftd2xx` and/or `libusb-1.0`)
+must be present on the machine that *runs* the app — both are loaded
+dynamically. Details in `addons/usb_dmx/BUILD.md`. The `UsbDmx` autoload
+no-ops cleanly when the extension isn't built. The chosen output (device
+serial + interface type) is saved in the show file; loading a USB show
+on a machine without the extension falls back to Art-Net.
 
 ## Extending it
 
-- **More USB backends**: `addons/usb_dmx` uses FTDI D2XX. A `libusb`
-  backend (uDMX, generic FTDI) would slot in behind the same
-  `UsbDmxOutput` interface.
+- **More USB backends**: `addons/usb_dmx` has an FTDI D2XX and a libusb
+  (uDMX) backend. Raw FTDI over libusb (for platforms without the D2XX
+  driver) would slot in behind the same `UsbDmxOutput` interface.
 - **sACN input / discovery**: output is done (`sacn.gd`); receiving E1.31
   or Art-Net (to act as a node) would be the mirror image.
 - **Fixture profiles**: already implemented — `FixtureProfile` carries
