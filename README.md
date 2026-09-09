@@ -1,9 +1,11 @@
 # Godot DMX Lighting Controller
 
 A ready-to-run Godot 4 project with a GUI for controlling DMX lighting
-fixtures over **Art-Net** (DMX-over-Ethernet). Art-Net is used here because
-it's the one DMX transport Godot can speak natively — it's just UDP packets,
-so no native plugin or GDExtension is required.
+fixtures. Each universe outputs over **Art-Net** or **sACN (E1.31)** —
+both plain UDP, no plugin needed — or, with the optional `addons/usb_dmx`
+GDExtension built, straight to a **USB DMX interface** (Enttec, Open DMX,
+uDMX). A second optional GDExtension, `addons/video_rec`, records the 3D
+view to MP4. The app runs fine without either.
 
 ## What's included
 
@@ -104,10 +106,16 @@ so no native plugin or GDExtension is required.
   a schematic body by category, driving a `SpotLight3D` + beam cone.
 - `visualizer_panel.gd` — the `VisualizerPanel` class: the 3D Visualizer
   tab — SubViewport world with volumetric fog, orbit camera + saved
-  views, rooms, trusses, glTF props, placement, screenshot / frame
-  MP4 / PNG recorder (`video_rec.gd` + the optional `video_rec`
-  GDExtension), MVR import/export, and a "Dock to Main" button (the shell
+  views, rooms, trusses, glTF props, placement, screenshot, MP4 / PNG
+  recorder, MVR import/export, and a "Dock to Main" button (the shell
   reparents the panel into its own window when its tab is dragged off).
+- `video_rec.gd` — the `VideoRec` class: records the visualizer to an
+  `.mp4` (H.264) through the optional `addons/video_rec` GDExtension, or
+  a PNG sequence + `ffmpeg` line when it isn't built.
+- `addons/usb_dmx/` and `addons/video_rec/` — the two optional
+  GDExtensions (C++): USB DMX output (FTDI D2XX + libusb) and the MP4
+  encoder (minih264 + minimp4). Each has a `build.py` and a `BUILD.md`;
+  both ship disabled so an unbuilt checkout is quiet.
 - `fixture_profile.gd` — the `FixtureProfile` class: one or more DMX
   *modes*, each an ordered channel list. Every channel has a role
   (`DIMMER`, `RED`, `PAN`, ...) plus a default/home value, min/max
@@ -585,10 +593,10 @@ the on-screen controls for an unobstructed view.
    `project.godot`). The project uses the **Forward+** renderer for the
    3D visualizer's volumetric beams, so it wants a Vulkan-capable GPU.
 2. Press Play (F5). The main scene builds its own UI at runtime.
-3. On the **Universe 1** tab, set the **IP / Port / Art-Net universe** for
-   your receiver and click **Apply Connection**. Default is
-   `127.0.0.1:6454`, Art-Net universe 0. Add more universe tabs from the
-   top bar as needed.
+3. On the **Universe 1** tab, pick an **Output** (Art-Net / sACN / USB
+   DMX), set its target — for Art-Net the **IP / Port / universe**
+   (default `127.0.0.1:6454`, universe 0) — and click **Apply
+   Connection**. Add more universe tabs from the top bar as needed.
 4. Move any fixture control — it's sent to that universe's target roughly
    30 times a second while **Sending** is checked, matching how real DMX
    gear expects a continuous refresh stream rather than one-off packets.
@@ -694,8 +702,11 @@ on a machine without the extension falls back to Art-Net.
 - **3D visualizer**: already implemented — a Forward+ SubViewport with
   volumetric beams + real gobo projectors + bloom, GDTF geometry / glTF
   fixture models, glTF set-piece props, spot shadows, saved camera views,
-  a PNG-sequence recorder, multi-head fixtures (one light per RGB
-  triplet, with offset and aim from the definition file's geometry
-  matrices), and MVR import/export, all driven by the live output. Room
-  to grow: prism / animation wheels, a real in-app video encoder,
-  timeline scrubbing, an MVR round-trip that survives every consumer.
+  an in-app **H.264 MP4 recorder** (the `video_rec` GDExtension —
+  minih264 + minimp4; PNG-sequence fallback), multi-head fixtures (one
+  light per RGB triplet, with offset and aim from the definition file's
+  geometry matrices), **tear-off into its own OS window**, and MVR
+  import/export, all driven by the live output. Room to grow: prism /
+  animation wheels, an audio track in the recording, a deterministic
+  offline render of an Auto Show, an MVR round-trip that survives every
+  consumer.
