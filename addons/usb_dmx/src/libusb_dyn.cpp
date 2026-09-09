@@ -56,11 +56,14 @@ bool Libusb::load() {
 	BIND(claim_interface, "claim_interface")
 	BIND(release_interface, "release_interface")
 	BIND(control_transfer, "control_transfer")
+	BIND(bulk_transfer, "bulk_transfer")
 #undef BIND
-	// optional (Linux only) — don't fail if missing
+	// optional — don't fail if missing
 	set_auto_detach_kernel_driver =
 		reinterpret_cast<decltype(set_auto_detach_kernel_driver)>(
 			sym(_lib, "libusb_set_auto_detach_kernel_driver"));
+	set_configuration =
+		reinterpret_cast<decltype(set_configuration)>(sym(_lib, "libusb_set_configuration"));
 
 	if (init(&ctx) != 0) {
 		ctx = nullptr;

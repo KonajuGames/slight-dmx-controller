@@ -17,8 +17,8 @@ so no native plugin or GDExtension is required.
   the 3D view reads); `transmit()` puts that on the wire as an `ArtDMX`
   packet.
 - `usb_dmx_bridge.gd` — the `UsbDmx` autoload: optional USB-DMX universe
-  output via the `addons/usb_dmx` GDExtension (FTDI D2XX + libusb/uDMX
-  backends). A no-op when the extension isn't built.
+  output via the `addons/usb_dmx` GDExtension (FTDI D2XX + libusb
+  backends — Open DMX, Enttec Pro, uDMX). A no-op when it isn't built.
 - `sacn.gd` — the `Sacn` class: builds E1.31 (streaming ACN) Data packets
   and the universe multicast address. Used by `ArtNetUniverse` when a
   universe's output is set to sACN.
@@ -637,7 +637,9 @@ gear, DMXKing/Enttec sACN nodes, etc.
   extension generates the BREAK / MAB and streams raw 250 k 8N2; USB
   latency makes it jittery, fine for LED pars, marginal for movers).
 - **libusb** — **anyma uDMX** (one vendor control transfer per frame;
-  EP0 is slow so it refreshes at ~20–25 Hz).
+  EP0 is slow so it refreshes at ~20–25 Hz), and **raw FTDI** (the FT232
+  vendor requests + a bulk write — Open DMX / Enttec Pro without the D2XX
+  driver, single-port FT232R/BM/FT-X, listed only when D2XX is absent).
 
 Devices from whichever backends are installed show in one list; pick
 **Auto** to let it guess the interface type, or force one. Build it once
@@ -651,9 +653,9 @@ on a machine without the extension falls back to Art-Net.
 
 ## Extending it
 
-- **More USB backends**: `addons/usb_dmx` has an FTDI D2XX and a libusb
-  (uDMX) backend. Raw FTDI over libusb (for platforms without the D2XX
-  driver) would slot in behind the same `UsbDmxOutput` interface.
+- **More USB backends**: `addons/usb_dmx` has FTDI D2XX and libusb (uDMX +
+  raw FTDI). A `libftdi`-style path for multi-port FT2232/FT4232 or an
+  FT232H clock scheme would slot in behind the same `UsbDmxOutput`.
 - **sACN input / discovery**: output is done (`sacn.gd`); receiving E1.31
   or Art-Net (to act as a node) would be the mirror image.
 - **Fixture profiles**: already implemented — `FixtureProfile` carries

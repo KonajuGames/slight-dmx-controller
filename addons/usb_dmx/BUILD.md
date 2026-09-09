@@ -13,9 +13,13 @@ interface instead of Art-Net. Two backends, both loaded at run time
 
 **libusb** (`libusb-1.0.dll` / `libusb-1.0.so.0` / `.dylib`):
 - **anyma uDMX** — one vendor control transfer per frame. EP0 is slow, so
-  a full universe refreshes at ~20-25 Hz. On Windows the device needs a
-  WinUSB / libusb driver bound (the uDMX installer usually does this;
-  otherwise use Zadig).
+  a full universe refreshes at ~20-25 Hz.
+- **Raw FTDI** — the FT232 vendor requests (baud / line / BREAK) + a bulk
+  write, i.e. the Open DMX / Enttec Pro protocols without the D2XX driver.
+  Single-port FT232R / FT232BM / FT-X only. **Only listed when D2XX is not
+  available** — on Linux / macOS without `libftd2xx`, this is the FTDI
+  path. Needs the device bound to a libusb-compatible driver (libusb
+  kernel driver on Linux; WinUSB via Zadig on Windows).
 
 Devices are enumerated from whichever backends are present and shown in
 one list. The app runs fine without the extension built — the "USB DMX"

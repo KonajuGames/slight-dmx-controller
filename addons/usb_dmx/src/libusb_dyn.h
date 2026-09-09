@@ -43,10 +43,13 @@ struct Libusb {
 	void (*close)(libusb_device_handle *) = nullptr;
 	int (*get_string_descriptor_ascii)(libusb_device_handle *, uint8_t, unsigned char *, int) = nullptr;
 	int (*set_auto_detach_kernel_driver)(libusb_device_handle *, int) = nullptr;
+	int (*set_configuration)(libusb_device_handle *, int) = nullptr;
 	int (*claim_interface)(libusb_device_handle *, int) = nullptr;
 	int (*release_interface)(libusb_device_handle *, int) = nullptr;
 	int (*control_transfer)(libusb_device_handle *, uint8_t, uint8_t, uint16_t, uint16_t,
 			unsigned char *, uint16_t, unsigned int) = nullptr;
+	int (*bulk_transfer)(libusb_device_handle *, unsigned char, unsigned char *, int,
+			int *, unsigned int) = nullptr;
 
 	bool ok = false;
 	libusb_context *ctx = nullptr;
