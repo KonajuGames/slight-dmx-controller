@@ -32,6 +32,9 @@ var ip_edit: LineEdit
 var port_spin: SpinBox
 var artnet_uni_spin: SpinBox
 var output_option: OptionButton
+var sacn_row: HFlowContainer
+var sacn_priority_spin: SpinBox
+var sacn_ip_edit: LineEdit
 var usb_row: HFlowContainer
 var usb_device_option: OptionButton
 var usb_mode_option: OptionButton
@@ -255,11 +258,12 @@ func _build_connection_row() -> Control:
 
 	row.add_child(_label("Output:"))
 	output_option = OptionButton.new()
-	output_option.add_item("Art-Net")
-	output_option.add_item("USB DMX")
-	output_option.set_item_disabled(1, not UsbDmx.available)
+	output_option.add_item("Art-Net")   # OUT_ARTNET
+	output_option.add_item("sACN")      # OUT_SACN
+	output_option.add_item("USB DMX")   # OUT_USB
+	output_option.set_item_disabled(2, not UsbDmx.available)
 	if not UsbDmx.available:
-		output_option.set_item_tooltip(1, "Build addons/usb_dmx — see BUILD.md")
+		output_option.set_item_tooltip(2, "Build addons/usb_dmx — see BUILD.md")
 	output_option.item_selected.connect(func(_i): _sync_output_ui())
 	row.add_child(output_option)
 
@@ -273,7 +277,23 @@ func _build_connection_row() -> Control:
 
 	col.add_child(row)
 
-	# Second row: only meaningful when Output is "USB DMX".
+	# Extra row for "sACN": priority + optional unicast target.
+	sacn_row = _flow()
+	sacn_row.add_child(_label("Priority:"))
+	sacn_priority_spin = SpinBox.new()
+	sacn_priority_spin.min_value = 0
+	sacn_priority_spin.max_value = 200
+	sacn_priority_spin.value = sender.sacn_priority
+	sacn_row.add_child(sacn_priority_spin)
+	sacn_row.add_child(_label("Unicast IP (blank = multicast):"))
+	sacn_ip_edit = LineEdit.new()
+	sacn_ip_edit.placeholder_text = "239.255.x.x"
+	sacn_ip_edit.custom_minimum_size = Vector2(130, 0)
+	sacn_ip_edit.text = sender.sacn_unicast_ip
+	sacn_row.add_child(sacn_ip_edit)
+	col.add_child(sacn_row)
+
+	# Extra row for "USB DMX": device + interface type.
 	usb_row = _flow()
 	usb_row.add_child(_label("Device:"))
 	usb_device_option = OptionButton.new()
@@ -296,7 +316,8 @@ func _build_connection_row() -> Control:
 
 
 func _sync_output_ui() -> void:
-	usb_row.visible = output_option.selected == 1
+	sacn_row.visible = output_option.selected == ArtNetUniverse.OUT_SACN
+	usb_row.visible = output_option.selected == ArtNetUniverse.OUT_USB
 
 
 func _rescan_usb() -> void:
@@ -1078,32 +1099,49 @@ func _build_range_control(start: int, local_i: int, ch: Dictionary, reset_callab
 
 func apply_connection() -> void:
 	sender.artnet_universe = int(artnet_uni_spin.value)
-	sender.set_target(ip_edit.text, int(port_spin.value))
+	sender.target_ip = ip_edit.text
+	sender.target_port = int(port_spin.value)
+	sender.sacn_priority = int(sacn_priority_spin.value)
+	sender.sacn_unicast_ip = sacn_ip_edit.text.strip_edges()
 
-	var want_usb: bool = output_option.selected == 1 and UsbDmx.available
-	var new_mode: int = usb_mode_option.selected
+	var sel: int = output_option.selected
+	var was_usb: bool = sender.output_mode == ArtNetUniverse.OUT_USB
+
 	var new_serial := ""
-	if want_usb and usb_device_option.selected >= 0 \
+	if sel == ArtNetUniverse.OUT_USB and UsbDmx.available \
+			and usb_device_option.selected >= 0 \
 			and usb_device_option.selected < _usb_devices.size():
 		new_serial = String(_usb_devices[usb_device_option.selected]["serial"])
-
-	if sender.usb_serial != "" and sender.usb_serial != new_serial:
+	if was_usb and sender.usb_serial != new_serial:
 		UsbDmx.unroute(sender.usb_serial)
 
-	if new_serial != "" and UsbDmx.route(new_serial, new_mode):
-		sender.usb_serial = new_serial
-		sender.usb_mode = new_mode
-		set_status("USB DMX → %s  [%s]" % [new_serial, UsbDmx.status(new_serial)])
-		_sync_output_ui()
-		return
+	match sel:
+		ArtNetUniverse.OUT_USB:
+			var mode: int = usb_mode_option.selected
+			if new_serial != "" and UsbDmx.route(new_serial, mode):
+				sender.usb_serial = new_serial
+				sender.usb_mode = mode
+				sender.set_output_mode(ArtNetUniverse.OUT_USB)
+				set_status("USB DMX → %s  [%s]" % [new_serial, UsbDmx.status(new_serial)])
+			else:
+				sender.usb_serial = ""
+				sender.set_output_mode(ArtNetUniverse.OUT_ARTNET)
+				output_option.selected = ArtNetUniverse.OUT_ARTNET
+				set_status("USB DMX: %s — sending Art-Net" % (
+					UsbDmx.status(new_serial) if new_serial != "" else "no interface selected"))
+		ArtNetUniverse.OUT_SACN:
+			sender.usb_serial = ""
+			sender.set_output_mode(ArtNetUniverse.OUT_SACN)
+			var uni: int = maxi(sender.artnet_universe, 1)
+			var tgt := sender.sacn_unicast_ip if sender.sacn_unicast_ip != "" \
+				else Sacn.multicast_ip(uni)
+			set_status("sACN → %s  U%d  pri %d" % [tgt, uni, sender.sacn_priority])
+		_:
+			sender.usb_serial = ""
+			sender.set_output_mode(ArtNetUniverse.OUT_ARTNET)
+			set_status("→ %s:%d  Art-Net U%d" % [
+				ip_edit.text, int(port_spin.value), int(artnet_uni_spin.value)])
 
-	sender.usb_serial = ""
-	if want_usb:
-		set_status("USB DMX: %s — sending Art-Net" % (
-			UsbDmx.status(new_serial) if new_serial != "" else "no interface selected"))
-	else:
-		set_status("→ %s:%d  Art-Net U%d" % [
-			ip_edit.text, int(port_spin.value), int(artnet_uni_spin.value)])
 	_sync_output_ui()
 
 
@@ -1161,9 +1199,11 @@ func patch_dict() -> Dictionary:
 		"ip": ip_edit.text,
 		"port": int(port_spin.value),
 		"artnet_universe": int(artnet_uni_spin.value),
-		"output": "usb" if sender.usb_serial != "" else "artnet",
+		"output": ["artnet", "sacn", "usb"][sender.output_mode],
 		"usb_serial": sender.usb_serial,
 		"usb_mode": sender.usb_mode,
+		"sacn_priority": sender.sacn_priority,
+		"sacn_ip": sender.sacn_unicast_ip,
 		"fixtures": fixtures,
 	}
 
@@ -1176,17 +1216,25 @@ func apply_patch_dict(d: Dictionary) -> void:
 	if d.has("artnet_universe"):
 		artnet_uni_spin.value = int(d["artnet_universe"])
 
+	sacn_priority_spin.value = clampi(int(d.get("sacn_priority", 100)), 0, 200)
+	sacn_ip_edit.text = String(d.get("sacn_ip", ""))
 	usb_mode_option.selected = clampi(
 		int(d.get("usb_mode", 0)), 0, maxi(usb_mode_option.item_count - 1, 0))
+
+	var want := String(d.get("output", "artnet"))
 	var want_serial := String(d.get("usb_serial", ""))
-	var want_usb: bool = String(d.get("output", "artnet")) == "usb" and UsbDmx.available
-	output_option.selected = 1 if want_usb else 0
-	if want_usb and want_serial != "":
-		_rescan_usb()
-		for di in range(_usb_devices.size()):
-			if String(_usb_devices[di]["serial"]) == want_serial:
-				usb_device_option.selected = di
-				break
+	if want == "usb" and UsbDmx.available:
+		output_option.selected = ArtNetUniverse.OUT_USB
+		if want_serial != "":
+			_rescan_usb()
+			for di in range(_usb_devices.size()):
+				if String(_usb_devices[di]["serial"]) == want_serial:
+					usb_device_option.selected = di
+					break
+	elif want == "sacn":
+		output_option.selected = ArtNetUniverse.OUT_SACN
+	else:
+		output_option.selected = ArtNetUniverse.OUT_ARTNET
 	apply_connection()
 
 	patched_fixtures.clear()

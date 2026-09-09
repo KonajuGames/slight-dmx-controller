@@ -20,6 +20,10 @@ const ARTNET_PORT_DEFAULT := ArtNetUniverse.ARTNET_PORT_DEFAULT
 ## 0..1 scale applied to every universe's output on send.
 var master := 1.0
 
+## Source CID for every sACN universe (16 bytes). Persisted in the show
+## file so receivers see one stable E1.31 source.
+var sacn_cid := Sacn.random_cid()
+
 var universes: Array[ArtNetUniverse] = []
 
 ## Emitted when a running crossfade reaches all its targets.
@@ -68,7 +72,7 @@ func add_universe() -> ArtNetUniverse:
 func remove_universe(idx: int) -> void:
 	if idx < 0 or idx >= universes.size() or universes.size() <= 1:
 		return
-	if universes[idx].usb_serial != "":
+	if universes[idx].output_mode == ArtNetUniverse.OUT_USB:
 		UsbDmx.unroute(universes[idx].usb_serial)
 	universes[idx].close()
 	universes.remove_at(idx)
@@ -82,7 +86,7 @@ func set_universe_count(n: int) -> void:
 		add_universe()
 	while universes.size() > n:
 		var last := universes[universes.size() - 1]
-		if last.usb_serial != "":
+		if last.output_mode == ArtNetUniverse.OUT_USB:
 			UsbDmx.unroute(last.usb_serial)
 		last.close()
 		universes.remove_at(universes.size() - 1)
@@ -102,10 +106,13 @@ func tick(transmit: bool = true) -> void:
 		var u := universes[i]
 		u.compute_output(master, ov)
 		if transmit:
-			if u.usb_serial != "":
-				UsbDmx.send(u.usb_serial, u.output)   # USB, not Art-Net
-			else:
-				u.transmit()
+			match u.output_mode:
+				ArtNetUniverse.OUT_USB:
+					UsbDmx.send(u.usb_serial, u.output)
+				ArtNetUniverse.OUT_SACN:
+					u.transmit_sacn()
+				_:
+					u.transmit()
 
 
 func send_all() -> void:

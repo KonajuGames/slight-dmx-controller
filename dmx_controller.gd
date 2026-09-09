@@ -1072,6 +1072,7 @@ func _on_save_show() -> void:
 		"groups": _groups_to_dict(),
 		"viz": viz_panel.to_dict(),
 		"viz_window": _viz_window_dict(),
+		"sacn_cid": Marshalls.raw_to_base64(ArtNet.sacn_cid),
 	}
 	for p in _panels:
 		data["universes"].append(p.patch_dict())
@@ -1107,6 +1108,12 @@ func _on_load_show() -> void:
 
 	ArtNet.stop_fade()
 	Fx.stop_all()
+
+	if parsed is Dictionary and parsed.has("sacn_cid"):
+		var cid := Marshalls.base64_to_raw(String(parsed["sacn_cid"]))
+		if cid.size() == 16:
+			ArtNet.sacn_cid = cid
+
 	var n: int = clampi(uni_list.size(), 1, ArtNet.MAX_UNIVERSES)
 	ArtNet.set_universe_count(n)
 	_sync_tabs_to_universes()

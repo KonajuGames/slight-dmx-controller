@@ -19,6 +19,9 @@ so no native plugin or GDExtension is required.
 - `usb_dmx_bridge.gd` — the `UsbDmx` autoload: optional USB-DMX universe
   output via the `addons/usb_dmx` GDExtension (FTDI D2XX). A no-op when
   the extension isn't built.
+- `sacn.gd` — the `Sacn` class: builds E1.31 (streaming ACN) Data packets
+  and the universe multicast address. Used by `ArtNetUniverse` when a
+  universe's output is set to sACN.
 - `artnet_sender.gd` — the `ArtNet` autoload: manages one `ArtNetUniverse`
   per universe slot (up to 8), the grand master, the cue crossfade
   engine, and `tick()` (recompute every universe's output; transmit if
@@ -120,12 +123,12 @@ the same number on different IPs), its own fixture patch, and its own
 number.
 
 Each tab's **Output** selector routes that universe to **Art-Net** (the
-IP / port / universe number) or to a **USB DMX** interface — pick a
-device and its interface type (Auto / Open DMX / Enttec Pro), **Rescan**
-to refresh the list, **Apply Connection**. USB output needs the
-`usb_dmx` GDExtension built (`addons/usb_dmx/BUILD.md`); until then the
-option is greyed out and every universe stays on Art-Net. See
-[Output: Art-Net or USB DMX](#output-art-net-or-usb-dmx).
+IP / port / universe number), **sACN** (E1.31 — multicast by default,
+with a priority and an optional unicast IP), or a **USB DMX** interface
+(pick a device + interface type, **Rescan**, **Apply Connection**). USB
+needs the `usb_dmx` GDExtension built (`addons/usb_dmx/BUILD.md`); until
+then it's greyed out. See
+[Output: Art-Net, sACN, or USB DMX](#output-art-net-sacn-or-usb-dmx).
 
 Global controls live in the top bar:
 
@@ -613,12 +616,21 @@ a DIY ESP32 Art-Net node, or a lighting desk's Art-Net input) on your
 network, set the matching universe, and the gateway converts the Ethernet
 packets to a physical DMX512 signal for your fixtures.
 
-## Output: Art-Net or USB DMX
+## Output: Art-Net, sACN, or USB DMX
 
 A universe's **Output** selector (connection row) chooses where its frames
-go. **Art-Net** is the default. **USB DMX** streams straight to an FTDI
-USB interface through the optional `usb_dmx` GDExtension — no gateway,
-no network:
+go. **Art-Net** is the default.
+
+**sACN** (ANSI E1.31) is the standardised DMX-over-Ethernet protocol —
+built in, no extension. It **multicasts** to `239.255.<hi>.<lo>` on UDP
+5568 (a receiver just subscribes to the universe's group), or unicasts if
+you fill in an IP. Set the E1.31 **priority** (0–200, default 100) in the
+sACN row. The source CID is generated once and saved with the show so
+receivers see one stable source. Works with QLC+, most consoles, ETC
+gear, DMXKing/Enttec sACN nodes, etc.
+
+**USB DMX** streams straight to an FTDI USB interface through the optional
+`usb_dmx` GDExtension — no gateway, no network:
 
 - **Enttec DMX USB Pro** / Mk2, **DMXKing ultraDMX**, most "pro" boxes —
   a framed message; the interface's microcontroller generates the DMX
@@ -638,12 +650,11 @@ a USB show on a machine without the extension falls back to Art-Net.
 
 ## Extending it
 
-- **sACN (E1.31)** instead of Art-Net: same idea, different packet format
-  and multicast address — swap out `ArtNetUniverse.transmit()` for an
-  sACN-formatted packet.
 - **More USB backends**: `addons/usb_dmx` uses FTDI D2XX. A `libusb`
   backend (uDMX, generic FTDI) would slot in behind the same
   `UsbDmxOutput` interface.
+- **sACN input / discovery**: output is done (`sacn.gd`); receiving E1.31
+  or Art-Net (to act as a node) would be the mirror image.
 - **Fixture profiles**: already implemented — `FixtureProfile` carries
   per-mode channel lists with roles, defaults, min/max, 16-bit fine
   pairs, named value ranges with swatch/gobo icons, and physical hints;
