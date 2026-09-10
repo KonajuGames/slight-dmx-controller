@@ -1,4 +1,4 @@
-# Godot DMX Lighting Controller
+# sLight DMX Lighting Controller
 
 ![The controller with the 3D visualizer showing a moving-head rig](docs/screenshot.png)
 
