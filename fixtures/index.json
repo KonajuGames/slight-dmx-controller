@@ -86,7 +86,7 @@
 			],
 			"cat": "strip",
 			"id": "adb-alc4",
-			"maker": "ADB",
+			"maker": "Adb",
 			"model": "ALC4",
 			"modes": [
 				{
@@ -114,7 +114,7 @@
 					"name": "Extended 7 Presets"
 				}
 			],
-			"name": "ADB ALC4",
+			"name": "Adb ALC4",
 			"ofl_cat": [
 				"Blinder",
 				"Pixel Bar",
@@ -130,7 +130,7 @@
 			],
 			"cat": "par",
 			"id": "adb-europe-105",
-			"maker": "ADB",
+			"maker": "Adb",
 			"model": "Europe 105",
 			"modes": [
 				{
@@ -174,7 +174,7 @@
 					"name": "DN 105 1200W"
 				}
 			],
-			"name": "ADB Europe 105",
+			"name": "Adb Europe 105",
 			"ofl_cat": [
 				"Dimmer"
 			],
@@ -188,7 +188,7 @@
 			],
 			"cat": "moving_head",
 			"id": "adb-warp-m",
-			"maker": "ADB",
+			"maker": "Adb",
 			"model": "WARP/M",
 			"modes": [
 				{
@@ -200,7 +200,7 @@
 					"name": "22-50"
 				}
 			],
-			"name": "ADB WARP/M",
+			"name": "Adb WARP/M",
 			"ofl_cat": [
 				"Moving Head"
 			],
@@ -215,7 +215,7 @@
 			],
 			"cat": "moving_head",
 			"id": "afx-lmh460z",
-			"maker": "AFX",
+			"maker": "Afx",
 			"model": "LMH460Z",
 			"modes": [
 				{
@@ -223,7 +223,7 @@
 					"name": "Default"
 				}
 			],
-			"name": "AFX LMH460Z",
+			"name": "Afx LMH460Z",
 			"ofl_cat": [
 				"Moving Head",
 				"Color Changer"
@@ -2070,7 +2070,7 @@
 			],
 			"cat": "par",
 			"id": "arri-broadcaster-2-plus",
-			"maker": "ARRI",
+			"maker": "Arri",
 			"model": "Broadcaster 2 Plus",
 			"modes": [
 				{
@@ -2078,7 +2078,7 @@
 					"name": "4-channel"
 				}
 			],
-			"name": "ARRI Broadcaster 2 Plus",
+			"name": "Arri Broadcaster 2 Plus",
 			"ofl_cat": [
 				"Dimmer"
 			],
@@ -2092,7 +2092,7 @@
 			],
 			"cat": "par",
 			"id": "arri-l5-c",
-			"maker": "ARRI",
+			"maker": "Arri",
 			"model": "L5-C",
 			"modes": [
 				{
@@ -2156,7 +2156,7 @@
 					"name": "P15: HSI 8/16bit"
 				}
 			],
-			"name": "ARRI L5-C",
+			"name": "Arri L5-C",
 			"ofl_cat": [
 				"Dimmer",
 				"Color Changer"
@@ -2171,7 +2171,7 @@
 			],
 			"cat": "par",
 			"id": "arri-l7-c",
-			"maker": "ARRI",
+			"maker": "Arri",
 			"model": "L7-C",
 			"modes": [
 				{
@@ -2235,7 +2235,7 @@
 					"name": "P15: HSI 8/16bit"
 				}
 			],
-			"name": "ARRI L7-C",
+			"name": "Arri L7-C",
 			"ofl_cat": [
 				"Dimmer",
 				"Color Changer"
@@ -2250,7 +2250,7 @@
 			],
 			"cat": "par",
 			"id": "arri-l10-c",
-			"maker": "ARRI",
+			"maker": "Arri",
 			"model": "L10-C",
 			"modes": [
 				{
@@ -2314,7 +2314,7 @@
 					"name": "P15: HSI 8/16bit"
 				}
 			],
-			"name": "ARRI L10-C",
+			"name": "Arri L10-C",
 			"ofl_cat": [
 				"Dimmer",
 				"Color Changer"
@@ -2330,7 +2330,7 @@
 			],
 			"cat": "blinder",
 			"id": "arri-skypanel-s30c",
-			"maker": "ARRI",
+			"maker": "Arri",
 			"model": "Skypanel S30C",
 			"modes": [
 				{
@@ -2394,7 +2394,7 @@
 					"name": "P15: HSI 8/16bit"
 				}
 			],
-			"name": "ARRI Skypanel S30C",
+			"name": "Arri Skypanel S30C",
 			"ofl_cat": [
 				"Dimmer",
 				"Color Changer",
@@ -2411,7 +2411,7 @@
 			],
 			"cat": "blinder",
 			"id": "arri-skypanel-s60c",
-			"maker": "ARRI",
+			"maker": "Arri",
 			"model": "Skypanel S60C",
 			"modes": [
 				{
@@ -2475,7 +2475,7 @@
 					"name": "P15: HSI 8/16bit"
 				}
 			],
-			"name": "ARRI Skypanel S60C",
+			"name": "Arri Skypanel S60C",
 			"ofl_cat": [
 				"Dimmer",
 				"Color Changer",
@@ -2492,7 +2492,7 @@
 			],
 			"cat": "blinder",
 			"id": "arri-skypanel-s120c",
-			"maker": "ARRI",
+			"maker": "Arri",
 			"model": "Skypanel S120C",
 			"modes": [
 				{
@@ -2556,7 +2556,7 @@
 					"name": "P15: HSI 8/16bit"
 				}
 			],
-			"name": "ARRI Skypanel S120C",
+			"name": "Arri Skypanel S120C",
 			"ofl_cat": [
 				"Dimmer",
 				"Color Changer",
@@ -2573,7 +2573,7 @@
 			],
 			"cat": "blinder",
 			"id": "arri-skypanel-s360c",
-			"maker": "ARRI",
+			"maker": "Arri",
 			"model": "Skypanel S360C",
 			"modes": [
 				{
@@ -2637,7 +2637,7 @@
 					"name": "P15: HSI 8/16bit"
 				}
 			],
-			"name": "ARRI Skypanel S360C",
+			"name": "Arri Skypanel S360C",
 			"ofl_cat": [
 				"Dimmer",
 				"Color Changer",
@@ -3814,7 +3814,7 @@
 			],
 			"cat": "generic",
 			"id": "beamz-h2000-faze-machine",
-			"maker": "BeamZ",
+			"maker": "Beamz",
 			"model": "H2000 Faze Machine",
 			"modes": [
 				{
@@ -3822,7 +3822,7 @@
 					"name": "2-channel"
 				}
 			],
-			"name": "BeamZ H2000 Faze Machine",
+			"name": "Beamz H2000 Faze Machine",
 			"ofl_cat": [
 				"Hazer",
 				"Smoke"
@@ -3837,7 +3837,7 @@
 			],
 			"cat": "moving_head",
 			"id": "beamz-panther-7r",
-			"maker": "BeamZ",
+			"maker": "Beamz",
 			"model": "Panther 7R",
 			"modes": [
 				{
@@ -3845,7 +3845,7 @@
 					"name": "16-channel"
 				}
 			],
-			"name": "BeamZ Panther 7R",
+			"name": "Beamz Panther 7R",
 			"ofl_cat": [
 				"Moving Head",
 				"Color Changer"
@@ -3860,7 +3860,7 @@
 			],
 			"cat": "blinder",
 			"id": "beamz-pls25-par",
-			"maker": "BeamZ",
+			"maker": "Beamz",
 			"model": "PLS25 Par",
 			"modes": [
 				{
@@ -3868,7 +3868,7 @@
 					"name": "6-channel"
 				}
 			],
-			"name": "BeamZ PLS25 Par",
+			"name": "Beamz PLS25 Par",
 			"ofl_cat": [
 				"Color Changer",
 				"Strobe"
@@ -3883,7 +3883,7 @@
 			],
 			"cat": "moving_head",
 			"id": "beamz-triple-flex-centre-pro-led",
-			"maker": "BeamZ",
+			"maker": "Beamz",
 			"model": "Triple Flex Centre Pro LED",
 			"modes": [
 				{
@@ -3895,7 +3895,7 @@
 					"name": "8-channel"
 				}
 			],
-			"name": "BeamZ Triple Flex Centre Pro LED",
+			"name": "Beamz Triple Flex Centre Pro LED",
 			"ofl_cat": [
 				"Flower",
 				"Scanner"
@@ -4205,7 +4205,7 @@
 			],
 			"cat": "moving_head",
 			"id": "boomtonedj-crazy-spot-30",
-			"maker": "BoomToneDJ",
+			"maker": "Boomtonedj",
 			"model": "Crazy Spot 30",
 			"modes": [
 				{
@@ -4217,7 +4217,7 @@
 					"name": "10-channel"
 				}
 			],
-			"name": "BoomToneDJ Crazy Spot 30",
+			"name": "Boomtonedj Crazy Spot 30",
 			"ofl_cat": [
 				"Moving Head",
 				"Color Changer"
@@ -4233,7 +4233,7 @@
 			],
 			"cat": "par",
 			"id": "boomtonedj-par-56-rgb-led",
-			"maker": "BoomToneDJ",
+			"maker": "Boomtonedj",
 			"model": "PAR-56-RGB-LED",
 			"modes": [
 				{
@@ -4245,7 +4245,7 @@
 					"name": "3-channel"
 				}
 			],
-			"name": "BoomToneDJ PAR-56-RGB-LED",
+			"name": "Boomtonedj PAR-56-RGB-LED",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -4259,7 +4259,7 @@
 			],
 			"cat": "par",
 			"id": "boomtonedj-silentpar-5x3w-3in1",
-			"maker": "BoomToneDJ",
+			"maker": "Boomtonedj",
 			"model": "SilentPAR 5x3W 3in1",
 			"modes": [
 				{
@@ -4271,7 +4271,7 @@
 					"name": "7-channel"
 				}
 			],
-			"name": "BoomToneDJ SilentPAR 5x3W 3in1",
+			"name": "Boomtonedj SilentPAR 5x3W 3in1",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -4285,7 +4285,7 @@
 			],
 			"cat": "par",
 			"id": "boomtonedj-silentpar-5x10w-5in1",
-			"maker": "BoomToneDJ",
+			"maker": "Boomtonedj",
 			"model": "SilentPAR 5x10W 5in1",
 			"modes": [
 				{
@@ -4297,7 +4297,7 @@
 					"name": "9-channel"
 				}
 			],
-			"name": "BoomToneDJ SilentPAR 5x10W 5in1",
+			"name": "Boomtonedj SilentPAR 5x10W 5in1",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -4311,7 +4311,7 @@
 			],
 			"cat": "par",
 			"id": "boomtonedj-silentpar-5x10w-6in1",
-			"maker": "BoomToneDJ",
+			"maker": "Boomtonedj",
 			"model": "SilentPAR 5x10W 6in1",
 			"modes": [
 				{
@@ -4323,7 +4323,7 @@
 					"name": "10-channel"
 				}
 			],
-			"name": "BoomToneDJ SilentPAR 5x10W 6in1",
+			"name": "Boomtonedj SilentPAR 5x10W 6in1",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -4337,7 +4337,7 @@
 			],
 			"cat": "par",
 			"id": "boomtonedj-silentpar-7x3w-3in1",
-			"maker": "BoomToneDJ",
+			"maker": "Boomtonedj",
 			"model": "SilentPAR 7x3W 3in1",
 			"modes": [
 				{
@@ -4349,7 +4349,7 @@
 					"name": "7-channel"
 				}
 			],
-			"name": "BoomToneDJ SilentPAR 7x3W 3in1",
+			"name": "Boomtonedj SilentPAR 7x3W 3in1",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -4363,7 +4363,7 @@
 			],
 			"cat": "par",
 			"id": "boomtonedj-silentpar-7x10w-5in1",
-			"maker": "BoomToneDJ",
+			"maker": "Boomtonedj",
 			"model": "SilentPAR 7x10W 5in1",
 			"modes": [
 				{
@@ -4375,7 +4375,7 @@
 					"name": "9-channel"
 				}
 			],
-			"name": "BoomToneDJ SilentPAR 7x10W 5in1",
+			"name": "Boomtonedj SilentPAR 7x10W 5in1",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -4389,7 +4389,7 @@
 			],
 			"cat": "par",
 			"id": "boomtonedj-silentpar-7x10w-6in1",
-			"maker": "BoomToneDJ",
+			"maker": "Boomtonedj",
 			"model": "SilentPAR 7x10W 6in1",
 			"modes": [
 				{
@@ -4401,7 +4401,7 @@
 					"name": "10-channel"
 				}
 			],
-			"name": "BoomToneDJ SilentPAR 7x10W 6in1",
+			"name": "Boomtonedj SilentPAR 7x10W 6in1",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -4415,7 +4415,7 @@
 			],
 			"cat": "par",
 			"id": "boomtonedj-silentpar-12x3w-3in1",
-			"maker": "BoomToneDJ",
+			"maker": "Boomtonedj",
 			"model": "SilentPAR 12x3W 3in1",
 			"modes": [
 				{
@@ -4427,7 +4427,7 @@
 					"name": "7-channel"
 				}
 			],
-			"name": "BoomToneDJ SilentPAR 12x3W 3in1",
+			"name": "Boomtonedj SilentPAR 12x3W 3in1",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -4441,7 +4441,7 @@
 			],
 			"cat": "par",
 			"id": "boomtonedj-silentpar-12x10w-5in1",
-			"maker": "BoomToneDJ",
+			"maker": "Boomtonedj",
 			"model": "SilentPAR 12x10W 5in1",
 			"modes": [
 				{
@@ -4453,7 +4453,7 @@
 					"name": "9-channel"
 				}
 			],
-			"name": "BoomToneDJ SilentPAR 12x10W 5in1",
+			"name": "Boomtonedj SilentPAR 12x10W 5in1",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -4467,7 +4467,7 @@
 			],
 			"cat": "par",
 			"id": "boomtonedj-silentpar-12x10w-6in1",
-			"maker": "BoomToneDJ",
+			"maker": "Boomtonedj",
 			"model": "SilentPAR 12x10W 6in1",
 			"modes": [
 				{
@@ -4479,7 +4479,7 @@
 					"name": "10-channel"
 				}
 			],
-			"name": "BoomToneDJ SilentPAR 12x10W 6in1",
+			"name": "Boomtonedj SilentPAR 12x10W 6in1",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -4494,7 +4494,7 @@
 			],
 			"cat": "blinder",
 			"id": "boomtonedj-xtrem-led",
-			"maker": "BoomToneDJ",
+			"maker": "Boomtonedj",
 			"model": "Xtrem LED",
 			"modes": [
 				{
@@ -4510,7 +4510,7 @@
 					"name": "Combined"
 				}
 			],
-			"name": "BoomToneDJ Xtrem LED",
+			"name": "Boomtonedj Xtrem LED",
 			"ofl_cat": [
 				"Flower",
 				"Color Changer"
@@ -4994,7 +4994,7 @@
 			],
 			"cat": "moving_head",
 			"id": "cameo-auro-beam-150",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Auro Beam 150",
 			"modes": [
 				{
@@ -5014,7 +5014,7 @@
 					"name": "41-channel"
 				}
 			],
-			"name": "cameo Auro Beam 150",
+			"name": "Cameo Auro Beam 150",
 			"ofl_cat": [
 				"Moving Head",
 				"Color Changer"
@@ -5029,7 +5029,7 @@
 			],
 			"cat": "moving_head",
 			"id": "cameo-auro-spot-100",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Auro Spot 100",
 			"modes": [
 				{
@@ -5045,7 +5045,7 @@
 					"name": "22-channel"
 				}
 			],
-			"name": "cameo Auro Spot 100",
+			"name": "Cameo Auro Spot 100",
 			"ofl_cat": [
 				"Moving Head",
 				"Color Changer"
@@ -5060,7 +5060,7 @@
 			],
 			"cat": "moving_head",
 			"id": "cameo-auro-spot-200",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Auro Spot 200",
 			"modes": [
 				{
@@ -5076,7 +5076,7 @@
 					"name": "22-channel"
 				}
 			],
-			"name": "cameo Auro Spot 200",
+			"name": "Cameo Auro Spot 200",
 			"ofl_cat": [
 				"Moving Head",
 				"Color Changer"
@@ -5091,7 +5091,7 @@
 			],
 			"cat": "moving_head",
 			"id": "cameo-auro-spot-300",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Auro Spot 300",
 			"modes": [
 				{
@@ -5107,7 +5107,7 @@
 					"name": "24-channel"
 				}
 			],
-			"name": "cameo Auro Spot 300",
+			"name": "Cameo Auro Spot 300",
 			"ofl_cat": [
 				"Moving Head",
 				"Color Changer"
@@ -5123,7 +5123,7 @@
 			],
 			"cat": "moving_head",
 			"id": "cameo-auro-spot-400",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Auro Spot 400",
 			"modes": [
 				{
@@ -5139,7 +5139,7 @@
 					"name": "27-channel"
 				}
 			],
-			"name": "cameo Auro Spot 400",
+			"name": "Cameo Auro Spot 400",
 			"ofl_cat": [
 				"Moving Head",
 				"Color Changer"
@@ -5155,7 +5155,7 @@
 			],
 			"cat": "moving_head",
 			"id": "cameo-auro-spot-z300",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Auro Spot Z300",
 			"modes": [
 				{
@@ -5167,7 +5167,7 @@
 					"name": "20-channel"
 				}
 			],
-			"name": "cameo Auro Spot Z300",
+			"name": "Cameo Auro Spot Z300",
 			"ofl_cat": [
 				"Moving Head",
 				"Color Changer"
@@ -5182,7 +5182,7 @@
 			],
 			"cat": "blinder",
 			"id": "cameo-flash-matrix-250",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Flash Matrix 250",
 			"modes": [
 				{
@@ -5214,7 +5214,7 @@
 					"name": "30-channel"
 				}
 			],
-			"name": "cameo Flash Matrix 250",
+			"name": "Cameo Flash Matrix 250",
 			"ofl_cat": [
 				"Matrix",
 				"Strobe",
@@ -5230,7 +5230,7 @@
 			],
 			"cat": "par",
 			"id": "cameo-flat-par-can-rgb-10-ir",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Flat PAR Can RGB 10 IR",
 			"modes": [
 				{
@@ -5250,7 +5250,7 @@
 					"name": "6-channel"
 				}
 			],
-			"name": "cameo Flat PAR Can RGB 10 IR",
+			"name": "Cameo Flat PAR Can RGB 10 IR",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -5264,7 +5264,7 @@
 			],
 			"cat": "par",
 			"id": "cameo-flat-par-can-tri-5x-3w-ir",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Flat PAR Can Tri 5x 3W IR",
 			"modes": [
 				{
@@ -5284,7 +5284,7 @@
 					"name": "6-channel"
 				}
 			],
-			"name": "cameo Flat PAR Can Tri 5x 3W IR",
+			"name": "Cameo Flat PAR Can Tri 5x 3W IR",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -5298,7 +5298,7 @@
 			],
 			"cat": "par",
 			"id": "cameo-flat-par-can-tri-7x-3w-ir",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Flat PAR Can Tri 7x 3W IR",
 			"modes": [
 				{
@@ -5318,7 +5318,7 @@
 					"name": "6-channel"
 				}
 			],
-			"name": "cameo Flat PAR Can Tri 7x 3W IR",
+			"name": "Cameo Flat PAR Can Tri 7x 3W IR",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -5332,7 +5332,7 @@
 			],
 			"cat": "par",
 			"id": "cameo-flat-pro-18",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Flat Pro 18",
 			"modes": [
 				{
@@ -5356,7 +5356,7 @@
 					"name": "8-channel"
 				}
 			],
-			"name": "cameo Flat Pro 18",
+			"name": "Cameo Flat Pro 18",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -5371,7 +5371,7 @@
 			],
 			"cat": "par",
 			"id": "cameo-flat-pro-flood-600-ip65",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Flat Pro Flood 600 IP65",
 			"modes": [
 				{
@@ -5399,7 +5399,7 @@
 					"name": "11-channel"
 				}
 			],
-			"name": "cameo Flat Pro Flood 600 IP65",
+			"name": "Cameo Flat Pro Flood 600 IP65",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -5413,7 +5413,7 @@
 			],
 			"cat": "blinder",
 			"id": "cameo-flat-pro-flood-ip65-tri",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Flat Pro Flood IP65 Tri",
 			"modes": [
 				{
@@ -5433,7 +5433,7 @@
 					"name": "6-channel"
 				}
 			],
-			"name": "cameo Flat Pro Flood IP65 Tri",
+			"name": "Cameo Flat Pro Flood IP65 Tri",
 			"ofl_cat": [
 				"Blinder",
 				"Color Changer"
@@ -5448,7 +5448,7 @@
 			],
 			"cat": "moving_head",
 			"id": "cameo-gobo-scanner-80",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Gobo Scanner 80",
 			"modes": [
 				{
@@ -5460,7 +5460,7 @@
 					"name": "9ch"
 				}
 			],
-			"name": "cameo Gobo Scanner 80",
+			"name": "Cameo Gobo Scanner 80",
 			"ofl_cat": [
 				"Scanner",
 				"Color Changer"
@@ -5476,7 +5476,7 @@
 			],
 			"cat": "moving_head",
 			"id": "cameo-hydrabeam-100",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Hydrabeam 100",
 			"modes": [
 				{
@@ -5500,7 +5500,7 @@
 					"name": "14-channel"
 				}
 			],
-			"name": "cameo Hydrabeam 100",
+			"name": "Cameo Hydrabeam 100",
 			"ofl_cat": [
 				"Moving Head",
 				"Color Changer"
@@ -5516,7 +5516,7 @@
 			],
 			"cat": "moving_head",
 			"id": "cameo-hydrabeam-300-rgbw",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Hydrabeam 300 RGBW",
 			"modes": [
 				{
@@ -5540,7 +5540,7 @@
 					"name": "42-channel"
 				}
 			],
-			"name": "cameo Hydrabeam 300 RGBW",
+			"name": "Cameo Hydrabeam 300 RGBW",
 			"ofl_cat": [
 				"Moving Head",
 				"Color Changer"
@@ -5556,7 +5556,7 @@
 			],
 			"cat": "moving_head",
 			"id": "cameo-hydrabeam-400-rgbw",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Hydrabeam 400 RGBW",
 			"modes": [
 				{
@@ -5580,7 +5580,7 @@
 					"name": "56-channel"
 				}
 			],
-			"name": "cameo Hydrabeam 400 RGBW",
+			"name": "Cameo Hydrabeam 400 RGBW",
 			"ofl_cat": [
 				"Moving Head",
 				"Color Changer"
@@ -5595,7 +5595,7 @@
 			],
 			"cat": "generic",
 			"id": "cameo-instant-air-1000-pro",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Instant Air 1000 Pro",
 			"modes": [
 				{
@@ -5603,7 +5603,7 @@
 					"name": "1-channel"
 				}
 			],
-			"name": "cameo Instant Air 1000 Pro",
+			"name": "Cameo Instant Air 1000 Pro",
 			"ofl_cat": [
 				"Fan"
 			],
@@ -5617,7 +5617,7 @@
 			],
 			"cat": "generic",
 			"id": "cameo-instant-air-2000-pro",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Instant Air 2000 Pro",
 			"modes": [
 				{
@@ -5625,7 +5625,7 @@
 					"name": "1-channel"
 				}
 			],
-			"name": "cameo Instant Air 2000 Pro",
+			"name": "Cameo Instant Air 2000 Pro",
 			"ofl_cat": [
 				"Fan"
 			],
@@ -5639,7 +5639,7 @@
 			],
 			"cat": "generic",
 			"id": "cameo-instant-hazer-1500-t-pro",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Instant Hazer 1500 T Pro",
 			"modes": [
 				{
@@ -5647,7 +5647,7 @@
 					"name": "2ch"
 				}
 			],
-			"name": "cameo Instant Hazer 1500 T Pro",
+			"name": "Cameo Instant Hazer 1500 T Pro",
 			"ofl_cat": [
 				"Hazer"
 			],
@@ -5661,7 +5661,7 @@
 			],
 			"cat": "blinder",
 			"id": "cameo-ioda-400-rgy",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "IODA 400 RGY",
 			"modes": [
 				{
@@ -5673,7 +5673,7 @@
 					"name": "11-channel"
 				}
 			],
-			"name": "cameo IODA 400 RGY",
+			"name": "Cameo IODA 400 RGY",
 			"ofl_cat": [
 				"Laser",
 				"Color Changer"
@@ -5688,7 +5688,7 @@
 			],
 			"cat": "blinder",
 			"id": "cameo-ioda-600-rgb",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "IODA 600 RGB",
 			"modes": [
 				{
@@ -5700,7 +5700,7 @@
 					"name": "11-channel"
 				}
 			],
-			"name": "cameo IODA 600 RGB",
+			"name": "Cameo IODA 600 RGB",
 			"ofl_cat": [
 				"Laser",
 				"Color Changer"
@@ -5715,7 +5715,7 @@
 			],
 			"cat": "blinder",
 			"id": "cameo-ioda-1000-rgb",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "IODA 1000 RGB",
 			"modes": [
 				{
@@ -5727,7 +5727,7 @@
 					"name": "11-channel"
 				}
 			],
-			"name": "cameo IODA 1000 RGB",
+			"name": "Cameo IODA 1000 RGB",
 			"ofl_cat": [
 				"Laser",
 				"Color Changer"
@@ -5742,7 +5742,7 @@
 			],
 			"cat": "blinder",
 			"id": "cameo-multi-fx-bar",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Multi FX Bar",
 			"modes": [
 				{
@@ -5758,7 +5758,7 @@
 					"name": "29-Channel"
 				}
 			],
-			"name": "cameo Multi FX Bar",
+			"name": "Cameo Multi FX Bar",
 			"ofl_cat": [
 				"Stand",
 				"Flower",
@@ -5776,7 +5776,7 @@
 			],
 			"cat": "par",
 			"id": "cameo-multi-par-cob-1",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Multi PAR COB 1",
 			"modes": [
 				{
@@ -5812,7 +5812,7 @@
 					"name": "17-Channel"
 				}
 			],
-			"name": "cameo Multi PAR COB 1",
+			"name": "Cameo Multi PAR COB 1",
 			"ofl_cat": [
 				"Stand",
 				"Color Changer"
@@ -5827,7 +5827,7 @@
 			],
 			"cat": "moving_head",
 			"id": "cameo-nanospot-120",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "NanoSpot 120",
 			"modes": [
 				{
@@ -5843,7 +5843,7 @@
 					"name": "11-channel"
 				}
 			],
-			"name": "cameo NanoSpot 120",
+			"name": "Cameo NanoSpot 120",
 			"ofl_cat": [
 				"Moving Head",
 				"Color Changer"
@@ -5859,7 +5859,7 @@
 			],
 			"cat": "par",
 			"id": "cameo-outdoor-par-tri-12",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Outdoor PAR Tri 12",
 			"modes": [
 				{
@@ -5879,7 +5879,7 @@
 					"name": "6-channel"
 				}
 			],
-			"name": "cameo Outdoor PAR Tri 12",
+			"name": "Cameo Outdoor PAR Tri 12",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -5893,7 +5893,7 @@
 			],
 			"cat": "par",
 			"id": "cameo-q-spot-40-cw",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Q-Spot 40 CW",
 			"modes": [
 				{
@@ -5901,7 +5901,7 @@
 					"name": "3-channel"
 				}
 			],
-			"name": "cameo Q-Spot 40 CW",
+			"name": "Cameo Q-Spot 40 CW",
 			"ofl_cat": [
 				"Dimmer"
 			],
@@ -5916,7 +5916,7 @@
 			],
 			"cat": "par",
 			"id": "cameo-q-spot-40-rgbw",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Q-Spot 40 RGBW",
 			"modes": [
 				{
@@ -5940,7 +5940,7 @@
 					"name": "9-channel"
 				}
 			],
-			"name": "cameo Q-Spot 40 RGBW",
+			"name": "Cameo Q-Spot 40 RGBW",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -5955,7 +5955,7 @@
 			],
 			"cat": "blinder",
 			"id": "cameo-root-par-6",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "ROOT PAR 6",
 			"modes": [
 				{
@@ -6015,7 +6015,7 @@
 					"name": "12-channel (with delay)"
 				}
 			],
-			"name": "cameo ROOT PAR 6",
+			"name": "Cameo ROOT PAR 6",
 			"ofl_cat": [
 				"Color Changer",
 				"Dimmer",
@@ -6031,7 +6031,7 @@
 			],
 			"cat": "par",
 			"id": "cameo-steam-wizard-1000",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Steam Wizard 1000",
 			"modes": [
 				{
@@ -6039,7 +6039,7 @@
 					"name": "4-channel"
 				}
 			],
-			"name": "cameo Steam Wizard 1000",
+			"name": "Cameo Steam Wizard 1000",
 			"ofl_cat": [
 				"Smoke",
 				"Color Changer"
@@ -6054,7 +6054,7 @@
 			],
 			"cat": "par",
 			"id": "cameo-steam-wizard-2000",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Steam Wizard 2000",
 			"modes": [
 				{
@@ -6062,7 +6062,7 @@
 					"name": "4-channel"
 				}
 			],
-			"name": "cameo Steam Wizard 2000",
+			"name": "Cameo Steam Wizard 2000",
 			"ofl_cat": [
 				"Smoke",
 				"Color Changer"
@@ -6077,7 +6077,7 @@
 			],
 			"cat": "blinder",
 			"id": "cameo-storm",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "STORM",
 			"modes": [
 				{
@@ -6085,7 +6085,7 @@
 					"name": "10-channel"
 				}
 			],
-			"name": "cameo STORM",
+			"name": "Cameo STORM",
 			"ofl_cat": [
 				"Flower",
 				"Laser",
@@ -6102,7 +6102,7 @@
 			],
 			"cat": "blinder",
 			"id": "cameo-thunder-wash-100-rgb",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Thunder Wash 100 RGB",
 			"modes": [
 				{
@@ -6142,7 +6142,7 @@
 					"name": "6-channel 2"
 				}
 			],
-			"name": "cameo Thunder Wash 100 RGB",
+			"name": "Cameo Thunder Wash 100 RGB",
 			"ofl_cat": [
 				"Strobe",
 				"Blinder",
@@ -6158,7 +6158,7 @@
 			],
 			"cat": "blinder",
 			"id": "cameo-thunder-wash-100-w",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Thunder Wash 100 W",
 			"modes": [
 				{
@@ -6178,7 +6178,7 @@
 					"name": "3-channel 2"
 				}
 			],
-			"name": "cameo Thunder Wash 100 W",
+			"name": "Cameo Thunder Wash 100 W",
 			"ofl_cat": [
 				"Strobe",
 				"Blinder"
@@ -6193,7 +6193,7 @@
 			],
 			"cat": "blinder",
 			"id": "cameo-thunder-wash-600-rgb",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Thunder Wash 600 RGB",
 			"modes": [
 				{
@@ -6233,7 +6233,7 @@
 					"name": "6-channel 2"
 				}
 			],
-			"name": "cameo Thunder Wash 600 RGB",
+			"name": "Cameo Thunder Wash 600 RGB",
 			"ofl_cat": [
 				"Strobe",
 				"Blinder",
@@ -6250,7 +6250,7 @@
 			],
 			"cat": "blinder",
 			"id": "cameo-thunder-wash-600-rgbw",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Thunder Wash 600 RGBW",
 			"modes": [
 				{
@@ -6290,7 +6290,7 @@
 					"name": "7-channel 2"
 				}
 			],
-			"name": "cameo Thunder Wash 600 RGBW",
+			"name": "Cameo Thunder Wash 600 RGBW",
 			"ofl_cat": [
 				"Strobe",
 				"Blinder",
@@ -6306,7 +6306,7 @@
 			],
 			"cat": "blinder",
 			"id": "cameo-thunder-wash-600-w",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Thunder Wash 600 W",
 			"modes": [
 				{
@@ -6330,7 +6330,7 @@
 					"name": "7-channel"
 				}
 			],
-			"name": "cameo Thunder Wash 600 W",
+			"name": "Cameo Thunder Wash 600 W",
 			"ofl_cat": [
 				"Strobe",
 				"Blinder"
@@ -6346,7 +6346,7 @@
 			],
 			"cat": "par",
 			"id": "cameo-ts-60-rgbw",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "TS 60 RGBW",
 			"modes": [
 				{
@@ -6370,7 +6370,7 @@
 					"name": "13-channel"
 				}
 			],
-			"name": "cameo TS 60 RGBW",
+			"name": "Cameo TS 60 RGBW",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -6384,7 +6384,7 @@
 			],
 			"cat": "par",
 			"id": "cameo-ts-100-ww",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "TS 100 WW",
 			"modes": [
 				{
@@ -6400,7 +6400,7 @@
 					"name": "5-channel"
 				}
 			],
-			"name": "cameo TS 100 WW",
+			"name": "Cameo TS 100 WW",
 			"ofl_cat": [
 				"Dimmer"
 			],
@@ -6415,7 +6415,7 @@
 			],
 			"cat": "par",
 			"id": "cameo-ts-200-fc",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "TS 200 FC",
 			"modes": [
 				{
@@ -6447,7 +6447,7 @@
 					"name": "14-channel Direct fine"
 				}
 			],
-			"name": "cameo TS 200 FC",
+			"name": "Cameo TS 200 FC",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -6462,7 +6462,7 @@
 			],
 			"cat": "par",
 			"id": "cameo-zenit-w600",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Zenit W600",
 			"modes": [
 				{
@@ -6494,7 +6494,7 @@
 					"name": "15-channel 16bit"
 				}
 			],
-			"name": "cameo Zenit W600",
+			"name": "Cameo Zenit W600",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -6510,7 +6510,7 @@
 			],
 			"cat": "par",
 			"id": "cameo-zenit-z120",
-			"maker": "cameo",
+			"maker": "Cameo",
 			"model": "Zenit Z120",
 			"modes": [
 				{
@@ -6542,7 +6542,7 @@
 					"name": "17-channel"
 				}
 			],
-			"name": "cameo Zenit Z120",
+			"name": "Cameo Zenit Z120",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -7613,7 +7613,7 @@
 			],
 			"cat": "strip",
 			"id": "chroma-q-color-force-ii-12",
-			"maker": "Chroma-Q",
+			"maker": "Chroma Q",
 			"model": "Color Force II 12",
 			"modes": [
 				{
@@ -7861,7 +7861,7 @@
 					"name": "Odd/Even HSI OnTop"
 				}
 			],
-			"name": "Chroma-Q Color Force II 12",
+			"name": "Chroma Q Color Force II 12",
 			"ofl_cat": [
 				"Pixel Bar",
 				"Color Changer"
@@ -7876,7 +7876,7 @@
 			],
 			"cat": "strip",
 			"id": "chroma-q-color-force-ii-48",
-			"maker": "Chroma-Q",
+			"maker": "Chroma Q",
 			"model": "Color Force II 48",
 			"modes": [
 				{
@@ -8364,7 +8364,7 @@
 					"name": "Every eighth HSI OnTop"
 				}
 			],
-			"name": "Chroma-Q Color Force II 48",
+			"name": "Chroma Q Color Force II 48",
 			"ofl_cat": [
 				"Pixel Bar",
 				"Color Changer"
@@ -8379,7 +8379,7 @@
 			],
 			"cat": "strip",
 			"id": "chroma-q-color-force-ii-72",
-			"maker": "Chroma-Q",
+			"maker": "Chroma Q",
 			"model": "Color Force II 72",
 			"modes": [
 				{
@@ -9091,7 +9091,7 @@
 					"name": "Every sixth HSI OnTop"
 				}
 			],
-			"name": "Chroma-Q Color Force II 72",
+			"name": "Chroma Q Color Force II 72",
 			"ofl_cat": [
 				"Pixel Bar",
 				"Color Changer"
@@ -9308,7 +9308,7 @@
 			],
 			"cat": "par",
 			"id": "clf-hera",
-			"maker": "CLF",
+			"maker": "Clf",
 			"model": "Hera",
 			"modes": [
 				{
@@ -9348,7 +9348,7 @@
 					"name": "HSI"
 				}
 			],
-			"name": "CLF Hera",
+			"name": "Clf Hera",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -9717,7 +9717,7 @@
 			],
 			"cat": "par",
 			"id": "dts-scena-led-150",
-			"maker": "DTS",
+			"maker": "Dts",
 			"model": "Scena LED 150",
 			"modes": [
 				{
@@ -9749,7 +9749,7 @@
 					"name": "1-channel"
 				}
 			],
-			"name": "DTS Scena LED 150",
+			"name": "Dts Scena LED 150",
 			"ofl_cat": [
 				"Dimmer"
 			],
@@ -9765,7 +9765,7 @@
 			],
 			"cat": "moving_head",
 			"id": "dts-xr4-spot",
-			"maker": "DTS",
+			"maker": "Dts",
 			"model": "XR4 Spot",
 			"modes": [
 				{
@@ -9777,7 +9777,7 @@
 					"name": "17-channel"
 				}
 			],
-			"name": "DTS XR4 Spot",
+			"name": "Dts XR4 Spot",
 			"ofl_cat": [
 				"Moving Head",
 				"Color Changer"
@@ -9792,7 +9792,7 @@
 			],
 			"cat": "moving_head",
 			"id": "dts-xr1200-wash",
-			"maker": "DTS",
+			"maker": "Dts",
 			"model": "XR1200 WASH",
 			"modes": [
 				{
@@ -9804,7 +9804,7 @@
 					"name": "PC"
 				}
 			],
-			"name": "DTS XR1200 WASH",
+			"name": "Dts XR1200 WASH",
 			"ofl_cat": [
 				"Moving Head",
 				"Color Changer"
@@ -10776,7 +10776,7 @@
 			],
 			"cat": "par",
 			"id": "etc-colorsource-par",
-			"maker": "ETC",
+			"maker": "Etc",
 			"model": "ColorSource PAR",
 			"modes": [
 				{
@@ -10796,7 +10796,7 @@
 					"name": "RGB"
 				}
 			],
-			"name": "ETC ColorSource PAR",
+			"name": "Etc ColorSource PAR",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -10810,7 +10810,7 @@
 			],
 			"cat": "par",
 			"id": "etc-colorsource-par-deep-blue",
-			"maker": "ETC",
+			"maker": "Etc",
 			"model": "ColorSource PAR Deep Blue",
 			"modes": [
 				{
@@ -10830,7 +10830,7 @@
 					"name": "RGB"
 				}
 			],
-			"name": "ETC ColorSource PAR Deep Blue",
+			"name": "Etc ColorSource PAR Deep Blue",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -10844,7 +10844,7 @@
 			],
 			"cat": "par",
 			"id": "etc-colorsource-spot",
-			"maker": "ETC",
+			"maker": "Etc",
 			"model": "ColorSource Spot",
 			"modes": [
 				{
@@ -10864,7 +10864,7 @@
 					"name": "RGB"
 				}
 			],
-			"name": "ETC ColorSource Spot",
+			"name": "Etc ColorSource Spot",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -10878,7 +10878,7 @@
 			],
 			"cat": "par",
 			"id": "etc-colorsource-spot-deep-blue",
-			"maker": "ETC",
+			"maker": "Etc",
 			"model": "ColorSource Spot Deep Blue",
 			"modes": [
 				{
@@ -10898,7 +10898,7 @@
 					"name": "RGB"
 				}
 			],
-			"name": "ETC ColorSource Spot Deep Blue",
+			"name": "Etc ColorSource Spot Deep Blue",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -10912,7 +10912,7 @@
 			],
 			"cat": "blinder",
 			"id": "etc-fos4pd8",
-			"maker": "ETC",
+			"maker": "Etc",
 			"model": "fos/4 PD8",
 			"modes": [
 				{
@@ -10936,7 +10936,7 @@
 					"name": "Intensity"
 				}
 			],
-			"name": "ETC fos/4 PD8",
+			"name": "Etc fos/4 PD8",
 			"ofl_cat": [
 				"Dimmer",
 				"Color Changer",
@@ -10952,7 +10952,7 @@
 			],
 			"cat": "blinder",
 			"id": "etc-fos4pd16",
-			"maker": "ETC",
+			"maker": "Etc",
 			"model": "fos/4 PD16",
 			"modes": [
 				{
@@ -10976,7 +10976,7 @@
 					"name": "Intensity"
 				}
 			],
-			"name": "ETC fos/4 PD16",
+			"name": "Etc fos/4 PD16",
 			"ofl_cat": [
 				"Dimmer",
 				"Color Changer",
@@ -10992,7 +10992,7 @@
 			],
 			"cat": "blinder",
 			"id": "etc-fos4pd24",
-			"maker": "ETC",
+			"maker": "Etc",
 			"model": "fos/4 PD24",
 			"modes": [
 				{
@@ -11016,7 +11016,7 @@
 					"name": "Intensity"
 				}
 			],
-			"name": "ETC fos/4 PD24",
+			"name": "Etc fos/4 PD24",
 			"ofl_cat": [
 				"Dimmer",
 				"Color Changer",
@@ -11032,7 +11032,7 @@
 			],
 			"cat": "blinder",
 			"id": "etc-fos4pl8",
-			"maker": "ETC",
+			"maker": "Etc",
 			"model": "fos/4 PL8",
 			"modes": [
 				{
@@ -11056,7 +11056,7 @@
 					"name": "Intensity"
 				}
 			],
-			"name": "ETC fos/4 PL8",
+			"name": "Etc fos/4 PL8",
 			"ofl_cat": [
 				"Dimmer",
 				"Color Changer",
@@ -11072,7 +11072,7 @@
 			],
 			"cat": "blinder",
 			"id": "etc-fos4pl16",
-			"maker": "ETC",
+			"maker": "Etc",
 			"model": "fos/4 PL16",
 			"modes": [
 				{
@@ -11096,7 +11096,7 @@
 					"name": "Intensity"
 				}
 			],
-			"name": "ETC fos/4 PL16",
+			"name": "Etc fos/4 PL16",
 			"ofl_cat": [
 				"Dimmer",
 				"Color Changer",
@@ -11112,7 +11112,7 @@
 			],
 			"cat": "blinder",
 			"id": "etc-fos4pl24",
-			"maker": "ETC",
+			"maker": "Etc",
 			"model": "fos/4 PL24",
 			"modes": [
 				{
@@ -11136,7 +11136,7 @@
 					"name": "Intensity"
 				}
 			],
-			"name": "ETC fos/4 PL24",
+			"name": "Etc fos/4 PL24",
 			"ofl_cat": [
 				"Dimmer",
 				"Color Changer",
@@ -11152,7 +11152,7 @@
 			],
 			"cat": "blinder",
 			"id": "etc-source-4wrd-color-ii",
-			"maker": "ETC",
+			"maker": "Etc",
 			"model": "Source 4WRD Color II",
 			"modes": [
 				{
@@ -11160,7 +11160,7 @@
 					"name": "6-channel"
 				}
 			],
-			"name": "ETC Source 4WRD Color II",
+			"name": "Etc Source 4WRD Color II",
 			"ofl_cat": [
 				"Color Changer",
 				"Strobe"
@@ -11175,7 +11175,7 @@
 			],
 			"cat": "blinder",
 			"id": "etc-source-four-led-series-2-daylight-hd",
-			"maker": "ETC",
+			"maker": "Etc",
 			"model": "Source Four LED Series 2 Daylight HD",
 			"modes": [
 				{
@@ -11211,7 +11211,7 @@
 					"name": "RGB Plus 7"
 				}
 			],
-			"name": "ETC Source Four LED Series 2 Daylight HD",
+			"name": "Etc Source Four LED Series 2 Daylight HD",
 			"ofl_cat": [
 				"Dimmer",
 				"Color Changer",
@@ -11228,7 +11228,7 @@
 			],
 			"cat": "blinder",
 			"id": "etc-source-four-led-series-2-lustr",
-			"maker": "ETC",
+			"maker": "Etc",
 			"model": "Source Four LED Series 2 Lustr",
 			"modes": [
 				{
@@ -11264,7 +11264,7 @@
 					"name": "RGB Plus 7"
 				}
 			],
-			"name": "ETC Source Four LED Series 2 Lustr",
+			"name": "Etc Source Four LED Series 2 Lustr",
 			"ofl_cat": [
 				"Dimmer",
 				"Color Changer",
@@ -11280,7 +11280,7 @@
 			],
 			"cat": "blinder",
 			"id": "etc-source-four-led-series-2-tungsten-hd",
-			"maker": "ETC",
+			"maker": "Etc",
 			"model": "Source Four LED Series 2 Tungsten HD",
 			"modes": [
 				{
@@ -11316,7 +11316,7 @@
 					"name": "RGB Plus 7"
 				}
 			],
-			"name": "ETC Source Four LED Series 2 Tungsten HD",
+			"name": "Etc Source Four LED Series 2 Tungsten HD",
 			"ofl_cat": [
 				"Dimmer",
 				"Color Changer",
@@ -11333,7 +11333,7 @@
 			],
 			"cat": "blinder",
 			"id": "etc-source-four-led-series-3-daylight-hdr",
-			"maker": "ETC",
+			"maker": "Etc",
 			"model": "Source Four LED Series 3 Daylight HDR",
 			"modes": [
 				{
@@ -11357,7 +11357,7 @@
 					"name": "Intensity"
 				}
 			],
-			"name": "ETC Source Four LED Series 3 Daylight HDR",
+			"name": "Etc Source Four LED Series 3 Daylight HDR",
 			"ofl_cat": [
 				"Dimmer",
 				"Color Changer",
@@ -11374,7 +11374,7 @@
 			],
 			"cat": "blinder",
 			"id": "etc-source-four-led-series-3-lustr-x8",
-			"maker": "ETC",
+			"maker": "Etc",
 			"model": "Source Four LED Series 3 Lustr X8",
 			"modes": [
 				{
@@ -11398,7 +11398,7 @@
 					"name": "Intensity"
 				}
 			],
-			"name": "ETC Source Four LED Series 3 Lustr X8",
+			"name": "Etc Source Four LED Series 3 Lustr X8",
 			"ofl_cat": [
 				"Dimmer",
 				"Color Changer",
@@ -14308,7 +14308,7 @@
 			],
 			"cat": "par",
 			"id": "glp-force-120",
-			"maker": "GLP",
+			"maker": "Glp",
 			"model": "Force 120",
 			"modes": [
 				{
@@ -14328,7 +14328,7 @@
 					"name": "Normal Legacy"
 				}
 			],
-			"name": "GLP Force 120",
+			"name": "Glp Force 120",
 			"ofl_cat": [
 				"Fan",
 				"Color Changer"
@@ -14343,7 +14343,7 @@
 			],
 			"cat": "moving_head",
 			"id": "glp-impression-fr1",
-			"maker": "GLP",
+			"maker": "Glp",
 			"model": "impression FR1",
 			"modes": [
 				{
@@ -14351,7 +14351,7 @@
 					"name": "Normal"
 				}
 			],
-			"name": "GLP impression FR1",
+			"name": "Glp impression FR1",
 			"ofl_cat": [
 				"Moving Head",
 				"Color Changer"
@@ -14367,7 +14367,7 @@
 			],
 			"cat": "moving_head",
 			"id": "glp-impression-laser",
-			"maker": "GLP",
+			"maker": "Glp",
 			"model": "impression Laser",
 			"modes": [
 				{
@@ -14375,7 +14375,7 @@
 					"name": "Normal"
 				}
 			],
-			"name": "GLP impression Laser",
+			"name": "Glp impression Laser",
 			"ofl_cat": [
 				"Laser",
 				"Moving Head",
@@ -14391,7 +14391,7 @@
 			],
 			"cat": "moving_head",
 			"id": "glp-impression-spot-one",
-			"maker": "GLP",
+			"maker": "Glp",
 			"model": "impression Spot One",
 			"modes": [
 				{
@@ -14407,7 +14407,7 @@
 					"name": "Extended 31-channel"
 				}
 			],
-			"name": "GLP impression Spot One",
+			"name": "Glp impression Spot One",
 			"ofl_cat": [
 				"Color Changer",
 				"Moving Head"
@@ -14422,7 +14422,7 @@
 			],
 			"cat": "blinder",
 			"id": "glp-impression-x4-bar-10",
-			"maker": "GLP",
+			"maker": "Glp",
 			"model": "Impression X4 Bar 10",
 			"modes": [
 				{
@@ -14454,7 +14454,7 @@
 					"name": "Single Pixel High Resolution"
 				}
 			],
-			"name": "GLP Impression X4 Bar 10",
+			"name": "Glp Impression X4 Bar 10",
 			"ofl_cat": [
 				"Pixel Bar",
 				"Color Changer",
@@ -14470,7 +14470,7 @@
 			],
 			"cat": "strip",
 			"id": "glp-jdc1",
-			"maker": "GLP",
+			"maker": "Glp",
 			"model": "JDC1",
 			"modes": [
 				{
@@ -14490,7 +14490,7 @@
 					"name": "Easy 11-channel"
 				}
 			],
-			"name": "GLP JDC1",
+			"name": "Glp JDC1",
 			"ofl_cat": [
 				"Strobe",
 				"Blinder",
@@ -14508,7 +14508,7 @@
 			],
 			"cat": "blinder",
 			"id": "glp-knv-arc",
-			"maker": "GLP",
+			"maker": "Glp",
 			"model": "KNV Arc",
 			"modes": [
 				{
@@ -14532,7 +14532,7 @@
 					"name": "Multi-layer RGBW with FX"
 				}
 			],
-			"name": "GLP KNV Arc",
+			"name": "Glp KNV Arc",
 			"ofl_cat": [
 				"Effect",
 				"Color Changer",
@@ -14548,7 +14548,7 @@
 			],
 			"cat": "blinder",
 			"id": "glp-knv-cube",
-			"maker": "GLP",
+			"maker": "Glp",
 			"model": "KNV Cube",
 			"modes": [
 				{
@@ -14572,7 +14572,7 @@
 					"name": "Multi-layer RGBW with FX"
 				}
 			],
-			"name": "GLP KNV Cube",
+			"name": "Glp KNV Cube",
 			"ofl_cat": [
 				"Matrix",
 				"Color Changer",
@@ -14588,7 +14588,7 @@
 			],
 			"cat": "par",
 			"id": "glx-gls-4-led-stage-4",
-			"maker": "GLX",
+			"maker": "Glx",
 			"model": "GLS-4 LED Stage 4",
 			"modes": [
 				{
@@ -14596,7 +14596,7 @@
 					"name": "15-channel"
 				}
 			],
-			"name": "GLX GLS-4 LED Stage 4",
+			"name": "Glx GLS-4 LED Stage 4",
 			"ofl_cat": [
 				"Stand",
 				"Color Changer"
@@ -14898,7 +14898,7 @@
 			],
 			"cat": "par",
 			"id": "hsl-40w-beam-spot-light-rgbw",
-			"maker": "HSL",
+			"maker": "Hsl",
 			"model": "40W Beam Spot Light RGBW",
 			"modes": [
 				{
@@ -14910,7 +14910,7 @@
 					"name": "11-channel"
 				}
 			],
-			"name": "HSL 40W Beam Spot Light RGBW",
+			"name": "Hsl 40W Beam Spot Light RGBW",
 			"ofl_cat": [
 				"Color Changer",
 				"Dimmer"
@@ -15253,6 +15253,72 @@
 		{
 			"approx": 0,
 			"authors": [
+				"Swiftb0y"
+			],
+			"cat": "moving_head",
+			"id": "jb-lighting-jbled-a7",
+			"maker": "Jb Lighting",
+			"model": "JBLED A7",
+			"modes": [
+				{
+					"ch": 16,
+					"name": "Standard 8bit"
+				},
+				{
+					"ch": 19,
+					"name": "Standard 16bit"
+				},
+				{
+					"ch": 12,
+					"name": "Compressed 8bit"
+				},
+				{
+					"ch": 15,
+					"name": "Compressed 16bit"
+				}
+			],
+			"name": "Jb Lighting JBLED A7",
+			"ofl_cat": [
+				"Moving Head",
+				"Color Changer"
+			],
+			"pt": true,
+			"shard": "jb-lighting"
+		},
+		{
+			"approx": 0,
+			"authors": [
+				"Felix Edelmann"
+			],
+			"cat": "moving_head",
+			"id": "jb-lighting-varyscan-p7",
+			"maker": "Jb Lighting",
+			"model": "Varyscan P7",
+			"modes": [
+				{
+					"ch": 26,
+					"name": "1st"
+				},
+				{
+					"ch": 31,
+					"name": "2nd"
+				},
+				{
+					"ch": 24,
+					"name": "3rd"
+				}
+			],
+			"name": "Jb Lighting Varyscan P7",
+			"ofl_cat": [
+				"Moving Head",
+				"Color Changer"
+			],
+			"pt": true,
+			"shard": "jb-lighting"
+		},
+		{
+			"approx": 0,
+			"authors": [
 				"Duende AV",
 				"Flo Edelmann"
 			],
@@ -15346,77 +15412,11 @@
 		{
 			"approx": 0,
 			"authors": [
-				"Swiftb0y"
-			],
-			"cat": "moving_head",
-			"id": "jb-lighting-jbled-a7",
-			"maker": "JB-Lighting",
-			"model": "JBLED A7",
-			"modes": [
-				{
-					"ch": 16,
-					"name": "Standard 8bit"
-				},
-				{
-					"ch": 19,
-					"name": "Standard 16bit"
-				},
-				{
-					"ch": 12,
-					"name": "Compressed 8bit"
-				},
-				{
-					"ch": 15,
-					"name": "Compressed 16bit"
-				}
-			],
-			"name": "JB-Lighting JBLED A7",
-			"ofl_cat": [
-				"Moving Head",
-				"Color Changer"
-			],
-			"pt": true,
-			"shard": "jb-lighting"
-		},
-		{
-			"approx": 0,
-			"authors": [
-				"Felix Edelmann"
-			],
-			"cat": "moving_head",
-			"id": "jb-lighting-varyscan-p7",
-			"maker": "JB-Lighting",
-			"model": "Varyscan P7",
-			"modes": [
-				{
-					"ch": 26,
-					"name": "1st"
-				},
-				{
-					"ch": 31,
-					"name": "2nd"
-				},
-				{
-					"ch": 24,
-					"name": "3rd"
-				}
-			],
-			"name": "JB-Lighting Varyscan P7",
-			"ofl_cat": [
-				"Moving Head",
-				"Color Changer"
-			],
-			"pt": true,
-			"shard": "jb-lighting"
-		},
-		{
-			"approx": 0,
-			"authors": [
 				"Justin Hornsby"
 			],
 			"cat": "moving_head",
 			"id": "kam-gobotracer",
-			"maker": "KAM",
+			"maker": "Kam",
 			"model": "GoboTracer",
 			"modes": [
 				{
@@ -15428,7 +15428,7 @@
 					"name": "11ch"
 				}
 			],
-			"name": "KAM GoboTracer",
+			"name": "Kam GoboTracer",
 			"ofl_cat": [
 				"Moving Head",
 				"Color Changer"
@@ -15743,7 +15743,7 @@
 			],
 			"cat": "par",
 			"id": "lalucenatz-18leds-par-light",
-			"maker": "LaluceNatz",
+			"maker": "Lalucenatz",
 			"model": "18LEDs Par Light",
 			"modes": [
 				{
@@ -15755,7 +15755,7 @@
 					"name": "7-channel"
 				}
 			],
-			"name": "LaluceNatz 18LEDs Par Light",
+			"name": "Lalucenatz 18LEDs Par Light",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -15769,7 +15769,7 @@
 			],
 			"cat": "par",
 			"id": "lalucenatz-dj-lights",
-			"maker": "LaluceNatz",
+			"maker": "Lalucenatz",
 			"model": "DJ Lights",
 			"modes": [
 				{
@@ -15777,7 +15777,7 @@
 					"name": "8-channel"
 				}
 			],
-			"name": "LaluceNatz DJ Lights",
+			"name": "Lalucenatz DJ Lights",
 			"ofl_cat": [
 				"Flower",
 				"Color Changer"
@@ -15891,7 +15891,7 @@
 			],
 			"cat": "strip",
 			"id": "ledj-slimline-12q5-rgba",
-			"maker": "LEDJ",
+			"maker": "Ledj",
 			"model": "Slimline 12Q5 RGBA",
 			"modes": [
 				{
@@ -15911,7 +15911,7 @@
 					"name": "7-channel"
 				}
 			],
-			"name": "LEDJ Slimline 12Q5 RGBA",
+			"name": "Ledj Slimline 12Q5 RGBA",
 			"ofl_cat": [
 				"Pixel Bar",
 				"Color Changer"
@@ -15926,7 +15926,7 @@
 			],
 			"cat": "strip",
 			"id": "ledj-slimline-12q5-rgbw",
-			"maker": "LEDJ",
+			"maker": "Ledj",
 			"model": "Slimline 12Q5 RGBW",
 			"modes": [
 				{
@@ -15946,7 +15946,7 @@
 					"name": "7-channel"
 				}
 			],
-			"name": "LEDJ Slimline 12Q5 RGBW",
+			"name": "Ledj Slimline 12Q5 RGBW",
 			"ofl_cat": [
 				"Pixel Bar",
 				"Color Changer"
@@ -15961,7 +15961,7 @@
 			],
 			"cat": "blinder",
 			"id": "lep-laser-diamond-pro-2-8",
-			"maker": "LEP-LASER",
+			"maker": "Lep Laser",
 			"model": "Diamond PRO 2.8",
 			"modes": [
 				{
@@ -15969,7 +15969,7 @@
 					"name": "12-channel"
 				}
 			],
-			"name": "LEP-LASER Diamond PRO 2.8",
+			"name": "Lep Laser Diamond PRO 2.8",
 			"ofl_cat": [
 				"Laser",
 				"Color Changer"
@@ -15984,7 +15984,7 @@
 			],
 			"cat": "par",
 			"id": "light4me-led-par-18x3w-uv",
-			"maker": "Light4me",
+			"maker": "Light 4 Me",
 			"model": "LED PAR 18x3W UV",
 			"modes": [
 				{
@@ -15992,7 +15992,7 @@
 					"name": "7-channel"
 				}
 			],
-			"name": "Light4me LED PAR 18x3W UV",
+			"name": "Light 4 Me LED PAR 18x3W UV",
 			"ofl_cat": [
 				"Effect"
 			],
@@ -16031,7 +16031,7 @@
 			],
 			"cat": "par",
 			"id": "lightmaxx-cls-nano-cob",
-			"maker": "lightmaXX",
+			"maker": "Lightmaxx",
 			"model": "CLS Nano COB",
 			"modes": [
 				{
@@ -16051,7 +16051,7 @@
 					"name": "16ch individual Spot RGB + effects"
 				}
 			],
-			"name": "lightmaXX CLS Nano COB",
+			"name": "Lightmaxx CLS Nano COB",
 			"ofl_cat": [
 				"Stand",
 				"Color Changer",
@@ -16068,7 +16068,7 @@
 			],
 			"cat": "moving_head",
 			"id": "lightmaxx-dj-scan-led",
-			"maker": "lightmaXX",
+			"maker": "Lightmaxx",
 			"model": "DJ Scan LED",
 			"modes": [
 				{
@@ -16076,7 +16076,7 @@
 					"name": "Normal"
 				}
 			],
-			"name": "lightmaXX DJ Scan LED",
+			"name": "Lightmaxx DJ Scan LED",
 			"ofl_cat": [
 				"Scanner",
 				"Color Changer"
@@ -16092,7 +16092,7 @@
 			],
 			"cat": "moving_head",
 			"id": "lightmaxx-easy-wash-quad-led",
-			"maker": "lightmaXX",
+			"maker": "Lightmaxx",
 			"model": "Easy Wash Quad LED",
 			"modes": [
 				{
@@ -16104,7 +16104,7 @@
 					"name": "13-Channel"
 				}
 			],
-			"name": "lightmaXX Easy Wash Quad LED",
+			"name": "Lightmaxx Easy Wash Quad LED",
 			"ofl_cat": [
 				"Moving Head",
 				"Color Changer"
@@ -16119,7 +16119,7 @@
 			],
 			"cat": "blinder",
 			"id": "lightmaxx-led-blinder-4",
-			"maker": "lightmaXX",
+			"maker": "Lightmaxx",
 			"model": "LED Blinder 4",
 			"modes": [
 				{
@@ -16127,7 +16127,7 @@
 					"name": "8-channel"
 				}
 			],
-			"name": "lightmaXX LED Blinder 4",
+			"name": "Lightmaxx LED Blinder 4",
 			"ofl_cat": [
 				"Blinder"
 			],
@@ -16142,7 +16142,7 @@
 			],
 			"cat": "par",
 			"id": "lightmaxx-led-nano-par",
-			"maker": "lightmaXX",
+			"maker": "Lightmaxx",
 			"model": "LED Nano PAR",
 			"modes": [
 				{
@@ -16150,7 +16150,7 @@
 					"name": "8-channel"
 				}
 			],
-			"name": "lightmaXX LED Nano PAR",
+			"name": "Lightmaxx LED Nano PAR",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -16164,7 +16164,7 @@
 			],
 			"cat": "par",
 			"id": "lightmaxx-led-par-56",
-			"maker": "lightmaXX",
+			"maker": "Lightmaxx",
 			"model": "LED Par 56",
 			"modes": [
 				{
@@ -16172,7 +16172,7 @@
 					"name": "4-channel"
 				}
 			],
-			"name": "lightmaXX LED Par 56",
+			"name": "Lightmaxx LED Par 56",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -16187,7 +16187,7 @@
 			],
 			"cat": "par",
 			"id": "lightmaxx-led-par-64-cob-100w-rgb",
-			"maker": "lightmaXX",
+			"maker": "Lightmaxx",
 			"model": "LED PAR 64 COB 100W RGB",
 			"modes": [
 				{
@@ -16199,7 +16199,7 @@
 					"name": "5-channel"
 				}
 			],
-			"name": "lightmaXX LED PAR 64 COB 100W RGB",
+			"name": "Lightmaxx LED PAR 64 COB 100W RGB",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -16214,7 +16214,7 @@
 			],
 			"cat": "par",
 			"id": "lightmaxx-platinum-mini-tri-par",
-			"maker": "lightmaXX",
+			"maker": "Lightmaxx",
 			"model": "Platinum Mini TRI-PAR",
 			"modes": [
 				{
@@ -16222,7 +16222,7 @@
 					"name": "6-channel"
 				}
 			],
-			"name": "lightmaXX Platinum Mini TRI-PAR",
+			"name": "Lightmaxx Platinum Mini TRI-PAR",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -16236,7 +16236,7 @@
 			],
 			"cat": "generic",
 			"id": "lightmaxx-vector-haze-1-0",
-			"maker": "lightmaXX",
+			"maker": "Lightmaxx",
 			"model": "Vector Haze 1.0",
 			"modes": [
 				{
@@ -16244,7 +16244,7 @@
 					"name": "2-channel"
 				}
 			],
-			"name": "lightmaXX Vector Haze 1.0",
+			"name": "Lightmaxx Vector Haze 1.0",
 			"ofl_cat": [
 				"Hazer"
 			],
@@ -16259,7 +16259,7 @@
 			],
 			"cat": "strip",
 			"id": "lightmaxx-vector-pixel-bar-18x-15w-rgbwa",
-			"maker": "lightmaXX",
+			"maker": "Lightmaxx",
 			"model": "Vector Pixel BAR 18x 15W RGBWA",
 			"modes": [
 				{
@@ -16275,7 +16275,7 @@
 					"name": "90-channel"
 				}
 			],
-			"name": "lightmaXX Vector Pixel BAR 18x 15W RGBWA",
+			"name": "Lightmaxx Vector Pixel BAR 18x 15W RGBWA",
 			"ofl_cat": [
 				"Pixel Bar",
 				"Color Changer"
@@ -16292,7 +16292,7 @@
 			],
 			"cat": "par",
 			"id": "lightmaxx-vega-bat-1",
-			"maker": "lightmaXX",
+			"maker": "Lightmaxx",
 			"model": "Vega BAT-1",
 			"modes": [
 				{
@@ -16312,7 +16312,7 @@
 					"name": "10-channel"
 				}
 			],
-			"name": "lightmaXX Vega BAT-1",
+			"name": "Lightmaxx Vega BAT-1",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -16326,7 +16326,7 @@
 			],
 			"cat": "moving_head",
 			"id": "lightmaxx-vega-zoom-wash",
-			"maker": "lightmaXX",
+			"maker": "Lightmaxx",
 			"model": "Vega Zoom Wash",
 			"modes": [
 				{
@@ -16334,7 +16334,7 @@
 					"name": "16-channel"
 				}
 			],
-			"name": "lightmaXX Vega Zoom Wash",
+			"name": "Lightmaxx Vega Zoom Wash",
 			"ofl_cat": [
 				"Moving Head",
 				"Color Changer"
@@ -16349,7 +16349,7 @@
 			],
 			"cat": "moving_head",
 			"id": "lite-tek-beam-230",
-			"maker": "Lite-Tek",
+			"maker": "Lite Tek",
 			"model": "Beam 230",
 			"modes": [
 				{
@@ -16357,7 +16357,7 @@
 					"name": "16-channel"
 				}
 			],
-			"name": "Lite-Tek Beam 230",
+			"name": "Lite Tek Beam 230",
 			"ofl_cat": [
 				"Moving Head",
 				"Color Changer"
@@ -16429,7 +16429,7 @@
 			],
 			"cat": "par",
 			"id": "litegear-litemat-plus-1",
-			"maker": "LiteGear",
+			"maker": "Litegear",
 			"model": "LiteMat Plus 1",
 			"modes": [
 				{
@@ -16449,7 +16449,7 @@
 					"name": "Double 16bit"
 				}
 			],
-			"name": "LiteGear LiteMat Plus 1",
+			"name": "Litegear LiteMat Plus 1",
 			"ofl_cat": [
 				"Dimmer"
 			],
@@ -16463,7 +16463,7 @@
 			],
 			"cat": "par",
 			"id": "litegear-litemat-plus-2",
-			"maker": "LiteGear",
+			"maker": "Litegear",
 			"model": "LiteMat Plus 2",
 			"modes": [
 				{
@@ -16483,7 +16483,7 @@
 					"name": "Double 16bit"
 				}
 			],
-			"name": "LiteGear LiteMat Plus 2",
+			"name": "Litegear LiteMat Plus 2",
 			"ofl_cat": [
 				"Dimmer"
 			],
@@ -16497,7 +16497,7 @@
 			],
 			"cat": "par",
 			"id": "litegear-litemat-plus-2l",
-			"maker": "LiteGear",
+			"maker": "Litegear",
 			"model": "LiteMat Plus 2L",
 			"modes": [
 				{
@@ -16517,7 +16517,7 @@
 					"name": "Double 16bit"
 				}
 			],
-			"name": "LiteGear LiteMat Plus 2L",
+			"name": "Litegear LiteMat Plus 2L",
 			"ofl_cat": [
 				"Dimmer"
 			],
@@ -16531,7 +16531,7 @@
 			],
 			"cat": "par",
 			"id": "litegear-litemat-plus-3",
-			"maker": "LiteGear",
+			"maker": "Litegear",
 			"model": "LiteMat Plus 3",
 			"modes": [
 				{
@@ -16551,7 +16551,7 @@
 					"name": "Double 16bit"
 				}
 			],
-			"name": "LiteGear LiteMat Plus 3",
+			"name": "Litegear LiteMat Plus 3",
 			"ofl_cat": [
 				"Dimmer"
 			],
@@ -16565,7 +16565,7 @@
 			],
 			"cat": "par",
 			"id": "litegear-litemat-plus-4",
-			"maker": "LiteGear",
+			"maker": "Litegear",
 			"model": "LiteMat Plus 4",
 			"modes": [
 				{
@@ -16585,7 +16585,7 @@
 					"name": "Double 16bit"
 				}
 			],
-			"name": "LiteGear LiteMat Plus 4",
+			"name": "Litegear LiteMat Plus 4",
 			"ofl_cat": [
 				"Dimmer"
 			],
@@ -16599,7 +16599,7 @@
 			],
 			"cat": "par",
 			"id": "litegear-litemat-plus-8",
-			"maker": "LiteGear",
+			"maker": "Litegear",
 			"model": "LiteMat Plus 8",
 			"modes": [
 				{
@@ -16619,7 +16619,7 @@
 					"name": "Double 16bit"
 				}
 			],
-			"name": "LiteGear LiteMat Plus 8",
+			"name": "Litegear LiteMat Plus 8",
 			"ofl_cat": [
 				"Dimmer"
 			],
@@ -16633,7 +16633,7 @@
 			],
 			"cat": "par",
 			"id": "litegear-litetile-plus-4",
-			"maker": "LiteGear",
+			"maker": "Litegear",
 			"model": "LiteTile Plus 4",
 			"modes": [
 				{
@@ -16653,7 +16653,7 @@
 					"name": "Double 16bit"
 				}
 			],
-			"name": "LiteGear LiteTile Plus 4",
+			"name": "Litegear LiteTile Plus 4",
 			"ofl_cat": [
 				"Dimmer"
 			],
@@ -16667,7 +16667,7 @@
 			],
 			"cat": "par",
 			"id": "litegear-litetile-plus-8",
-			"maker": "LiteGear",
+			"maker": "Litegear",
 			"model": "LiteTile Plus 8",
 			"modes": [
 				{
@@ -16687,7 +16687,7 @@
 					"name": "Double 16bit"
 				}
 			],
-			"name": "LiteGear LiteTile Plus 8",
+			"name": "Litegear LiteTile Plus 8",
 			"ofl_cat": [
 				"Dimmer"
 			],
@@ -16701,7 +16701,7 @@
 			],
 			"cat": "par",
 			"id": "litegear-s2-litemat-1",
-			"maker": "LiteGear",
+			"maker": "Litegear",
 			"model": "S2 LiteMat 1",
 			"modes": [
 				{
@@ -16721,7 +16721,7 @@
 					"name": "Double 16bit"
 				}
 			],
-			"name": "LiteGear S2 LiteMat 1",
+			"name": "Litegear S2 LiteMat 1",
 			"ofl_cat": [
 				"Dimmer"
 			],
@@ -16735,7 +16735,7 @@
 			],
 			"cat": "par",
 			"id": "litegear-s2-litemat-2",
-			"maker": "LiteGear",
+			"maker": "Litegear",
 			"model": "S2 LiteMat 2",
 			"modes": [
 				{
@@ -16755,7 +16755,7 @@
 					"name": "Double 16bit"
 				}
 			],
-			"name": "LiteGear S2 LiteMat 2",
+			"name": "Litegear S2 LiteMat 2",
 			"ofl_cat": [
 				"Dimmer"
 			],
@@ -16769,7 +16769,7 @@
 			],
 			"cat": "par",
 			"id": "litegear-s2-litemat-2l",
-			"maker": "LiteGear",
+			"maker": "Litegear",
 			"model": "S2 LiteMat 2L",
 			"modes": [
 				{
@@ -16789,7 +16789,7 @@
 					"name": "Double 16bit"
 				}
 			],
-			"name": "LiteGear S2 LiteMat 2L",
+			"name": "Litegear S2 LiteMat 2L",
 			"ofl_cat": [
 				"Dimmer"
 			],
@@ -16803,7 +16803,7 @@
 			],
 			"cat": "par",
 			"id": "litegear-s2-litemat-3",
-			"maker": "LiteGear",
+			"maker": "Litegear",
 			"model": "S2 LiteMat 3",
 			"modes": [
 				{
@@ -16823,7 +16823,7 @@
 					"name": "Double 16bit"
 				}
 			],
-			"name": "LiteGear S2 LiteMat 3",
+			"name": "Litegear S2 LiteMat 3",
 			"ofl_cat": [
 				"Dimmer"
 			],
@@ -16837,7 +16837,7 @@
 			],
 			"cat": "par",
 			"id": "litegear-s2-litemat-4",
-			"maker": "LiteGear",
+			"maker": "Litegear",
 			"model": "S2 LiteMat 4",
 			"modes": [
 				{
@@ -16857,7 +16857,7 @@
 					"name": "Double 16bit"
 				}
 			],
-			"name": "LiteGear S2 LiteMat 4",
+			"name": "Litegear S2 LiteMat 4",
 			"ofl_cat": [
 				"Dimmer"
 			],
@@ -17449,7 +17449,7 @@
 			],
 			"cat": "generic",
 			"id": "magicfx-psyco2jet",
-			"maker": "MagicFX",
+			"maker": "Magicfx",
 			"model": "PSYCO2JET",
 			"modes": [
 				{
@@ -17465,7 +17465,7 @@
 					"name": "Preset"
 				}
 			],
-			"name": "MagicFX PSYCO2JET",
+			"name": "Magicfx PSYCO2JET",
 			"ofl_cat": [
 				"Effect"
 			],
@@ -17479,7 +17479,7 @@
 			],
 			"cat": "par",
 			"id": "magicfx-smokejet",
-			"maker": "MagicFX",
+			"maker": "Magicfx",
 			"model": "SMOKEJET",
 			"modes": [
 				{
@@ -17487,7 +17487,7 @@
 					"name": "9-channel"
 				}
 			],
-			"name": "MagicFX SMOKEJET",
+			"name": "Magicfx SMOKEJET",
 			"ofl_cat": [
 				"Smoke",
 				"Color Changer",
@@ -17503,7 +17503,7 @@
 			],
 			"cat": "generic",
 			"id": "magicfx-stage-flame",
-			"maker": "MagicFX",
+			"maker": "Magicfx",
 			"model": "Stage Flame",
 			"modes": [
 				{
@@ -17511,7 +17511,7 @@
 					"name": "Default"
 				}
 			],
-			"name": "MagicFX Stage Flame",
+			"name": "Magicfx Stage Flame",
 			"ofl_cat": [
 				"Effect"
 			],
@@ -18332,7 +18332,7 @@
 			],
 			"cat": "generic",
 			"id": "mdg-atme",
-			"maker": "MDG",
+			"maker": "Mdg",
 			"model": "ATMe",
 			"modes": [
 				{
@@ -18340,7 +18340,7 @@
 					"name": "3-channel"
 				}
 			],
-			"name": "MDG ATMe",
+			"name": "Mdg ATMe",
 			"ofl_cat": [
 				"Hazer"
 			],
@@ -18354,7 +18354,7 @@
 			],
 			"cat": "generic",
 			"id": "mdg-hazer-atmosphere-aps",
-			"maker": "MDG",
+			"maker": "Mdg",
 			"model": "Hazer ATMOSPHERE APS",
 			"modes": [
 				{
@@ -18362,7 +18362,7 @@
 					"name": "Standard"
 				}
 			],
-			"name": "MDG Hazer ATMOSPHERE APS",
+			"name": "Mdg Hazer ATMOSPHERE APS",
 			"ofl_cat": [
 				"Hazer"
 			],
@@ -18377,7 +18377,7 @@
 			],
 			"cat": "generic",
 			"id": "mdg-theone-atmospheric-generator",
-			"maker": "MDG",
+			"maker": "Mdg",
 			"model": "theONE Atmospheric Generator",
 			"modes": [
 				{
@@ -18385,7 +18385,7 @@
 					"name": "5-channel"
 				}
 			],
-			"name": "MDG theONE Atmospheric Generator",
+			"name": "Mdg theONE Atmospheric Generator",
 			"ofl_cat": [
 				"Hazer",
 				"Smoke"
@@ -19042,7 +19042,7 @@
 			],
 			"cat": "moving_head",
 			"id": "qtx-lux-ld01",
-			"maker": "QTX",
+			"maker": "Qtx",
 			"model": "Lux Ld01",
 			"modes": [
 				{
@@ -19062,7 +19062,7 @@
 					"name": "4-Channel for Wash"
 				}
 			],
-			"name": "QTX Lux Ld01",
+			"name": "Qtx Lux Ld01",
 			"ofl_cat": [
 				"Moving Head",
 				"Color Changer"
@@ -19078,7 +19078,7 @@
 			],
 			"cat": "moving_head",
 			"id": "qtx-lux-ld30w",
-			"maker": "QTX",
+			"maker": "Qtx",
 			"model": "LUX-LD30W",
 			"modes": [
 				{
@@ -19086,7 +19086,7 @@
 					"name": "10-channel"
 				}
 			],
-			"name": "QTX LUX-LD30W",
+			"name": "Qtx LUX-LD30W",
 			"ofl_cat": [
 				"Moving Head",
 				"Color Changer"
@@ -19567,7 +19567,7 @@
 			],
 			"cat": "par",
 			"id": "sgm-p-5",
-			"maker": "SGM",
+			"maker": "Sgm",
 			"model": "P-5",
 			"modes": [
 				{
@@ -19603,7 +19603,7 @@
 					"name": "10-channel (CTC)"
 				}
 			],
-			"name": "SGM P-5",
+			"name": "Sgm P-5",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -19927,7 +19927,7 @@
 			],
 			"cat": "strip",
 			"id": "showpro-litebar-h9",
-			"maker": "ShowPRO",
+			"maker": "Showpro",
 			"model": "Litebar H9",
 			"modes": [
 				{
@@ -19951,7 +19951,7 @@
 					"name": "23-channel"
 				}
 			],
-			"name": "ShowPRO Litebar H9",
+			"name": "Showpro Litebar H9",
 			"ofl_cat": [
 				"Pixel Bar",
 				"Color Changer"
@@ -21036,7 +21036,7 @@
 			],
 			"cat": "par",
 			"id": "soundlight-3204r-h",
-			"maker": "SoundLight",
+			"maker": "Soundlight",
 			"model": "3204R-H",
 			"modes": [
 				{
@@ -21044,7 +21044,7 @@
 					"name": "Relay control"
 				}
 			],
-			"name": "SoundLight 3204R-H",
+			"name": "Soundlight 3204R-H",
 			"ofl_cat": [
 				"Dimmer"
 			],
@@ -22495,7 +22495,7 @@
 			],
 			"cat": "blinder",
 			"id": "tmb-solaris-flare",
-			"maker": "TMB",
+			"maker": "Tmb",
 			"model": "Solaris Flare",
 			"modes": [
 				{
@@ -22591,7 +22591,7 @@
 					"name": "Advanced RGBW Strobe 12-Pixel"
 				}
 			],
-			"name": "TMB Solaris Flare",
+			"name": "Tmb Solaris Flare",
 			"ofl_cat": [
 				"Strobe",
 				"Blinder",
@@ -23282,7 +23282,7 @@
 			],
 			"cat": "par",
 			"id": "wled-wled",
-			"maker": "WLED",
+			"maker": "Wled",
 			"model": "WLED",
 			"modes": [
 				{
@@ -23318,7 +23318,7 @@
 					"name": "Preset"
 				}
 			],
-			"name": "WLED WLED",
+			"name": "Wled WLED",
 			"ofl_cat": [
 				"Color Changer"
 			],
@@ -23326,7 +23326,7 @@
 			"shard": "wled"
 		}
 	],
-	"generated": "2026-09-10T14:36:42",
+	"generated": "2026-09-10T15:04:57",
 	"ofl_commit": "6c52a67c9639",
 	"source": "Open Fixture Library"
 }

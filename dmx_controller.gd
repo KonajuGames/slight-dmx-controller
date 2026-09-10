@@ -922,11 +922,93 @@ func _do_import(path: String) -> void:
 	status_label.text = msg
 
 
-## Browse the bundled fixture library (Library autoload / res://fixtures).
-## Search + filter, preview a fixture's modes and channels, then "Add to
-## Patch" drops the resolved FixtureProfile into `available_profiles` for
-## this session and selects it on the current universe. It rides in the
-## show file via the patch (no copy is written to user://).
+## Fill `preview` with a fixture's title, credits, and a per-mode channel
+## list. `e` is the catalogue entry (bundled or online).
+func _lib_render_preview(preview: VBoxContainer, e: Dictionary, p: FixtureProfile) -> void:
+	for c in preview.get_children():
+		c.queue_free()
+
+	var title := _label(p.profile_name)
+	title.add_theme_font_size_override("font_size", 16)
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	preview.add_child(title)
+
+	var sub := " · ".join((e.get("ofl_cat", []) as Array))
+	var authors := ", ".join((e.get("authors", []) as Array))
+	if authors != "":
+		sub += "   ·   " + authors if sub != "" else authors
+	if sub != "":
+		var subl := _label(sub)
+		subl.modulate = Color(1, 1, 1, 0.6)
+		subl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		preview.add_child(subl)
+
+	if e.get("online", false):
+		var o := _label("bundled + fetched from OFL" if e.get("bundled", false) else "fetched from Open Fixture Library")
+		o.modulate = Color(0.55, 0.8, 1.0)
+		preview.add_child(o)
+
+	var heads: Array = p.physical.get("heads", [])
+	if heads.size() >= 2:
+		preview.add_child(_label("%d heads" % heads.size()))
+	if int(e.get("approx", 0)) > 0:
+		var ap := _label("%d channel(s) approximated on import" % int(e["approx"]))
+		ap.modulate = Color(1, 0.8, 0.4)
+		preview.add_child(ap)
+
+	var mode_row := HBoxContainer.new()
+	mode_row.add_child(_label("Mode:"))
+	var mode_sel := OptionButton.new()
+	mode_sel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for n in p.mode_names():
+		mode_sel.add_item(n)
+	mode_row.add_child(mode_sel)
+	preview.add_child(mode_row)
+
+	var ch_box := VBoxContainer.new()
+	ch_box.add_theme_constant_override("separation", 1)
+	preview.add_child(ch_box)
+
+	var fill_channels := func(mi: int) -> void:
+		for c in ch_box.get_children():
+			c.queue_free()
+		var chans: Array = p.channels_for_mode(mi)
+		for ci in range(chans.size()):
+			var ch: Dictionary = chans[ci]
+			var line := _label("%2d   %s" % [ci + 1, String(ch.get("name", "Ch"))])
+			var role := String(ch.get("role", "GENERIC"))
+			if role != "GENERIC":
+				line.text += "   · %s" % role.to_lower()
+			line.modulate = Color(1, 1, 1, 0.55 if ch.get("fine", false) else 0.9)
+			ch_box.add_child(line)
+	mode_sel.item_selected.connect(fill_channels)
+	fill_channels.call(0)
+
+
+## Drop a library profile into `available_profiles` for the session and
+## select it on the active universe (reusing it if already there). It
+## rides in the show file via the patch — no user:// copy.
+func _lib_commit_profile(p: FixtureProfile) -> void:
+	if p == null:
+		return
+	var idx := _profile_index_by_id(p.id)
+	if idx < 0:
+		available_profiles.append(p)
+		idx = available_profiles.size() - 1
+	for panel in _panels:
+		panel.populate_profile_option()
+	var active := _panels[clampi(universe_tabs.current_tab, 0, _panels.size() - 1)]
+	active.profile_option.selected = idx
+	active.populate_mode_option()
+	status_label.text = "Added '%s' from the library — set a start channel and Add Fixture." % p.profile_name
+
+
+## Browse the fixture library. "Bundled library" searches res://fixtures
+## (fast, fully filterable); "OFL online" pulls the current Open Fixture
+## Library list from GitHub and downloads a fixture on demand (cached under
+## user://fixture_online). "Add to Patch" resolves the FixtureProfile,
+## drops it into `available_profiles` for the session, and selects it — it
+## rides in the show file via the patch, no user:// copy.
 func _open_library_dialog() -> void:
 	if not Library.available():
 		status_label.text = "No bundled fixture library found."
@@ -954,16 +1036,18 @@ func _open_library_dialog() -> void:
 	filters.add_theme_constant_override("v_separation", 4)
 	root.add_child(filters)
 
+	var source_opt := OptionButton.new()
+	source_opt.add_item("Bundled library")
+	source_opt.add_item("OFL online")
+	filters.add_child(source_opt)
+
 	var search := LineEdit.new()
 	search.placeholder_text = "Search manufacturer / model…"
-	search.custom_minimum_size = Vector2(240, 0)
+	search.custom_minimum_size = Vector2(220, 0)
 	search.clear_button_enabled = true
 	filters.add_child(search)
 
 	var maker_opt := OptionButton.new()
-	maker_opt.add_item("All manufacturers")
-	for m in Library.manufacturers():
-		maker_opt.add_item(m)
 	filters.add_child(maker_opt)
 
 	var cat_opt := OptionButton.new()
@@ -1020,6 +1104,10 @@ func _open_library_dialog() -> void:
 	count_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	count_lbl.modulate = Color(1, 1, 1, 0.6)
 	footer.add_child(count_lbl)
+	var clearcache_btn := Button.new()
+	clearcache_btn.text = "Clear cache"
+	clearcache_btn.visible = false
+	footer.add_child(clearcache_btn)
 	var add_btn := Button.new()
 	add_btn.text = "Add to Patch"
 	add_btn.disabled = true
@@ -1033,125 +1121,126 @@ func _open_library_dialog() -> void:
 	root.add_child(src)
 
 	# --- state + behaviour ---------------------------------------
-	var state := {"rows": [] as Array, "sel_id": "", "profile": null}
+	var state := {"sel_id": "", "profile": null, "gen": 0, "online": false}
 
-	var show_preview := func(id: String) -> void:
-		for c in preview.get_children():
-			c.queue_free()
+	var fill_makers := func(online: bool) -> void:
+		maker_opt.clear()
+		maker_opt.add_item("All manufacturers")
+		var list: PackedStringArray = Library.online_manufacturers() if online else Library.manufacturers()
+		for m in list:
+			maker_opt.add_item(m)
+
+	var select := func(id: String) -> void:
+		state["gen"] = int(state["gen"]) + 1
+		var g: int = state["gen"]
 		state["sel_id"] = id
 		state["profile"] = null
-		add_btn.disabled = id == ""
+		add_btn.disabled = true
+		for c in preview.get_children():
+			c.queue_free()
 		if id == "":
 			return
 		var p: FixtureProfile = Library.resolve(id)
-		state["profile"] = p
-		var e: Dictionary = Library.entry(id)
 		if p == null:
-			preview.add_child(_label("Couldn't load this fixture."))
-			return
-
-		var title := _label(p.profile_name)
-		title.add_theme_font_size_override("font_size", 16)
-		title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		preview.add_child(title)
-
-		var sub := " · ".join((e.get("ofl_cat", []) as Array))
-		var authors := ", ".join((e.get("authors", []) as Array))
-		if authors != "":
-			sub += "   ·   " + authors if sub != "" else authors
-		if sub != "":
-			var subl := _label(sub)
-			subl.modulate = Color(1, 1, 1, 0.6)
-			subl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			preview.add_child(subl)
-
-		var heads: Array = p.physical.get("heads", [])
-		if heads.size() >= 2:
-			preview.add_child(_label("%d heads" % heads.size()))
-		if int(e.get("approx", 0)) > 0:
-			var ap := _label("%d channel(s) approximated on import" % int(e["approx"]))
-			ap.modulate = Color(1, 0.8, 0.4)
-			preview.add_child(ap)
-
-		var mode_row := HBoxContainer.new()
-		mode_row.add_child(_label("Mode:"))
-		var mode_sel := OptionButton.new()
-		mode_sel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		for n in p.mode_names():
-			mode_sel.add_item(n)
-		mode_row.add_child(mode_sel)
-		preview.add_child(mode_row)
-
-		var ch_box := VBoxContainer.new()
-		ch_box.add_theme_constant_override("separation", 1)
-		preview.add_child(ch_box)
-
-		var fill_channels := func(mi: int) -> void:
-			for c in ch_box.get_children():
+			preview.add_child(_label("Downloading…"))
+			p = await Library.get_profile(id)
+			if g != int(state["gen"]):
+				return
+			for c in preview.get_children():
 				c.queue_free()
-			var chans: Array = p.channels_for_mode(mi)
-			for ci in range(chans.size()):
-				var ch: Dictionary = chans[ci]
-				var line := _label("%2d   %s" % [ci + 1, String(ch.get("name", "Ch"))])
-				var role := String(ch.get("role", "GENERIC"))
-				if role != "GENERIC":
-					line.text += "   · %s" % role.to_lower()
-				line.modulate = Color(1, 1, 1, 0.55 if ch.get("fine", false) else 0.9)
-				ch_box.add_child(line)
-		mode_sel.item_selected.connect(fill_channels)
-		fill_channels.call(0)
+		if p == null:
+			var err := _label("Couldn't load this fixture.\n%s" % Library.online_error())
+			err.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			preview.add_child(err)
+			return
+		state["profile"] = p
+		add_btn.disabled = false
+		_lib_render_preview(preview, Library.entry(id), p)
 
 	var refresh := func() -> void:
 		var mk := "" if maker_opt.selected <= 0 else maker_opt.get_item_text(maker_opt.selected)
-		var ct := "" if cat_opt.selected <= 0 else String(cat_keys[cat_opt.selected - 1])
-		var rows := Library.search(search.text, mk, ct, int(maxch_spin.value), pt_check.button_pressed)
-		state["rows"] = rows
+		var rows: Array
+		if state["online"]:
+			rows = Library.search_online(search.text, mk)
+		else:
+			var ct := "" if cat_opt.selected <= 0 else String(cat_keys[cat_opt.selected - 1])
+			rows = Library.search(search.text, mk, ct, int(maxch_spin.value), pt_check.button_pressed)
 		results.clear()
 		var reselect := -1
 		for i in range(rows.size()):
 			var e: Dictionary = rows[i]
-			var widths: Array = []
-			for m in e.get("modes", []):
-				widths.append(str(m.get("ch", 0)))
-			var cat: String = cat_labels.get(e.get("cat", ""), "")
-			results.add_item("%s   ·   %s ch   ·   %s" % [
-				e["name"], "/".join(widths), cat])
+			var text: String
+			if state["online"]:
+				text = String(e["name"])
+				if e.get("bundled", false):
+					text += "   ·   bundled"
+			else:
+				var widths: Array = []
+				for m in e.get("modes", []):
+					widths.append(str(m.get("ch", 0)))
+				text = "%s   ·   %s ch   ·   %s" % [
+					e["name"], "/".join(widths), cat_labels.get(e.get("cat", ""), "")]
+			results.add_item(text)
 			results.set_item_metadata(i, e["id"])
 			if e["id"] == state["sel_id"]:
 				reselect = i
-		count_lbl.text = "%d of %d fixtures" % [rows.size(), Library.count()]
+		if state["online"]:
+			count_lbl.text = "%d of %d OFL fixtures · %d cached" % [
+				rows.size(), Library.online_count(), Library.cached_online_count()]
+		else:
+			count_lbl.text = "%d of %d fixtures" % [rows.size(), Library.count()]
 		if reselect >= 0:
 			results.select(reselect)
 		else:
-			show_preview.call("")
+			select.call("")
 
+	var set_source := func(idx: int) -> void:
+		var online: bool = idx == 1
+		state["online"] = online
+		state["sel_id"] = ""
+		search.text = ""
+		cat_opt.disabled = online
+		pt_check.disabled = online
+		maxch_spin.editable = not online
+		clearcache_btn.visible = online
+		fill_makers.call(online)
+		if online and not Library.online_ready():
+			results.clear()
+			results.add_item("Fetching the OFL catalogue from GitHub…")
+			results.set_item_disabled(0, true)
+			count_lbl.text = "contacting GitHub…"
+			source_opt.disabled = true
+			var got: bool = await Library.refresh_online()
+			source_opt.disabled = false
+			if not got:
+				results.clear()
+				results.add_item("Couldn't reach OFL: %s" % Library.online_error())
+				results.set_item_disabled(0, true)
+				count_lbl.text = ""
+				return
+		refresh.call()
+
+	source_opt.item_selected.connect(set_source)
 	search.text_changed.connect(func(_t): refresh.call())
 	maker_opt.item_selected.connect(func(_i): refresh.call())
 	cat_opt.item_selected.connect(func(_i): refresh.call())
 	pt_check.toggled.connect(func(_p): refresh.call())
 	maxch_spin.value_changed.connect(func(_v): refresh.call())
-	results.item_selected.connect(func(i: int): show_preview.call(String(results.get_item_metadata(i))))
+	results.item_selected.connect(func(i: int): select.call(String(results.get_item_metadata(i))))
 	results.item_activated.connect(func(_i: int): add_btn.pressed.emit())
+	clearcache_btn.pressed.connect(func():
+		Library.clear_online_cache()
+		refresh.call())
 
 	add_btn.pressed.connect(func():
-		var p: FixtureProfile = state["profile"]
-		if p == null:
-			return
-		var idx := _profile_index_by_id(p.id)
-		if idx < 0:
-			available_profiles.append(p)
-			idx = available_profiles.size() - 1
-		for panel in _panels:
-			panel.populate_profile_option()
-		var active := _panels[clampi(universe_tabs.current_tab, 0, _panels.size() - 1)]
-		active.profile_option.selected = idx
-		active.populate_mode_option()
-		status_label.text = "Added '%s' from the library — set a start channel and Add Fixture." % p.profile_name
-		win.queue_free()
+		_lib_commit_profile(state["profile"])
+		if state["profile"] != null:
+			win.queue_free()
 	)
 	close_btn.pressed.connect(func(): win.queue_free())
 	win.close_requested.connect(func(): win.queue_free())
 
+	fill_makers.call(false)
 	refresh.call()
 	search.grab_focus()
 	win.popup_centered()

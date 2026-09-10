@@ -51,7 +51,10 @@ func _build(ofl: String, out: String) -> int:
 	var maker_name := {}
 	for k in makers_raw:
 		if makers_raw[k] is Dictionary and makers_raw[k].has("name"):
-			maker_name[k] = String(makers_raw[k]["name"])
+			var nm := String(makers_raw[k]["name"])
+			if nm.to_lower() == String(k).to_lower():
+				nm = String(k).capitalize()   # upstream left a slug as the name
+			maker_name[k] = nm
 
 	var top := DirAccess.open(fx_root)
 	if top == null:
