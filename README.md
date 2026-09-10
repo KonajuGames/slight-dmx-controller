@@ -1,5 +1,7 @@
 # Godot DMX Lighting Controller
 
+![The controller with the 3D visualizer showing a moving-head rig](docs/screenshot.png)
+
 A ready-to-run Godot 4 project with a GUI for controlling DMX lighting
 fixtures. Each universe outputs over **Art-Net** or **sACN (E1.31)** —
 both plain UDP, no plugin needed — or, with the optional `addons/usb_dmx`
