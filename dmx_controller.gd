@@ -853,6 +853,8 @@ func _on_profile_action(action: String, profile) -> void:
 			_open_profile_dialog(null)
 		"import":
 			_import_profile()
+		"library":
+			_open_library_dialog()
 		"edit":
 			_open_profile_dialog(profile)
 		"delete":
@@ -918,6 +920,241 @@ func _do_import(path: String) -> void:
 		msg += "  %d approximation(s); check it in Edit..." % warns.size()
 		push_warning("Fixture import notes:\n- " + "\n- ".join(warns))
 	status_label.text = msg
+
+
+## Browse the bundled fixture library (Library autoload / res://fixtures).
+## Search + filter, preview a fixture's modes and channels, then "Add to
+## Patch" drops the resolved FixtureProfile into `available_profiles` for
+## this session and selects it on the current universe. It rides in the
+## show file via the patch (no copy is written to user://).
+func _open_library_dialog() -> void:
+	if not Library.available():
+		status_label.text = "No bundled fixture library found."
+		return
+
+	var win := Window.new()
+	win.title = "Fixture Library"
+	win.size = Vector2i(920, 620)
+	win.min_size = Vector2i(660, 440)
+	add_child(win)
+
+	var margin := MarginContainer.new()
+	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	for side in ["left", "right", "top", "bottom"]:
+		margin.add_theme_constant_override("margin_" + side, 10)
+	win.add_child(margin)
+
+	var root := VBoxContainer.new()
+	root.add_theme_constant_override("separation", 8)
+	margin.add_child(root)
+
+	# --- filter bar ---------------------------------------------------
+	var filters := HFlowContainer.new()
+	filters.add_theme_constant_override("h_separation", 8)
+	filters.add_theme_constant_override("v_separation", 4)
+	root.add_child(filters)
+
+	var search := LineEdit.new()
+	search.placeholder_text = "Search manufacturer / model…"
+	search.custom_minimum_size = Vector2(240, 0)
+	search.clear_button_enabled = true
+	filters.add_child(search)
+
+	var maker_opt := OptionButton.new()
+	maker_opt.add_item("All manufacturers")
+	for m in Library.manufacturers():
+		maker_opt.add_item(m)
+	filters.add_child(maker_opt)
+
+	var cat_opt := OptionButton.new()
+	cat_opt.add_item("All types")
+	var cat_labels := {
+		"moving_head": "Moving head", "wash": "Wash", "par": "Par / colour",
+		"beam": "Beam", "strip": "Strip / bar", "blinder": "Blinder / effect",
+		"generic": "Other",
+	}
+	var cat_keys: Array = []
+	for c in Library.categories():
+		cat_keys.append(c)
+		cat_opt.add_item(cat_labels.get(c, String(c).capitalize()))
+	filters.add_child(cat_opt)
+
+	var pt_check := CheckBox.new()
+	pt_check.text = "Pan/Tilt only"
+	filters.add_child(pt_check)
+
+	filters.add_child(_label("Max ch:"))
+	var maxch_spin := SpinBox.new()
+	maxch_spin.min_value = 0
+	maxch_spin.max_value = 96
+	maxch_spin.value = 0
+	maxch_spin.tooltip_text = "0 = any width"
+	filters.add_child(maxch_spin)
+
+	# --- results | preview -----------------------------------------
+	var split := HSplitContainer.new()
+	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	split.split_offset = 430
+	root.add_child(split)
+
+	var results := ItemList.new()
+	results.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	results.custom_minimum_size = Vector2(360, 0)
+	results.allow_reselect = true
+	split.add_child(results)
+
+	var preview_scroll := ScrollContainer.new()
+	preview_scroll.custom_minimum_size = Vector2(320, 0)
+	preview_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	split.add_child(preview_scroll)
+
+	var preview := VBoxContainer.new()
+	preview.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	preview.add_theme_constant_override("separation", 6)
+	preview_scroll.add_child(preview)
+
+	# --- footer ----------------------------------------------------
+	var footer := HBoxContainer.new()
+	root.add_child(footer)
+	var count_lbl := _label("")
+	count_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	count_lbl.modulate = Color(1, 1, 1, 0.6)
+	footer.add_child(count_lbl)
+	var add_btn := Button.new()
+	add_btn.text = "Add to Patch"
+	add_btn.disabled = true
+	footer.add_child(add_btn)
+	var close_btn := Button.new()
+	close_btn.text = "Close"
+	footer.add_child(close_btn)
+
+	var src := _label(Library.source_note())
+	src.modulate = Color(1, 1, 1, 0.45)
+	root.add_child(src)
+
+	# --- state + behaviour ---------------------------------------
+	var state := {"rows": [] as Array, "sel_id": "", "profile": null}
+
+	var show_preview := func(id: String) -> void:
+		for c in preview.get_children():
+			c.queue_free()
+		state["sel_id"] = id
+		state["profile"] = null
+		add_btn.disabled = id == ""
+		if id == "":
+			return
+		var p: FixtureProfile = Library.resolve(id)
+		state["profile"] = p
+		var e: Dictionary = Library.entry(id)
+		if p == null:
+			preview.add_child(_label("Couldn't load this fixture."))
+			return
+
+		var title := _label(p.profile_name)
+		title.add_theme_font_size_override("font_size", 16)
+		title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		preview.add_child(title)
+
+		var sub := " · ".join((e.get("ofl_cat", []) as Array))
+		var authors := ", ".join((e.get("authors", []) as Array))
+		if authors != "":
+			sub += "   ·   " + authors if sub != "" else authors
+		if sub != "":
+			var subl := _label(sub)
+			subl.modulate = Color(1, 1, 1, 0.6)
+			subl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			preview.add_child(subl)
+
+		var heads: Array = p.physical.get("heads", [])
+		if heads.size() >= 2:
+			preview.add_child(_label("%d heads" % heads.size()))
+		if int(e.get("approx", 0)) > 0:
+			var ap := _label("%d channel(s) approximated on import" % int(e["approx"]))
+			ap.modulate = Color(1, 0.8, 0.4)
+			preview.add_child(ap)
+
+		var mode_row := HBoxContainer.new()
+		mode_row.add_child(_label("Mode:"))
+		var mode_sel := OptionButton.new()
+		mode_sel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		for n in p.mode_names():
+			mode_sel.add_item(n)
+		mode_row.add_child(mode_sel)
+		preview.add_child(mode_row)
+
+		var ch_box := VBoxContainer.new()
+		ch_box.add_theme_constant_override("separation", 1)
+		preview.add_child(ch_box)
+
+		var fill_channels := func(mi: int) -> void:
+			for c in ch_box.get_children():
+				c.queue_free()
+			var chans: Array = p.channels_for_mode(mi)
+			for ci in range(chans.size()):
+				var ch: Dictionary = chans[ci]
+				var line := _label("%2d   %s" % [ci + 1, String(ch.get("name", "Ch"))])
+				var role := String(ch.get("role", "GENERIC"))
+				if role != "GENERIC":
+					line.text += "   · %s" % role.to_lower()
+				line.modulate = Color(1, 1, 1, 0.55 if ch.get("fine", false) else 0.9)
+				ch_box.add_child(line)
+		mode_sel.item_selected.connect(fill_channels)
+		fill_channels.call(0)
+
+	var refresh := func() -> void:
+		var mk := "" if maker_opt.selected <= 0 else maker_opt.get_item_text(maker_opt.selected)
+		var ct := "" if cat_opt.selected <= 0 else String(cat_keys[cat_opt.selected - 1])
+		var rows := Library.search(search.text, mk, ct, int(maxch_spin.value), pt_check.button_pressed)
+		state["rows"] = rows
+		results.clear()
+		var reselect := -1
+		for i in range(rows.size()):
+			var e: Dictionary = rows[i]
+			var widths: Array = []
+			for m in e.get("modes", []):
+				widths.append(str(m.get("ch", 0)))
+			var cat: String = cat_labels.get(e.get("cat", ""), "")
+			results.add_item("%s   ·   %s ch   ·   %s" % [
+				e["name"], "/".join(widths), cat])
+			results.set_item_metadata(i, e["id"])
+			if e["id"] == state["sel_id"]:
+				reselect = i
+		count_lbl.text = "%d of %d fixtures" % [rows.size(), Library.count()]
+		if reselect >= 0:
+			results.select(reselect)
+		else:
+			show_preview.call("")
+
+	search.text_changed.connect(func(_t): refresh.call())
+	maker_opt.item_selected.connect(func(_i): refresh.call())
+	cat_opt.item_selected.connect(func(_i): refresh.call())
+	pt_check.toggled.connect(func(_p): refresh.call())
+	maxch_spin.value_changed.connect(func(_v): refresh.call())
+	results.item_selected.connect(func(i: int): show_preview.call(String(results.get_item_metadata(i))))
+	results.item_activated.connect(func(_i: int): add_btn.pressed.emit())
+
+	add_btn.pressed.connect(func():
+		var p: FixtureProfile = state["profile"]
+		if p == null:
+			return
+		var idx := _profile_index_by_id(p.id)
+		if idx < 0:
+			available_profiles.append(p)
+			idx = available_profiles.size() - 1
+		for panel in _panels:
+			panel.populate_profile_option()
+		var active := _panels[clampi(universe_tabs.current_tab, 0, _panels.size() - 1)]
+		active.profile_option.selected = idx
+		active.populate_mode_option()
+		status_label.text = "Added '%s' from the library — set a start channel and Add Fixture." % p.profile_name
+		win.queue_free()
+	)
+	close_btn.pressed.connect(func(): win.queue_free())
+	win.close_requested.connect(func(): win.queue_free())
+
+	refresh.call()
+	search.grab_focus()
+	win.popup_centered()
 
 
 # ---------------------------------------------------------------- MVR --

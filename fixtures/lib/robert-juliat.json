@@ -1,0 +1,1 @@
+{"robert-juliat-613sx":{"geometry":{},"id":"robert-juliat-613sx","modes":[{"channels":[{"default":0,"fine":false,"max":255,"min":0,"name":"Dimmer","ranges":[],"role":"DIMMER"}],"name":"Dimmer"}],"physical":{"beam_deg":28.0,"category":"par","heads":[],"pan_range":540.0,"tilt_range":270.0},"profile_name":"Robert Juliat 613SX"}}

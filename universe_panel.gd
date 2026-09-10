@@ -387,6 +387,13 @@ func _build_fixture_patch_section() -> Control:
 	add_btn.pressed.connect(_on_add_fixture_pressed)
 	add_row.add_child(add_btn)
 
+	if Library.available():
+		var library_btn := Button.new()
+		library_btn.text = "Library..."
+		library_btn.tooltip_text = "Browse the bundled fixture library (%d fixtures)" % Library.count()
+		library_btn.pressed.connect(func(): _profile_action("library"))
+		add_row.add_child(library_btn)
+
 	var new_profile_btn := Button.new()
 	new_profile_btn.text = "New..."
 	new_profile_btn.pressed.connect(func(): _profile_action("new"))
@@ -435,7 +442,7 @@ func _selected_profile() -> FixtureProfile:
 func _profile_action(action: String) -> void:
 	if not profile_action_cb.is_valid():
 		return
-	if action == "new" or action == "import":
+	if action == "new" or action == "import" or action == "library":
 		profile_action_cb.call(action, null)
 	else:
 		var p := _selected_profile()

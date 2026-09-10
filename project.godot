@@ -34,6 +34,7 @@ Sound="*res://sound_engine.gd"
 Fx="*res://effects_engine.gd"
 AutoShow="*res://auto_show.gd"
 Triggers="*res://triggers_engine.gd"
+Library="*res://fixture_library.gd"
 
 [display]
 
