@@ -221,13 +221,34 @@ static func segment(feats: Array, energy: PackedFloat32Array,
 		seg["rise"] = _mean_arr(energy, seg["e"] - 8, seg["e"]) \
 			- _mean_arr(energy, seg["s"], seg["s"] + 8)
 
-	# cluster by feature similarity (union-find over similar pairs)
+	var elo := INF
+	var ehi := -INF
+	for seg in segs:
+		elo = minf(elo, seg["en"])
+		ehi = maxf(ehi, seg["en"])
+	var espan: float = maxf(ehi - elo, 0.0001)
+
+	# cluster by feature similarity (union-find over similar pairs). Chroma
+	# makes up 12 of the feature vector's 15 dimensions, so two segments
+	# built on the same chord progression — a verse and its own chorus,
+	# the single most common case — read as near-identical by cosine
+	# similarity alone, no matter how different they sound. Also require
+	# the segments to be in the same loudness ballpark before merging them
+	# into "the same recurring section", so a quiet verse can't cluster
+	# with (and inherit the label of) a loud chorus that just shares its
+	# chords. The tolerance is a *fraction of this song's own energy
+	# range* (not a fixed absolute number): a compressed dance track might
+	# only separate its quiet intro from an otherwise flat-loud body,
+	# while a song with real light-and-shade throughout should still
+	# split verse from chorus inside that range.
+	var cluster_energy_tol: float = clampf(0.16 * espan, 0.03, 0.16)
 	var parent: Array = []
 	for i in range(segs.size()):
 		parent.append(i)
 	for i in range(segs.size()):
 		for j in range(i + 1, segs.size()):
-			if _cos(segs[i]["feat"], segs[j]["feat"]) > 0.86:
+			if _cos(segs[i]["feat"], segs[j]["feat"]) > 0.86 \
+					and absf(float(segs[i]["en"]) - float(segs[j]["en"])) < cluster_energy_tol:
 				_union(parent, i, j)
 	var cluster_of: Array = []
 	var cluster_ids := {}
@@ -236,6 +257,35 @@ static func segment(feats: Array, energy: PackedFloat32Array,
 		if not cluster_ids.has(root):
 			cluster_ids[root] = cluster_ids.size()
 		cluster_of.append(cluster_ids[root])
+
+	# The pairwise tolerance above only stops a *direct* quiet/loud pair
+	# from merging — a long track can still chain them transitively
+	# (A~B, B~C, ... ~Z) into one cluster spanning the whole song's
+	# dynamic range, one small step at a time. Re-split any cluster whose
+	# own energy span still exceeds the tolerance: walk its members in
+	# energy order and start a fresh sub-cluster wherever the next one
+	# would blow the span.
+	var by_cluster := {}
+	for i in range(segs.size()):
+		var key: int = cluster_of[i]
+		if not by_cluster.has(key):
+			by_cluster[key] = []
+		(by_cluster[key] as Array).append(i)
+	var next_id: int = cluster_ids.size()
+	for key in by_cluster:
+		var members: Array = by_cluster[key]
+		if members.size() < 2:
+			continue
+		members.sort_custom(func(a, b): return float(segs[a]["en"]) < float(segs[b]["en"]))
+		var group_lo: float = float(segs[members[0]]["en"])
+		var cur_id: int = key
+		for idx in members:
+			var e: float = float(segs[idx]["en"])
+			if e - group_lo > cluster_energy_tol:
+				next_id += 1
+				cur_id = next_id
+				group_lo = e
+			cluster_of[idx] = cur_id
 
 	# cluster stats
 	var cl_count := {}
@@ -257,22 +307,22 @@ static func segment(feats: Array, energy: PackedFloat32Array,
 	var chorus_cl: int = recurring[0] if recurring.size() > 0 else -1
 	var verse_cl: int = recurring[1] if recurring.size() > 1 else -1
 
-	var elo := INF
-	var ehi := -INF
-	for seg in segs:
-		elo = minf(elo, seg["en"])
-		ehi = maxf(ehi, seg["en"])
-	var espan: float = maxf(ehi - elo, 0.0001)
-
 	var out: Array = []
 	for i in range(segs.size()):
 		var seg: Dictionary = segs[i]
 		var c: int = cluster_of[i]
 		var en_n: float = clampf((seg["en"] - elo) / espan, 0.0, 1.0)
 		var label := "Verse"
+		# Trust cluster identity for anything that recurs — the clustering
+		# above already keeps a cluster's own energy span within
+		# cluster_energy_tol of itself, so by the time we get here
+		# chorus_cl / verse_cl are internally coherent groups, not a
+		# monolith spanning the whole song. A third+ recurring cluster (a
+		# second chorus melody, a repeated pre-chorus) defaults to Verse
+		# rather than competing for "the chorus" label.
 		if c == chorus_cl:
 			label = "Chorus"
-		elif c == verse_cl:
+		elif c == verse_cl or int(cl_count.get(c, 0)) >= 2:
 			label = "Verse"
 		elif i == 0:
 			label = "Intro" if en_n < 0.55 else "Verse"
@@ -280,8 +330,12 @@ static func segment(feats: Array, energy: PackedFloat32Array,
 			label = "Outro" if en_n < 0.55 else "Chorus"
 		elif en_n <= 0.32:
 			label = "Bridge"
-		elif en_n >= 0.7:
-			label = "Chorus"
+		elif en_n >= 0.78:
+			# loud but never repeats. A chorus is loud *and* recurring by
+			# definition (that's the whole signal this algorithm has to go
+			# on) — a one-off peak reads as a bridge/climax, not a chorus
+			# that just happened to only play once.
+			label = "Bridge"
 		out.append({
 			"start": _btime(beat_times, seg["s"]),
 			"end": _btime(beat_times, seg["e"]),
