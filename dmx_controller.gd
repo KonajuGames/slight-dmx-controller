@@ -871,6 +871,7 @@ func _import_profile() -> void:
 	fd.add_filter("*.gdtf", "GDTF fixture")
 	fd.add_filter("*.json", "Open Fixture Library JSON")
 	fd.use_native_dialog = true
+	RecentDirs.track(fd, "fixture_import")
 	add_child(fd)
 	fd.file_selected.connect(func(path: String):
 		_do_import(path)

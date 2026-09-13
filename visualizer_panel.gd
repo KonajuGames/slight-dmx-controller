@@ -737,6 +737,7 @@ func _load_model_dialog() -> void:
 	fd.access = FileDialog.ACCESS_FILESYSTEM
 	fd.add_filter("*.glb,*.gltf", "glTF model")
 	fd.use_native_dialog = true
+	RecentDirs.track(fd, "gltf_model")
 	add_child(fd)
 	fd.file_selected.connect(func(path: String):
 		var n := _spawn_prop(path, _cam_target, 1.0, 0.0)
@@ -881,6 +882,7 @@ func _mvr_dialog(export_mode: bool) -> void:
 	if export_mode:
 		fd.current_file = "rig.mvr"
 	fd.use_native_dialog = true
+	RecentDirs.track(fd, "mvr")
 	add_child(fd)
 	fd.file_selected.connect(func(path: String):
 		if export_mode and mvr_export_cb.is_valid():

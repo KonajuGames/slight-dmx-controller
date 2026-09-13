@@ -177,6 +177,7 @@ func _pick_song() -> void:
 	fd.add_filter("*.ogg,*.oga", "Ogg Vorbis audio")
 	fd.add_filter("*.wav", "WAV audio")
 	fd.use_native_dialog = true
+	RecentDirs.track(fd, "song")
 	add_child(fd)
 	fd.file_selected.connect(func(path: String):
 		if AutoShow.load_song(path):
