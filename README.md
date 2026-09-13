@@ -137,6 +137,10 @@ playing it 4× through a capture bus. The app runs fine without any of them.
   `refresh_online()` also pulls the live OFL list from GitHub and
   downloads/caches individual fixtures (`user://fixture_online/`).
   `tools/build_fixture_library.gd` regenerates the bundle from an OFL checkout.
+- `recent_dirs.gd` — the `RecentDirs` class: every file dialog (Load Song,
+  Import fixture, Load glTF model, Import/Export MVR) reopens in the
+  folder it was last used in, remembered per dialog rather than as one
+  shared directory, persisted to `user://recent_dirs.json`.
 
 ## Universes
 
