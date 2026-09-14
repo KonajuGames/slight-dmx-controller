@@ -1176,9 +1176,13 @@ func _open_library_dialog() -> void:
 				if e.get("bundled", false):
 					text += "   ·   bundled"
 			else:
+				var seen_ch := {}
 				var widths: Array = []
 				for m in e.get("modes", []):
-					widths.append(str(m.get("ch", 0)))
+					var ch := int(m.get("ch", 0))
+					if not seen_ch.has(ch):
+						seen_ch[ch] = true
+						widths.append(str(ch))
 				text = "%s   ·   %s ch   ·   %s" % [
 					e["name"], "/".join(widths), cat_labels.get(e.get("cat", ""), "")]
 			results.add_item(text)
