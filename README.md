@@ -44,7 +44,10 @@ playing it 4× through a capture bus. The app runs fine without any of them.
   Sound tab.
 - `structure_bar.gd` / `wave_heatmap.gd` — the analysed-song structure
   strip and a whole-song colour-coded waveform (loudness height, spectral
-  hue), stacked on the Auto Show tab.
+  hue), stacked on the Auto Show tab. The structure strip is editable:
+  drag a section border (snapped to the beat grid) to fix a boundary the
+  analyser placed slightly wrong, or right-click a section to relabel,
+  split, or delete it.
 - `triggers_engine.gd` — the `Triggers` autoload: listens for MIDI
   (Godot's `InputEventMIDI`) and OSC (a UDP listener), fires console
   actions, and sends feedback (LED updates) when a binding's target is
