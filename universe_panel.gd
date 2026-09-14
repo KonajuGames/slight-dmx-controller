@@ -497,9 +497,10 @@ func _on_add_fixture_pressed() -> void:
 		"profile": profile,
 		"start": start,
 		"mode": mode,
-		# 3D visualizer placement (world metres / degrees).
+		# 3D visualizer placement (world metres / degrees). Straight down,
+		# as if hung from a truss aimed at the floor.
 		"pos": auto_place(patched_fixtures.size()),
-		"rot": Vector3(28, 0, 0),
+		"rot": Vector3(90, 0, 0),
 	}
 	_next_fixture_id += 1
 	patched_fixtures.append(fixture)
@@ -1227,7 +1228,7 @@ func apply_patch_dict(d: Dictionary) -> void:
 			"start": int(entry.get("start", 0)),
 			"mode": clampi(int(entry.get("mode", 0)), 0, max(profile.mode_count() - 1, 0)),
 			"pos": _arr_to_v3(entry.get("pos", null), auto_place(i)),
-			"rot": _arr_to_v3(entry.get("rot", null), Vector3(28, 0, 0)),
+			"rot": _arr_to_v3(entry.get("rot", null), Vector3(90, 0, 0)),
 		})
 		_next_fixture_id += 1
 		i += 1

@@ -808,7 +808,7 @@ func rebuild() -> void:
 				f["profile"], int(f["id"]), String(f["name"]))
 			fv.apply_transform(
 				f.get("pos", UniversePanel.auto_place(0)),
-				f.get("rot", Vector3(28, 0, 0)))
+				f.get("rot", Vector3(90, 0, 0)))
 
 
 func _auto_arrange() -> void:
@@ -816,7 +816,7 @@ func _auto_arrange() -> void:
 		var i := 0
 		for f in panels[u].patched_fixtures:
 			f["pos"] = UniversePanel.auto_place(i) + Vector3(0, 0, u * -2.0)
-			f["rot"] = Vector3(28, 0, 0)
+			f["rot"] = Vector3(90, 0, 0)
 			i += 1
 	rebuild()
 
