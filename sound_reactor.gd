@@ -90,6 +90,64 @@ func to_dict() -> Dictionary:
 	}
 
 
+## A small starter pack so Sound Reactive does something useful the moment
+## a fixture is patched, instead of an empty reactor list. Covers the
+## three bands with roles most fixtures have (dimmer + RGB), plus a
+## strobe-on-beat option left off by default since it's a lot more
+## intense than the others. `Fx._ready()` seeds `reactors` with this.
+static func defaults() -> Array[SoundReactor]:
+	var out: Array[SoundReactor] = []
+
+	var bass := SoundReactor.new()
+	bass.name = "Bass Pulse"
+	bass.band = BAND_BASS
+	bass.role = "DIMMER"
+	bass.mode = MODE_PULSE
+	bass.low = 20.0
+	bass.high = 255.0
+	bass.release = 0.18
+	bass.running = true
+	out.append(bass)
+
+	var mid := SoundReactor.new()
+	mid.name = "Mid Glow"
+	mid.band = BAND_MID
+	mid.role = "RED"
+	mid.mode = MODE_FOLLOW
+	mid.low = 0.0
+	mid.high = 220.0
+	mid.attack = 0.5
+	mid.release = 0.25
+	mid.running = true
+	out.append(mid)
+
+	var treble := SoundReactor.new()
+	treble.name = "Treble Sparkle"
+	treble.band = BAND_TREBLE
+	treble.role = "BLUE"
+	treble.mode = MODE_FOLLOW
+	treble.low = 0.0
+	treble.high = 200.0
+	treble.attack = 0.6
+	treble.release = 0.2
+	treble.fan = 0.4
+	treble.running = true
+	out.append(treble)
+
+	var strobe := SoundReactor.new()
+	strobe.name = "Beat Strobe"
+	strobe.band = BAND_BASS
+	strobe.role = "STROBE"
+	strobe.mode = MODE_PULSE
+	strobe.low = 0.0
+	strobe.high = 180.0
+	strobe.release = 0.4
+	strobe.running = false
+	out.append(strobe)
+
+	return out
+
+
 static func from_dict(d: Dictionary) -> SoundReactor:
 	var r := SoundReactor.new()
 	r.name = String(d.get("name", "Reactor"))

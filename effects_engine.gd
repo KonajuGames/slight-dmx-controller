@@ -26,6 +26,7 @@ func _beat_driven() -> bool:
 
 func _ready() -> void:
 	Sound.beat.connect(_on_beat)
+	reactors = SoundReactor.defaults()
 
 
 func _process(delta: float) -> void:
