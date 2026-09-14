@@ -365,7 +365,77 @@ static func _paint(per_uni: Array, fx: Dictionary, col: Color, lvl: float,
 			"TILT":
 				if tilt >= 0:
 					d[c] = tilt
-			"STROBE": d[c] = 200 if strobe else 0
+			"STROBE": d[c] = _pick_shutter_value(chans[li], strobe)
+			"COLOR_WHEEL":
+				var wv := _pick_wheel_slot(chans[li], col)
+				if wv >= 0:
+					d[c] = wv
+
+
+## Best-matching colour-wheel slot for `col`, for fixtures that select
+## colour from a wheel instead of mixing RGB(W). Compares each range's
+## resolved colour — the same resolution `DmxRender` uses for display:
+## an explicit hex, else a colour parsed from its label, else treated as
+## "open/white" — against `col` and keeps the closest. -1 (leave the
+## channel alone) if this profile has no range data for the wheel.
+static func _pick_wheel_slot(ch: Dictionary, col: Color) -> int:
+	var ranges: Array = ch.get("ranges", [])
+	if ranges.is_empty():
+		return -1
+	var best_mid := -1
+	var best_d := INF
+	for r in ranges:
+		var lo := int(r["lo"])
+		var hi := int(r["hi"])
+		var mid := (lo + hi) / 2
+		var sc = DmxRender._slot_color(ch, mid)
+		var c: Color = sc if sc != null else Color.WHITE
+		var dr := c.r - col.r
+		var dg := c.g - col.g
+		var db := c.b - col.b
+		var d := dr * dr + dg * dg + db * db
+		if d < best_d:
+			best_d = d
+			best_mid = mid
+	return best_mid
+
+
+## DMX value for a STROBE/shutter channel, honoring its declared ranges —
+## the same "Shutter closed" / "Shutter open" / "Strobe ..." label
+## convention used throughout this codebase (see FixtureProfile's built-in
+## example). Many fixtures — especially colour-wheel ones without a
+## separate DIMMER channel — use this single channel as their master
+## shutter, so writing a "not currently strobing" `false` naively to 0 can
+## leave the shutter *closed* (0 is a very common "closed" value) rather
+## than just "steady, no strobe": the fixture goes fully dark. `want_strobe`
+## true looks for a strobing range instead, read from its fast (high) end.
+## Falls back to the channel's own declared "default" (its safe patch-in
+## value) and then a literal guess when there's no usable range data —
+## never a bare 0, since that's the one value real shutters most often
+## treat as closed.
+static func _pick_shutter_value(ch: Dictionary, want_strobe: bool) -> int:
+	var ranges: Array = ch.get("ranges", [])
+	if want_strobe:
+		for r in ranges:
+			var lbl := String(r.get("label", "")).to_lower()
+			if "strob" in lbl or "puls" in lbl:
+				return int(r["hi"])
+	else:
+		var fallback := -1
+		for r in ranges:
+			var lbl := String(r.get("label", "")).to_lower()
+			if "clos" in lbl or "black" in lbl or "strob" in lbl or "puls" in lbl:
+				continue
+			var mid := (int(r["lo"]) + int(r["hi"])) / 2
+			if "open" in lbl:
+				return mid
+			if fallback == -1:
+				fallback = mid
+		if fallback != -1:
+			return fallback
+	if ch.get("default", null) != null:
+		return int(ch["default"])
+	return 200 if want_strobe else 255
 
 
 static func _blank(n: int) -> Array:

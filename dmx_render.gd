@@ -78,6 +78,7 @@ static func evaluate(profile: FixtureProfile, mode: int, out_buf: PackedByteArra
 	# --- pass 1: the fixture-wide channels ------------------------
 	var dim := -1.0
 	var wheel_hue = null
+	var has_wheel := false
 	for ci in range(chans.size()):
 		var ch: Dictionary = chans[ci]
 		var raw := _read(out_buf, start + ci)
@@ -104,6 +105,7 @@ static func evaluate(profile: FixtureProfile, mode: int, out_buf: PackedByteArra
 				if absi(raw - 128) > 10:
 					st["gobo_rot"] = (float(raw) - 128.0) / 127.0 * 240.0
 			"COLOR_WHEEL":
+				has_wheel = true
 				var wc = _slot_color(ch, raw)
 				if wc != null:
 					wheel_hue = wc
@@ -137,8 +139,11 @@ static func evaluate(profile: FixtureProfile, mode: int, out_buf: PackedByteArra
 		})
 
 	if st["heads"].is_empty():
-		# no RGB — one implicit head, lit by the dimmer / colour wheel
-		var lit := dim >= 0.0 or wheel_hue != null
+		# no RGB — one implicit head, lit by the dimmer / colour wheel. A
+		# wheel resting on an "open/white" slot resolves `wheel_hue` to
+		# null (it's not a colour filter) but the fixture is still lit —
+		# so presence of the channel counts, not just a resolved colour.
+		var lit := dim >= 0.0 or has_wheel
 		st["heads"].append({
 			"color": wheel_hue as Color if wheel_hue != null else Color.WHITE,
 			"level": (clampf(master, 0.0, 1.0) if lit and not st["blackout"] else 0.0),
