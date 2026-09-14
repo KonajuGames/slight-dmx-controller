@@ -426,17 +426,27 @@ static func _colour_chase(panels: Array, fixtures: Array, pal: Dictionary) -> Ch
 	return c
 
 
-## Dimmer runs along the fixtures — one bright, the rest dim.
+## Dimmer runs along the fixtures — one bright, the rest dim. Each *kind*
+## (movers, washes, ...) cycles through its own members independently —
+## `gi`/`gn` are per-kind (see `_collect()`), so sizing `steps` off the
+## total fixture count would run the step index past a smaller kind's own
+## range and leave it dark for part of the cycle (e.g. 5 movers + 3 washes
+## sized off 8 total meant the washes, and eventually the movers too, sat
+## out several steps of their own chase).
 static func _pulse_chase(panels: Array, fixtures: Array) -> Chase:
 	var c := Chase.new()
 	c.name = CH_PULSE
 	c.bpm = 120.0
 	c.beat_sync = true
-	var steps: int = maxi(2, mini(8, fixtures.size()))
+	var max_gn := 1
+	for fx in fixtures:
+		max_gn = maxi(max_gn, int(fx["gn"]))
+	var steps: int = maxi(2, mini(8, max_gn))
 	for step in range(steps):
 		var per_uni := _blank(panels.size())
 		for fx in fixtures:
-			var hot: bool = (fx["gi"] % steps) == step
+			var gn: int = maxi(int(fx["gn"]), 1)
+			var hot: bool = int(fx["gi"]) == step % gn
 			_paint(per_uni, fx, _WHITE, 1.0 if hot else 0.12, -1, -1, false)
 		c.steps.append(_look_from(per_uni))
 	return c
