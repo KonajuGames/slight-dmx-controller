@@ -11,6 +11,10 @@ uDMX). Two more optional GDExtensions speed things up locally:
 decodes and analyses a music file for the Auto Show in C++ instead of
 playing it 4× through a capture bus. The app runs fine without any of them.
 
+New to sLight? See the [**User Guide**](docs/USER_GUIDE.md) for a
+step-by-step walkthrough with screenshots. This README is the complete
+technical reference.
+
 ## What's included
 
 - `project.godot` — project config (Forward+ renderer, for volumetric
