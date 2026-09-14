@@ -55,13 +55,9 @@ func _ready() -> void:
 	hdr.add_child(refresh_btn)
 	add_child(hdr)
 
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	add_child(scroll)
 	members_box = VBoxContainer.new()
 	members_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(members_box)
+	add_child(members_box)
 
 	status_label = Label.new()
 	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
