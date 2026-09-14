@@ -14,8 +14,9 @@ in the README for a free way to watch the DMX output live (QLC+ or an
 Art-Net monitor). When you're ready to control real lights, see
 [Going to real fixtures](../README.md#going-to-real-fixtures).
 
-Open the project in Godot 4.4+ and press Play (F5) — the whole UI builds
-itself at runtime, so there's nothing else to set up.
+Launch the sLight application — there's no separate setup step, no
+account, and no configuration file to edit first. The whole window
+you'll see below is what opens.
 
 ## The window, at a glance
 
