@@ -7,11 +7,11 @@ extends Control
 ## The structure is also editable in place, so the user can correct a
 ## boundary the analyser got slightly wrong:
 ## - Hover the border between two sections and drag with the left mouse
-##   button to move it, snapped to the beat grid. A border can't be
+##   button to move it, snapped to the nearest bar. A border can't be
 ##   dragged past the start of its left segment or the end of its right
 ##   segment.
 ## - Right-click a segment for a menu to change its type, split it at the
-##   click point (snapped to the beat grid), or delete it — an adjacent
+##   click point (snapped to the nearest bar), or delete it — an adjacent
 ##   segment expands to fill the gap.
 ## Edits mutate `analysis.sections` in place (shared with AutoShow/
 ## ShowGenerator) and emit `structure_edited` so listeners can refresh.
@@ -161,18 +161,22 @@ func _update_drag(mouse_x: float) -> void:
 	var lo: float = float(secs[i]["start"])
 	var hi: float = float(secs[i + 1]["end"])
 	var raw_t: float = clampf(mouse_x / w, 0.0, 1.0) * dur
-	var t: float = clampf(_snap_to_beat(clampf(raw_t, lo, hi)), lo, hi)
+	var t: float = clampf(_snap_to_bar(clampf(raw_t, lo, hi)), lo, hi)
 	secs[i]["end"] = t
 	secs[i + 1]["start"] = t
 	queue_redraw()
 
 
-func _snap_to_beat(t: float) -> float:
-	if analysis == null or analysis.beat_times.is_empty():
+## Nearest bar line (`analysis.downbeats`), not the finer beat grid — a
+## section boundary almost always falls on a bar, and snapping to bars
+## keeps a stray beat-level nudge from landing one beat off. Falls back to
+## unsnapped when downbeats aren't available (e.g. a very short song).
+func _snap_to_bar(t: float) -> float:
+	if analysis == null or analysis.downbeats.is_empty():
 		return t
-	var best: float = analysis.beat_times[0]
+	var best: float = analysis.downbeats[0]
 	var best_d := absf(t - best)
-	for bt in analysis.beat_times:
+	for bt in analysis.downbeats:
 		var d := absf(t - bt)
 		if d < best_d:
 			best_d = d
@@ -216,7 +220,7 @@ func _on_popup_id(id: int) -> void:
 func _split_segment(idx: int, at_time: float) -> void:
 	var secs := analysis.sections
 	var seg: Dictionary = secs[idx]
-	var t := _snap_to_beat(clampf(at_time, float(seg["start"]), float(seg["end"])))
+	var t := _snap_to_bar(clampf(at_time, float(seg["start"]), float(seg["end"])))
 	if t - float(seg["start"]) < 0.02 or float(seg["end"]) - t < 0.02:
 		return  # too close to an existing edge to make two real segments
 	var new_seg: Dictionary = seg.duplicate(true)
