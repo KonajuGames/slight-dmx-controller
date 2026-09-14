@@ -68,6 +68,12 @@ const FADE := {
 # cycles) doesn't visibly loop the same look every time it comes back
 # around — recipes cycle by occurrence, so pool_size occurrences fully
 # separate before any recipe repeats.
+#
+# Every recipe must have `chase != ""` or `fx != "none"` — a section with
+# neither is a frozen wash + static mover position for however many bars
+# that section lasts, which reads as boring rather than intentionally calm.
+# A quiet recipe should still breathe/sway (fx: "breath"/"tilt"/etc.) even
+# when it has no chase.
 const RECIPES := {
 	"Intro": [
 		{"wash": {"mode": "unison", "cols": [_DEEP], "lvl": 0.42},
@@ -86,7 +92,7 @@ const RECIPES := {
 	"Verse": [
 		{"wash": {"mode": "split", "cols": [_WARM, _AMBER], "lvl": 0.60},
 		 "mover": {"pos": "down", "mode": "unison", "cols": [_AMBER], "lvl": 0.55},
-		 "strobe": false, "chase": "", "fx": "none"},
+		 "strobe": false, "chase": "", "fx": "breath"},
 		{"wash": {"mode": "unison", "cols": [_AMBER], "lvl": 0.62},
 		 "mover": {"pos": "updown", "mode": "split", "cols": [_WARM, _DEEP], "lvl": 0.55},
 		 "strobe": false, "chase": CH_PULSE, "fx": "none"},
@@ -101,7 +107,7 @@ const RECIPES := {
 		 "strobe": false, "chase": CH_PULSE, "fx": "tilt"},
 		{"wash": {"mode": "split", "cols": [_PINK, _PURPLE], "lvl": 0.58},
 		 "mover": {"pos": "updown", "mode": "split", "cols": [_PINK, _PURPLE], "lvl": 0.50},
-		 "strobe": false, "chase": "", "fx": "none"},
+		 "strobe": false, "chase": "", "fx": "tilt"},
 	],
 	"Chorus": [
 		{"wash": {"mode": "split", "cols": [_RED, _COOL], "lvl": 1.0},
