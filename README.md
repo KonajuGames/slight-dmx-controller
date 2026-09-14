@@ -773,3 +773,11 @@ on a machine without the extension falls back to Art-Net.
   animation wheels, an audio track in the recording, a deterministic
   offline render of an Auto Show, an MVR round-trip that survives every
   consumer.
+
+## License
+
+MIT — see [LICENSE](LICENSE). The bundled fixture data under
+`fixtures/` is converted from the
+[Open Fixture Library](https://open-fixture-library.org) project and
+ships under its own license — see `fixtures/OFL-LICENSE.txt` and
+`fixtures/ATTRIBUTION.md`.
