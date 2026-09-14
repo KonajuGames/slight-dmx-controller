@@ -80,6 +80,7 @@ func _ready() -> void:
 
 	_structure = StructureBar.new()
 	_structure.seek_requested.connect(func(t: float): AutoShow.seek(t))
+	_structure.structure_edited.connect(_on_structure_edited)
 	add_child(_structure)
 
 	_wave = WaveHeatmap.new()
@@ -189,15 +190,19 @@ func _pick_song() -> void:
 
 func _on_analysed() -> void:
 	_progress.visible = false
-	var a := AutoShow.analysis
-	_summary.text = a.summary()
-	_section_list.clear()
-	for s in a.sections:
-		_section_list.add_item("%s   %s   (%s)" % [
-			_mmss(s["start"]), s["label"], _mmss(s["end"] - s["start"])])
+	_populate_section_list()
 	_build_btn.disabled = false
 	_status.text = "Analysed. Review the sections, then Build Light Show."
 	_refresh()
+
+
+## The user dragged a border, split, merged, or relabeled a section in the
+## structure bar — refresh the section list/summary to match.
+func _on_structure_edited() -> void:
+	if AutoShow.analysis == null:
+		return
+	_populate_section_list()
+	_status.text = "Structure edited. Build Light Show again to pick up the changes."
 
 
 func _seek_to_section(idx: int) -> void:
@@ -244,6 +249,10 @@ func _refresh() -> void:
 
 
 func _on_analysed_quiet() -> void:
+	_populate_section_list()
+
+
+func _populate_section_list() -> void:
 	var a := AutoShow.analysis
 	_summary.text = a.summary()
 	_section_list.clear()
