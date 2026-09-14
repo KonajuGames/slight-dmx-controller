@@ -8,6 +8,10 @@ extends RefCounted
 var path: String = ""
 var duration: float = 0.0        # seconds
 var bpm: float = 120.0
+## Musical key, from SongDetect.detect_key(): root pitch class (0=C .. 11=B)
+## and "major"/"minor". Auto Show derives its section palettes from this.
+var key_root: int = 0
+var key_mode: String = "major"
 var beat_times: PackedFloat32Array = PackedFloat32Array()
 var downbeats: PackedFloat32Array = PackedFloat32Array()   # every bar's beat 1
 ## [{ start: float, end: float, label: String, energy: float, cluster: int }]
@@ -33,14 +37,21 @@ func section_at(t: float) -> int:
 	return sections.size() - 1 if not sections.is_empty() else -1
 
 
+const _KEY_NAMES := ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+func key_name() -> String:
+	return "%s %s" % [_KEY_NAMES[clampi(key_root, 0, 11)], key_mode.capitalize()]
+
+
 func summary() -> String:
-	return "%.0f BPM · %d beats · %d bars · %d sections" % [
-		bpm, beat_times.size(), downbeats.size(), sections.size()]
+	return "%.0f BPM · %s · %d beats · %d bars · %d sections" % [
+		bpm, key_name(), beat_times.size(), downbeats.size(), sections.size()]
 
 
 func to_dict() -> Dictionary:
 	return {
 		"path": path, "duration": duration, "bpm": bpm,
+		"key_root": key_root, "key_mode": key_mode,
 		"beat_times": Array(beat_times),
 		"downbeats": Array(downbeats),
 		"sections": sections.duplicate(true),
@@ -70,6 +81,8 @@ static func from_dict(d: Dictionary) -> SongAnalysis:
 	a.path = String(d.get("path", ""))
 	a.duration = float(d.get("duration", 0.0))
 	a.bpm = float(d.get("bpm", 120.0))
+	a.key_root = clampi(int(d.get("key_root", 0)), 0, 11)
+	a.key_mode = String(d.get("key_mode", "major"))
 	a.beat_times = PackedFloat32Array()
 	for t in d.get("beat_times", []):
 		a.beat_times.append(float(t))

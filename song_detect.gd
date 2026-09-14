@@ -171,6 +171,69 @@ static func _chroma_dist(a, b) -> float:
 	return s
 
 
+# =============================================================== KEY ==
+
+## Krumhansl-Kessler key profiles: the perceived "fit" of each scale
+## degree (index 0 = tonic) in a major / minor context. Standard values
+## from probe-tone studies, used the same way here as in the classic
+## Krumhansl-Schmuckler key-finding algorithm.
+const _KK_MAJOR := [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88]
+const _KK_MINOR := [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
+
+## The song's musical key: correlate its overall pitch-class profile
+## (summed from the same beat-synchronous chroma `segment()` uses, so this
+## is free to compute) against all 24 rotations of the major/minor
+## profiles above and return the best match. `{ "root": 0..11 (C..B),
+## "mode": "major"|"minor" }`.
+static func detect_key(beat_chroma: Array) -> Dictionary:
+	var profile := PackedFloat32Array()
+	profile.resize(12)
+	for row in beat_chroma:
+		for k in range(12):
+			profile[k] += float(row[k])
+
+	var best_root := 0
+	var best_mode := "major"
+	var best_score := -INF
+	for root in range(12):
+		for mode in ["major", "minor"]:
+			var kk: Array = _KK_MAJOR if mode == "major" else _KK_MINOR
+			var rotated := PackedFloat32Array()
+			rotated.resize(12)
+			for pc in range(12):
+				rotated[pc] = float(kk[(pc - root + 12) % 12])
+			var score := _correlate(profile, rotated)
+			if score > best_score:
+				best_score = score
+				best_root = root
+				best_mode = mode
+	return {"root": best_root, "mode": best_mode}
+
+
+static func _correlate(x: PackedFloat32Array, y: PackedFloat32Array) -> float:
+	var n := mini(x.size(), y.size())
+	if n == 0:
+		return 0.0
+	var mx := 0.0
+	var my := 0.0
+	for i in range(n):
+		mx += x[i]
+		my += y[i]
+	mx /= n
+	my /= n
+	var num := 0.0
+	var dx := 0.0
+	var dy := 0.0
+	for i in range(n):
+		var a: float = x[i] - mx
+		var b: float = y[i] - my
+		num += a * b
+		dx += a * a
+		dy += b * b
+	var den := sqrt(dx * dy)
+	return num / den if den > 0.0001 else 0.0
+
+
 # ========================================================= STRUCTURE ==
 
 ## Full structural segmentation. `feats[i]` is a beat-synchronous feature

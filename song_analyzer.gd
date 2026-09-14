@@ -217,6 +217,10 @@ func _detect_from_frames(d: Dictionary) -> SongAnalysis:
 		benergy.append(_avg(rms, f0, f1))
 		btimbre.append([_avg(centroid, f0, f1), _avg(flux, f0, f1)])
 
+	var key := SongDetect.detect_key(bchroma)
+	a.key_root = int(key["root"])
+	a.key_mode = String(key["mode"])
+
 	_normalise(benergy)
 	var cen := PackedFloat32Array()
 	var flx := PackedFloat32Array()
@@ -355,6 +359,10 @@ func _detect() -> SongAnalysis:
 			_avg(frames["centroid"], f0, f1),
 			_avg(frames["flux"], f0, f1),
 		])
+
+	var key := SongDetect.detect_key(bchroma)
+	a.key_root = int(key["root"])
+	a.key_mode = String(key["mode"])
 
 	_normalise(benergy)
 	var cen := PackedFloat32Array()

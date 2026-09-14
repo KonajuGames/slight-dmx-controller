@@ -191,6 +191,7 @@ static func build(a: SongAnalysis, panels: Array) -> Dictionary:
 	var looks: Array = []              # section index -> per-universe { str(ch): value }
 	var timeline: Array = []
 	var seen := {}                     # label -> how many times used
+	var pal := _key_palette(a)
 
 	var bar := 4.0 * 60.0 / maxf(a.bpm, 40.0)
 
@@ -205,7 +206,7 @@ static func build(a: SongAnalysis, panels: Array) -> Dictionary:
 		var e := float(sec["energy"])
 		var per_uni := _blank(panels.size())
 		for fx in fixtures:
-			_apply_recipe(per_uni, fx, recipe, e)
+			_apply_recipe(per_uni, fx, recipe, e, pal)
 		looks.append(_look_from(per_uni))
 
 		var t := _section_start(a, sec)
@@ -222,10 +223,35 @@ static func build(a: SongAnalysis, panels: Array) -> Dictionary:
 	timeline.sort_custom(func(x, y): return float(x["t"]) < float(y["t"]))
 	return {
 		"looks": looks,
-		"chases": _chases(panels, fixtures, a.bpm),
+		"chases": _chases(panels, fixtures, a.bpm, pal),
 		"effects": _effects(a.bpm),
 		"timeline": timeline,
 	}
+
+
+## Derive this song's palette tint from its detected key: the tonic's pitch
+## class becomes a hue rotation applied to every recipe colour (so the
+## hand-tuned "shape" of each look — which fixtures split vs. unison, which
+## chase/fx runs — stays the same show to show, but the actual hues follow
+## the song). Minor keys get a touch less saturation/brightness for a
+## moodier feel. Near-white/grey "impact" colours (Build/Drop flashes) are
+## left untouched by `_tint` regardless of key — those are about brightness,
+## not mood.
+static func _key_palette(a: SongAnalysis) -> Dictionary:
+	return {
+		"hue_shift": float(a.key_root) / 12.0,
+		"sat_mul": 0.90 if a.key_mode == "minor" else 1.0,
+		"val_mul": 0.88 if a.key_mode == "minor" else 1.0,
+	}
+
+
+static func _tint(c: Color, pal: Dictionary) -> Color:
+	if c.s < 0.02:
+		return c
+	var h := fmod(c.h + float(pal["hue_shift"]) + 1.0, 1.0)
+	var s := clampf(c.s * float(pal["sat_mul"]), 0.0, 1.0)
+	var v := clampf(c.v * float(pal["val_mul"]), 0.0, 1.0)
+	return Color.from_hsv(h, s, v, c.a)
 
 
 # ============================================================ FIXTURES ==
@@ -264,29 +290,31 @@ static func _classify(chans: Array) -> String:
 
 # ============================================================== LOOKS ==
 
-static func _apply_recipe(per_uni: Array, fx: Dictionary, recipe: Dictionary, energy: float) -> void:
+static func _apply_recipe(per_uni: Array, fx: Dictionary, recipe: Dictionary, energy: float, pal: Dictionary) -> void:
 	var em := lerpf(0.8, 1.12, energy)
 	match String(fx["kind"]):
 		"mover":
 			var m: Dictionary = recipe["mover"]
 			var pt := _position(String(m["pos"]), fx["gi"], fx["gn"])
-			_paint(per_uni, fx, _pick(m, fx["gi"]), clampf(float(m["lvl"]) * em, 0.05, 1.0),
+			_paint(per_uni, fx, _pick(m, fx["gi"], pal), clampf(float(m["lvl"]) * em, 0.05, 1.0),
 				pt.x, pt.y, false)
 		"strobe":
 			_paint(per_uni, fx, _WHITE, 1.0, -1, -1, bool(recipe.get("strobe", false)))
 		_:
 			var w: Dictionary = recipe["wash"]
-			_paint(per_uni, fx, _pick(w, fx["gi"]), clampf(float(w["lvl"]) * em, 0.05, 1.0),
+			_paint(per_uni, fx, _pick(w, fx["gi"], pal), clampf(float(w["lvl"]) * em, 0.05, 1.0),
 				-1, -1, false)
 
 
-static func _pick(spec: Dictionary, gi: int) -> Color:
+static func _pick(spec: Dictionary, gi: int, pal: Dictionary) -> Color:
 	var cols: Array = spec["cols"]
+	var c: Color
 	match String(spec["mode"]):
-		"unison": return cols[0]
-		"split": return cols[gi % mini(2, cols.size())]
-		"rainbow": return cols[gi % cols.size()]
-	return cols[0]
+		"unison": c = cols[0]
+		"split": c = cols[gi % mini(2, cols.size())]
+		"rainbow": c = cols[gi % cols.size()]
+		_: c = cols[0]
+	return _tint(c, pal)
 
 
 ## Pan / tilt DMX values (0-255) for a named position, fixture `gi` of `gn`.
@@ -357,11 +385,11 @@ static func _section_start(a: SongAnalysis, sec: Dictionary) -> float:
 
 # ============================================================= CHASES ==
 
-static func _chases(panels: Array, fixtures: Array, bpm: float) -> Array:
+static func _chases(panels: Array, fixtures: Array, bpm: float, pal: Dictionary) -> Array:
 	return [
-		_colour_chase(panels, fixtures),
+		_colour_chase(panels, fixtures, pal),
 		_pulse_chase(panels, fixtures),
-		_sweep_chase(panels, fixtures, bpm),
+		_sweep_chase(panels, fixtures, bpm, pal),
 	]
 
 
@@ -376,17 +404,18 @@ static func _look_from(per_uni: Array) -> Array:
 
 
 ## Bold colour rotating across every fixture, one step per beat.
-static func _colour_chase(panels: Array, fixtures: Array) -> Chase:
+static func _colour_chase(panels: Array, fixtures: Array, pal: Dictionary) -> Chase:
 	var c := Chase.new()
 	c.name = CH_COLOR
 	c.bpm = 120.0
 	c.beat_sync = true
-	var pal := [_RED, _COOL, _MAGENTA, _GREEN, _WARM, _CYAN]
-	for step in range(pal.size()):
+	var pal_cols := [_RED, _COOL, _MAGENTA, _GREEN, _WARM, _CYAN]
+	for step in range(pal_cols.size()):
 		var per_uni := _blank(panels.size())
 		for fx in fixtures:
 			var pt := _position("out", fx["gi"], fx["gn"]) if fx["kind"] == "mover" else Vector2i(-1, -1)
-			_paint(per_uni, fx, pal[(fx["gi"] + step) % pal.size()], 1.0, pt.x, pt.y, false)
+			var col := _tint(pal_cols[(fx["gi"] + step) % pal_cols.size()], pal)
+			_paint(per_uni, fx, col, 1.0, pt.x, pt.y, false)
 		c.steps.append(_look_from(per_uni))
 	return c
 
@@ -408,7 +437,7 @@ static func _pulse_chase(panels: Array, fixtures: Array) -> Chase:
 
 
 ## Moving heads rotate through positions, smooth crossfade, every 2 beats.
-static func _sweep_chase(panels: Array, fixtures: Array, bpm: float) -> Chase:
+static func _sweep_chase(panels: Array, fixtures: Array, bpm: float, pal: Dictionary) -> Chase:
 	var c := Chase.new()
 	c.name = CH_SWEEP
 	c.bpm = maxf(bpm * 0.5, 20.0)
@@ -419,12 +448,13 @@ static func _sweep_chase(panels: Array, fixtures: Array, bpm: float) -> Chase:
 	var cols := [_COOL, _MAGENTA, _WARM, _CYAN]
 	for step in range(order.size()):
 		var per_uni := _blank(panels.size())
+		var col := _tint(cols[step % cols.size()], pal)
 		for fx in fixtures:
 			if fx["kind"] == "mover":
 				var pt := _position(order[step], fx["gi"], fx["gn"])
-				_paint(per_uni, fx, cols[step % cols.size()], 1.0, pt.x, pt.y, false)
+				_paint(per_uni, fx, col, 1.0, pt.x, pt.y, false)
 			else:
-				_paint(per_uni, fx, cols[step % cols.size()], 0.85, -1, -1, false)
+				_paint(per_uni, fx, col, 0.85, -1, -1, false)
 		c.steps.append(_look_from(per_uni))
 	return c
 
