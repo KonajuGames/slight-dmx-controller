@@ -79,7 +79,9 @@ playing it 4× through a capture bus. The app runs fine without any of them.
   visibly loop the same look. Recipe colours are then hue-rotated by the
   song's detected musical key (minor keys a touch less saturated/bright)
   so the palette follows the song — white "impact" flashes (Build/Drop)
-  are left untouched since they're about brightness, not mood.
+  are left untouched since they're about brightness, not mood. Colour-
+  wheel fixtures get their nearest matching wheel slot instead of plain
+  RGB, and a shutter channel is opened rather than defaulted closed.
 - `main.tscn` — a single root `Control` node with the GUI script attached.
 - `dmx_controller.gd` — the shell: a top bar (grand master, run mode,
   Sending, add/remove universe, whole-show + preset save/load, MIDI/OSC
@@ -116,7 +118,11 @@ playing it 4× through a capture bus. The app runs fine without any of them.
   (writes a scene description + a generated GDTF per profile).
 - `dmx_render.gd` — the `DmxRender` class: turns a fixture's slice of a
   universe's `output` into a visual state (colour, dimmer, pan/tilt,
-  zoom, strobe, gobo, gobo spin) for the 3D view.
+  zoom, strobe, gobo, gobo spin) for the 3D view. A `COLOR_WHEEL`
+  channel resolves to a real colour (explicit hex, a colour parsed from
+  its slot label, or "open/white"), and a fixture is correctly read as
+  lit from its wheel/shutter alone even with no separate `DIMMER`
+  channel — the shape of most colour-wheel scanners.
 - `fixture_view.gd` — the `FixtureView` class: one fixture in 3D — the
   GDTF geometry (glTF models + pan/tilt axes) when it has one, otherwise
   a schematic body by category, driving a `SpotLight3D` + beam cone.
