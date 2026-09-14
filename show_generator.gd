@@ -26,6 +26,11 @@ const _RED := Color(1.00, 0.08, 0.08)
 const _GREEN := Color(0.20, 1.00, 0.32)
 const _LIME := Color(0.65, 1.00, 0.12)
 const _WHITE := Color(1.00, 1.00, 1.00)
+const _GOLD := Color(1.00, 0.84, 0.20)
+const _PINK := Color(1.00, 0.35, 0.65)
+const _ICE := Color(0.55, 0.85, 1.00)
+const _ORANGE := Color(1.00, 0.35, 0.05)
+const _TEAL := Color(0.05, 0.75, 0.55)
 
 # ---- named chases / effects ----
 const CH_COLOR := "Auto Colour Beat"
@@ -58,10 +63,24 @@ const FADE := {
 }
 
 # ---- recipe pools: label -> [ {wash, mover, strobe, chase, fx}, ... ] ----
+# Each label gets a bigger-than-strictly-needed pool so a song with several
+# repeats of the same section (multiple choruses, multiple build/drop
+# cycles) doesn't visibly loop the same look every time it comes back
+# around — recipes cycle by occurrence, so pool_size occurrences fully
+# separate before any recipe repeats.
 const RECIPES := {
 	"Intro": [
 		{"wash": {"mode": "unison", "cols": [_DEEP], "lvl": 0.42},
 		 "mover": {"pos": "down", "mode": "unison", "cols": [_COOL], "lvl": 0.40},
+		 "strobe": false, "chase": "", "fx": "breath"},
+		{"wash": {"mode": "split", "cols": [_PURPLE, _DEEP], "lvl": 0.40},
+		 "mover": {"pos": "down", "mode": "unison", "cols": [_PURPLE], "lvl": 0.38},
+		 "strobe": false, "chase": "", "fx": "tilt"},
+		{"wash": {"mode": "unison", "cols": [_TEAL], "lvl": 0.38},
+		 "mover": {"pos": "updown", "mode": "split", "cols": [_TEAL, _DEEP], "lvl": 0.36},
+		 "strobe": false, "chase": "", "fx": "circle_slow"},
+		{"wash": {"mode": "split", "cols": [_AMBER, _DEEP], "lvl": 0.40},
+		 "mover": {"pos": "down", "mode": "unison", "cols": [_AMBER], "lvl": 0.36},
 		 "strobe": false, "chase": "", "fx": "breath"},
 	],
 	"Verse": [
@@ -74,6 +93,15 @@ const RECIPES := {
 		{"wash": {"mode": "split", "cols": [_COOL, _CYAN], "lvl": 0.58},
 		 "mover": {"pos": "down", "mode": "unison", "cols": [_CYAN], "lvl": 0.50},
 		 "strobe": false, "chase": "", "fx": "tilt"},
+		{"wash": {"mode": "split", "cols": [_GOLD, _WARM], "lvl": 0.60},
+		 "mover": {"pos": "cross", "mode": "split", "cols": [_GOLD, _AMBER], "lvl": 0.52},
+		 "strobe": false, "chase": "", "fx": "circle_slow"},
+		{"wash": {"mode": "unison", "cols": [_TEAL], "lvl": 0.56},
+		 "mover": {"pos": "down", "mode": "unison", "cols": [_TEAL], "lvl": 0.48},
+		 "strobe": false, "chase": CH_PULSE, "fx": "tilt"},
+		{"wash": {"mode": "split", "cols": [_PINK, _PURPLE], "lvl": 0.58},
+		 "mover": {"pos": "updown", "mode": "split", "cols": [_PINK, _PURPLE], "lvl": 0.50},
+		 "strobe": false, "chase": "", "fx": "none"},
 	],
 	"Chorus": [
 		{"wash": {"mode": "split", "cols": [_RED, _COOL], "lvl": 1.0},
@@ -85,6 +113,15 @@ const RECIPES := {
 		{"wash": {"mode": "rainbow", "cols": [_RED, _GREEN, _COOL, _MAGENTA], "lvl": 1.0},
 		 "mover": {"pos": "updown", "mode": "rainbow", "cols": [_LIME, _MAGENTA, _CYAN, _WARM], "lvl": 1.0},
 		 "strobe": false, "chase": CH_COLOR, "fx": "tilt"},
+		{"wash": {"mode": "split", "cols": [_GOLD, _RED], "lvl": 1.0},
+		 "mover": {"pos": "out", "mode": "split", "cols": [_GOLD, _RED], "lvl": 1.0},
+		 "strobe": false, "chase": CH_SWEEP, "fx": "circle_fast"},
+		{"wash": {"mode": "split", "cols": [_TEAL, _MAGENTA], "lvl": 1.0},
+		 "mover": {"pos": "cross", "mode": "split", "cols": [_TEAL, _MAGENTA], "lvl": 1.0},
+		 "strobe": false, "chase": CH_COLOR, "fx": "circle_fast"},
+		{"wash": {"mode": "split", "cols": [_ICE, _ORANGE], "lvl": 1.0},
+		 "mover": {"pos": "updown", "mode": "split", "cols": [_ICE, _ORANGE], "lvl": 1.0},
+		 "strobe": false, "chase": CH_SWEEP, "fx": "tilt"},
 	],
 	"Bridge": [
 		{"wash": {"mode": "unison", "cols": [_PURPLE], "lvl": 0.50},
@@ -93,11 +130,26 @@ const RECIPES := {
 		{"wash": {"mode": "split", "cols": [_DEEP, _PURPLE], "lvl": 0.45},
 		 "mover": {"pos": "down", "mode": "unison", "cols": [_DEEP], "lvl": 0.40},
 		 "strobe": false, "chase": "", "fx": "breath"},
+		{"wash": {"mode": "unison", "cols": [_TEAL], "lvl": 0.42},
+		 "mover": {"pos": "cross", "mode": "split", "cols": [_TEAL, _DEEP], "lvl": 0.38},
+		 "strobe": false, "chase": "", "fx": "circle_slow"},
+		{"wash": {"mode": "split", "cols": [_PINK, _PURPLE], "lvl": 0.42},
+		 "mover": {"pos": "down", "mode": "unison", "cols": [_PURPLE], "lvl": 0.38},
+		 "strobe": false, "chase": "", "fx": "breath"},
 	],
 	"Build": [
 		{"wash": {"mode": "unison", "cols": [_WHITE], "lvl": 0.80},
 		 "mover": {"pos": "cross", "mode": "unison", "cols": [_WHITE], "lvl": 0.85},
 		 "strobe": false, "chase": CH_PULSE, "fx": "none"},
+		{"wash": {"mode": "split", "cols": [_GOLD, _WHITE], "lvl": 0.82},
+		 "mover": {"pos": "cross", "mode": "unison", "cols": [_GOLD], "lvl": 0.85},
+		 "strobe": false, "chase": CH_SWEEP, "fx": "tilt"},
+		{"wash": {"mode": "split", "cols": [_ICE, _WHITE], "lvl": 0.80},
+		 "mover": {"pos": "out", "mode": "split", "cols": [_ICE, _WHITE], "lvl": 0.85},
+		 "strobe": false, "chase": CH_PULSE, "fx": "circle_fast"},
+		{"wash": {"mode": "split", "cols": [_RED, _WHITE], "lvl": 0.80},
+		 "mover": {"pos": "updown", "mode": "split", "cols": [_RED, _WHITE], "lvl": 0.85},
+		 "strobe": false, "chase": CH_COLOR, "fx": "none"},
 	],
 	"Drop": [
 		{"wash": {"mode": "unison", "cols": [_WHITE], "lvl": 1.0},
@@ -106,10 +158,28 @@ const RECIPES := {
 		{"wash": {"mode": "split", "cols": [_RED, _WHITE], "lvl": 1.0},
 		 "mover": {"pos": "cross", "mode": "split", "cols": [_RED, _WHITE], "lvl": 1.0},
 		 "strobe": true, "chase": CH_SWEEP, "fx": "tilt"},
+		{"wash": {"mode": "split", "cols": [_GOLD, _MAGENTA], "lvl": 1.0},
+		 "mover": {"pos": "out", "mode": "split", "cols": [_GOLD, _MAGENTA], "lvl": 1.0},
+		 "strobe": true, "chase": CH_COLOR, "fx": "circle_fast"},
+		{"wash": {"mode": "split", "cols": [_TEAL, _ORANGE], "lvl": 1.0},
+		 "mover": {"pos": "cross", "mode": "split", "cols": [_TEAL, _ORANGE], "lvl": 1.0},
+		 "strobe": true, "chase": CH_SWEEP, "fx": "tilt"},
+		{"wash": {"mode": "rainbow", "cols": [_RED, _GOLD, _GREEN, _COOL, _MAGENTA], "lvl": 1.0},
+		 "mover": {"pos": "audience", "mode": "rainbow", "cols": [_MAGENTA, _LIME, _CYAN, _GOLD], "lvl": 1.0},
+		 "strobe": true, "chase": CH_COLOR, "fx": "circle_fast"},
 	],
 	"Outro": [
 		{"wash": {"mode": "unison", "cols": [_DEEP], "lvl": 0.30},
 		 "mover": {"pos": "down", "mode": "unison", "cols": [_DEEP], "lvl": 0.25},
+		 "strobe": false, "chase": "", "fx": "breath"},
+		{"wash": {"mode": "split", "cols": [_PURPLE, _DEEP], "lvl": 0.28},
+		 "mover": {"pos": "down", "mode": "unison", "cols": [_PURPLE], "lvl": 0.24},
+		 "strobe": false, "chase": "", "fx": "breath"},
+		{"wash": {"mode": "unison", "cols": [_TEAL], "lvl": 0.24},
+		 "mover": {"pos": "down", "mode": "unison", "cols": [_TEAL], "lvl": 0.20},
+		 "strobe": false, "chase": "", "fx": "circle_slow"},
+		{"wash": {"mode": "split", "cols": [_AMBER, _DEEP], "lvl": 0.30},
+		 "mover": {"pos": "down", "mode": "unison", "cols": [_AMBER], "lvl": 0.24},
 		 "strobe": false, "chase": "", "fx": "breath"},
 	],
 }
