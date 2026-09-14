@@ -65,15 +65,21 @@ playing it 4× through a capture bus. The app runs fine without any of them.
 - `song_analyzer.gd` / `song_detect.gd` / `song_analysis.gd` / `fft.gd` —
   analyses a music file (STFT chroma + timbre, a dynamic-programming beat
   tracker, self-similarity segmentation with verse/chorus repetition
-  detection) into a tempo, beat grid, downbeats and labelled sections;
-  the detection maths, result data class, and a small radix-2 FFT. With
+  detection, Krumhansl-Schmuckler musical key detection) into a tempo,
+  beat grid, downbeats, labelled sections and a detected key; the
+  detection maths, result data class, and a small radix-2 FFT. With
   the `addons/song_dsp` GDExtension built, the decode + STFT + onset +
   waveform front-end runs in C++ on a worker thread; otherwise the track
   is played 4× through a muted capture bus first.
 - `show_generator.gd` / `auto_show_panel.gd` — turns an analysis + the
-  patch into a per-kind section-look layer (recipes that cycle so
-  sections don't repeat), three chases, six pan/tilt effects and a
-  timeline, and the Auto Show tab.
+  patch into a per-kind section-look layer, three chases, six pan/tilt
+  effects and a timeline, and the Auto Show tab. Every section label has
+  a pool of several recipes that cycle by occurrence, so repeats of the
+  same label (multiple choruses, multiple build/drop cycles) don't
+  visibly loop the same look. Recipe colours are then hue-rotated by the
+  song's detected musical key (minor keys a touch less saturated/bright)
+  so the palette follows the song — white "impact" flashes (Build/Drop)
+  are left untouched since they're about brightness, not mood.
 - `main.tscn` — a single root `Control` node with the GUI script attached.
 - `dmx_controller.gd` — the shell: a top bar (grand master, run mode,
   Sending, add/remove universe, whole-show + preset save/load, MIDI/OSC
