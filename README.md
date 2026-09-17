@@ -726,7 +726,7 @@ receivers see one stable source. Works with QLC+, most consoles, ETC
 gear, DMXKing/Enttec sACN nodes, etc.
 
 **USB DMX** streams straight to a USB interface through the optional
-`usb_dmx` GDExtension — no gateway, no network. Two backends:
+`addons/native` GDExtension — no gateway, no network. Two backends:
 
 - **FTDI D2XX** — **Enttec DMX USB Pro** / Mk2, **DMXKing ultraDMX** and
   other "pro" boxes (a framed message, the interface's MCU does the DMX
@@ -773,7 +773,7 @@ on a machine without the extension falls back to Art-Net.
   MIDI / OSC bindings fire cue / chase / effect actions with a Learn
   mode and light the controller's pads back — mirroring the action, or a
   standalone beat / sending / run-mode indicator (MIDI feedback native via
-  the optional `midi_out` GDExtension, or a small UDP bridge script
+  the optional `addons/native` GDExtension, or a small UDP bridge script
   without it; OSC feedback direct). Room to grow: cue-to-cue
   auto-follow / wait times, a fade progress bar, per-channel track flags
   in the cue editor.
@@ -782,7 +782,7 @@ on a machine without the extension falls back to Art-Net.
   chases over the standing base look), and **Auto Show** (a music file is
   analysed — STFT chroma + timbre, DP beat tracking, self-similarity
   segmentation with verse/chorus repetition, in C++ off-thread with the
-  `song_dsp` GDExtension or a 4× capture pass without it — into a per-kind
+  `addons/native` GDExtension or a 4× capture pass without it — into a per-kind
   section layer that cycles so sections don't repeat, three chases, six
   movement effects and a pre-drop blackout, all played from a timeline
   locked to playback **as a layer over the operator's own cues**, with a
@@ -792,7 +792,7 @@ on a machine without the extension falls back to Art-Net.
 - **3D visualizer**: already implemented — a Forward+ SubViewport with
   volumetric beams + real gobo projectors + bloom, GDTF geometry / glTF
   fixture models, glTF set-piece props, spot shadows, saved camera views,
-  an in-app **H.264 MP4 recorder** (the `video_rec` GDExtension —
+  an in-app **H.264 MP4 recorder** (the `addons/native` GDExtension —
   minih264 + minimp4; PNG-sequence fallback), multi-head fixtures (one
   light per RGB triplet, with offset and aim from the definition file's
   geometry matrices), **tear-off into its own OS window**, and MVR
