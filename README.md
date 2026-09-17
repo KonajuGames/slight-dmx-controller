@@ -162,8 +162,10 @@ technical reference.
   A small always-resident catalogue over ~640 bundled fixtures (from Open
   Fixture Library, `res://fixtures/`) with search / filter; full
   `FixtureProfile`s load on demand from per-manufacturer shards.
-  `refresh_online()` also pulls the live OFL list from GitHub and
-  downloads/caches individual fixtures (`user://fixture_online/`).
+  `refresh_online()` also pulls the live OFL list from GitHub, and
+  `refresh_gdtf()` the live GDTF-Share catalogue (after `gdtf_login()` —
+  session-only credentials, never persisted); both download/cache
+  individual fixtures under `user://fixture_online/`.
   `tools/build_fixture_library.gd` regenerates the bundle from an OFL checkout.
 - `recent_dirs.gd` — the `RecentDirs` class: every file dialog (Load Song,
   Import fixture, Load glTF model, Import/Export MVR) reopens in the
@@ -523,7 +525,7 @@ Fixture**. Its panel appears below with the right controls automatically:
   release. **Home** resets every control in that fixture to its channel
   defaults; **Remove** deletes it.
 
-**Library...** browses a fixture library with two sources:
+**Library...** browses a fixture library with three sources:
 
 - **Bundled** — ~640 real fixtures converted from the
   [Open Fixture Library](https://open-fixture-library.org) project
@@ -536,6 +538,13 @@ Fixture**. Its panel appears below with the right controls automatically:
   not limited to the bundled snapshot. Downloads are cached under
   `user://fixture_online/` and work offline afterwards; **Clear cache**
   empties it.
+- **GDTF-Share** — the same idea against [GDTF-Share](https://gdtf-share.com),
+  the official GDTF repository. It needs a free GDTF-Share account:
+  switching to this source prompts for a username/password, which are used
+  only to obtain a session cookie and then **never written to disk** —
+  both are held in memory for the running session only, so you log in
+  again next launch. Downloaded fixtures are cached the same way as OFL's
+  (under `user://fixture_online/`, its own **Clear cache**).
 
 **Add to Patch** resolves the profile, drops it into the picker for the
 current session and selects it — it travels inside the show file when you
@@ -753,9 +762,10 @@ on a machine without the extension falls back to Art-Net.
   virtual dimmer); GDTF / Open Fixture Library definitions can be imported
   (with GDTF gobo artwork), and **Library...** browses ~640 fixtures
   bundled from OFL (searchable, lazy-loaded, `tools/build_fixture_library.gd`
-  regenerates them) or the current OFL list fetched live from GitHub and
-  cached to `user://`. Room to grow: the same live-fetch path for
-  GDTF-Share, gobo artwork in the bundle.
+  regenerates them), the current OFL list fetched live from GitHub, or the
+  current GDTF-Share catalogue (needs a free account; session-only login,
+  never written to disk) — all cached to `user://` once downloaded. Room
+  to grow: gobo artwork in the bundle.
 - **Playback**: cues do split-time crossfades and **track** (a cue stores
   only what it changes; blocks stop the ripple); chases cycle captured
   steps at a tempo or on the beat; effects run waveforms (absolute or

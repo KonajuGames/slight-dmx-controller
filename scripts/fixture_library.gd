@@ -16,6 +16,16 @@ extends Node
 ## straight from GitHub (one request); `get_profile()` then downloads and
 ## converts an online-only fixture on demand, caching the result under
 ## `user://fixture_online/` so it works offline afterwards.
+##
+## A second live source, GDTF-Share (gdtf-share.com), works the same way
+## but needs a (free) account — `gdtf_login()` exchanges a username/password
+## for a session cookie. Unlike everything else here, **neither the
+## password nor the cookie is ever written to disk**: both live only in
+## this autoload's memory for the running session (`_gdtf_cookie`,
+## `_gdtf_user`) and are gone the moment the app closes, so logging in is
+## a once-per-launch step. Only the *downloaded fixtures* get the usual
+## on-disk cache under `user://fixture_online/` (prefixed `gdtf-`) — that's
+## public fixture data, not a credential.
 
 const INDEX_PATH := "res://fixtures/index.json"
 const SHARD_DIR := "res://fixtures/lib"
@@ -26,6 +36,16 @@ const OFL_TREE_URL := "https://api.github.com/repos/OpenLightingProject/open-fix
 const OFL_RAW := "https://raw.githubusercontent.com/OpenLightingProject/open-fixture-library/master/fixtures/"
 const ONLINE_CACHE := "user://fixture_online"
 const _UA := "sLight-fixture-library"
+
+## GDTF-Share's public API (login required). See
+## https://github.com/mvrdevelopment/tools/blob/main/GDTF_Share_API —
+## login.php sets a session cookie (~2h) that getList.php/downloadFile.php
+## expect back as a `Cookie:` header (HTTPRequest doesn't manage cookies
+## itself, unlike a browser, so this class extracts and resends it by hand).
+const GDTF_LOGIN_URL := "https://gdtf-share.com/apis/public/login.php"
+const GDTF_LIST_URL := "https://gdtf-share.com/apis/public/getList.php"
+const GDTF_DOWNLOAD_URL := "https://gdtf-share.com/apis/public/downloadFile.php"
+const GDTF_TMP := "user://fixture_online/_gdtf_download.tmp"
 
 var _entries: Array = []            ## catalogue rows, each with a cached "_hay"
 var _by_id: Dictionary = {}         ## id -> entry
@@ -42,6 +62,15 @@ var _online_makers: PackedStringArray = []
 var _online_loaded := false
 var _online_error := ""
 var _last_http := ""
+
+## GDTF-Share — session-only, never persisted (see class doc comment).
+var _gdtf_cookie := ""              ## "" until gdtf_login() succeeds
+var _gdtf_user := ""                ## for display only ("logged in as ...")
+var _gdtf_online: Array = []        ## same row shape as _online; ids "gdtf-..."
+var _gdtf_online_by_id: Dictionary = {}
+var _gdtf_online_makers: PackedStringArray = []
+var _gdtf_loaded := false
+var _gdtf_error := ""
 
 
 func _ready() -> void:
@@ -110,7 +139,11 @@ func search(text := "", maker := "", category := "", max_ch := 0, needs_pt := fa
 
 
 func entry(id: String) -> Dictionary:
-	return _by_id.get(id, _online_by_id.get(id, {}))
+	if _by_id.has(id):
+		return _by_id[id]
+	if _online_by_id.has(id):
+		return _online_by_id[id]
+	return _gdtf_online_by_id.get(id, {})
 
 
 ## The full FixtureProfile for a catalogue id, synchronously: a bundled
@@ -146,6 +179,8 @@ func get_profile(id: String) -> FixtureProfile:
 	var p := resolve(id)
 	if p != null:
 		return p
+	if id.begins_with("gdtf-"):
+		return await _download_gdtf(id)
 	return await _download_online(id)
 
 
@@ -167,14 +202,15 @@ func online_manufacturers() -> PackedStringArray:
 	return _online_makers
 
 
-## Files sitting in the on-disk online cache.
+## Files sitting in the on-disk online cache (OFL fixtures only — GDTF's
+## share the same directory but are counted by cached_gdtf_count()).
 func cached_online_count() -> int:
 	var d := DirAccess.open(ONLINE_CACHE)
 	if d == null:
 		return 0
 	var n := 0
 	for f in d.get_files():
-		if f.ends_with(".json"):
+		if f.ends_with(".json") and not f.begins_with("gdtf-"):
 			n += 1
 	return n
 
@@ -184,7 +220,8 @@ func clear_online_cache() -> void:
 	if d == null:
 		return
 	for f in d.get_files():
-		d.remove(f)
+		if not f.begins_with("gdtf-"):
+			d.remove(f)
 	for id in _online_by_id.keys():
 		_profile_cache.erase(id)
 
@@ -266,6 +303,183 @@ func search_online(text := "", maker := "") -> Array:
 	return out
 
 
+# ==================================================== GDTF-SHARE ==
+
+func gdtf_logged_in() -> bool:
+	return _gdtf_cookie != ""
+
+
+## For display only ("logged in as ..."); "" when not logged in.
+func gdtf_username() -> String:
+	return _gdtf_user
+
+
+func gdtf_error() -> String:
+	return _gdtf_error
+
+
+func gdtf_ready() -> bool:
+	return _gdtf_loaded
+
+
+func gdtf_online_count() -> int:
+	return _gdtf_online.size()
+
+
+func gdtf_online_manufacturers() -> PackedStringArray:
+	return _gdtf_online_makers
+
+
+## Exchanges a GDTF-Share username/password for a session cookie. Neither
+## is written to disk: `password` is used only for this one request and
+## then discarded; `user`/the cookie are kept in memory for the rest of
+## the running session (gone on the next launch — log in again then).
+## Coroutine — `await` it. Returns true on success; otherwise see
+## gdtf_error().
+func gdtf_login(user: String, password: String) -> bool:
+	_gdtf_error = ""
+	var body := JSON.stringify({"user": user, "password": password})
+	var r := await _http_raw(HTTPClient.METHOD_POST, GDTF_LOGIN_URL,
+		["Content-Type: application/json", "User-Agent: " + _UA], body)
+	var cookie := _extract_cookie(r["headers"])
+	var parsed = JSON.parse_string((r["body"] as PackedByteArray).get_string_from_utf8())
+	if not r["ok"] or cookie == "" or not (parsed is Dictionary) or not bool(parsed.get("result", false)):
+		_gdtf_error = String(parsed["error"]) if (parsed is Dictionary and parsed.has("error")) \
+			else "login failed (%s)" % _last_http
+		return false
+	_gdtf_cookie = cookie
+	_gdtf_user = user
+	return true
+
+
+## Drops the session cookie and username, and the fetched catalogue — as if
+## never logged in this session. Downloaded/cached fixtures are untouched.
+func gdtf_logout() -> void:
+	_gdtf_cookie = ""
+	_gdtf_user = ""
+	_gdtf_online.clear()
+	_gdtf_online_by_id.clear()
+	_gdtf_online_makers = PackedStringArray()
+	_gdtf_loaded = false
+
+
+## Pull the current revision list from GDTF-Share (one request). Requires
+## gdtf_login() first. Coroutine — `await` it. Returns true on success;
+## otherwise see gdtf_error().
+func refresh_gdtf() -> bool:
+	_gdtf_error = ""
+	if _gdtf_cookie == "":
+		_gdtf_error = "not logged in"
+		return false
+	var r := await _http_raw(HTTPClient.METHOD_GET, GDTF_LIST_URL,
+		["Cookie: " + _gdtf_cookie, "User-Agent: " + _UA], "")
+	if not r["ok"]:
+		if int(r["code"]) == 401:
+			_gdtf_cookie = ""   # session expired — caller needs to log in again
+		_gdtf_error = "couldn't reach GDTF-Share (%s)" % _last_http
+		return false
+	var parsed = JSON.parse_string((r["body"] as PackedByteArray).get_string_from_utf8())
+	var rows = parsed.get("list", parsed.get("fixtures", null)) if parsed is Dictionary else null
+	if not (rows is Array):
+		_gdtf_error = "unexpected response from GDTF-Share"
+		return false
+
+	_gdtf_online.clear()
+	_gdtf_online_by_id.clear()
+	var makers := {}
+	for row in rows:
+		if not (row is Dictionary):
+			continue
+		# str(), not String(): JSON numbers parse as float (GDTF-Share's
+		# "rid" included, confirmed against a real response), and the
+		# String(x) constructor call has no float overload at all -- it
+		# throws "Invalid call 'String' constructor" at runtime. str()
+		# stringifies any Variant. "rid" additionally needs int() first:
+		# str(150162.0) is the ugly/wrong "150162.0", and downloadFile.php
+		# expects a plain integer in its "rid" query parameter.
+		var maker := str(row.get("manufacturer", "?"))
+		var model := str(row.get("fixture", "?"))
+		var rid_raw = row.get("rid", null)
+		if rid_raw == null:
+			continue
+		var rid := str(int(rid_raw))
+		var id := "gdtf-" + _san(maker + "-" + model + "-" + rid)
+		var modes: Array = []
+		for m in row.get("modes", []):
+			if m is Dictionary:
+				modes.append({"name": str(m.get("name", "")), "ch": _safe_int(m.get("dmxfootprint", 0))})
+		var e := {
+			"id": id, "maker": maker, "model": model,
+			"name": "%s %s" % [maker, model],
+			"cat": "", "ofl_cat": [], "modes": modes, "pt": false, "approx": 0,
+			"authors": [str(row.get("creator", row.get("uploader", "")))],
+			"shard": "", "online": true, "gdtf": true,
+			"bundled": _by_id.has(id), "rid": rid,
+			"revision": str(row.get("revision", "")),
+			"version": str(row.get("version", "")),
+			"_hay": ("%s %s" % [maker, model]).to_lower(),
+		}
+		_gdtf_online.append(e)
+		_gdtf_online_by_id[id] = e
+		makers[maker] = true
+
+	_gdtf_online.sort_custom(func(a, b):
+		if a["maker"] != b["maker"]:
+			return a["maker"].naturalnocasecmp_to(b["maker"]) < 0
+		return a["model"].naturalnocasecmp_to(b["model"]) < 0)
+	_gdtf_online_makers = PackedStringArray(makers.keys())
+	_gdtf_online_makers.sort()
+	_gdtf_loaded = true
+	return true
+
+
+func gdtf_online_entry(id: String) -> Dictionary:
+	return _gdtf_online_by_id.get(id, {})
+
+
+## GDTF-Share rows matching a text query (+ optional manufacturer).
+func search_gdtf(text := "", maker := "") -> Array:
+	var terms := text.strip_edges().to_lower().split(" ", false)
+	var out: Array = []
+	for e in _gdtf_online:
+		if maker != "" and e["maker"] != maker:
+			continue
+		if terms.size() > 0:
+			var hay: String = e["_hay"]
+			var miss := false
+			for t in terms:
+				if not hay.contains(t):
+					miss = true
+					break
+			if miss:
+				continue
+		out.append(e)
+	return out
+
+
+## Files sitting in the on-disk online cache from GDTF-Share downloads.
+func cached_gdtf_count() -> int:
+	var d := DirAccess.open(ONLINE_CACHE)
+	if d == null:
+		return 0
+	var n := 0
+	for f in d.get_files():
+		if f.begins_with("gdtf-") and f.ends_with(".json"):
+			n += 1
+	return n
+
+
+func clear_gdtf_cache() -> void:
+	var d := DirAccess.open(ONLINE_CACHE)
+	if d == null:
+		return
+	for f in d.get_files():
+		if f.begins_with("gdtf-") and f.ends_with(".json"):
+			d.remove(f)
+	for id in _gdtf_online_by_id.keys():
+		_profile_cache.erase(id)
+
+
 # --------------------------------------------------------------- internal --
 
 func _download_online(id: String) -> FixtureProfile:
@@ -290,6 +504,54 @@ func _download_online(id: String) -> FixtureProfile:
 	e["model"] = String(parsed.get("name", e["model"]))
 	e["name"] = prof.profile_name
 	DirAccess.make_dir_recursive_absolute(ONLINE_CACHE)
+	var cf := FileAccess.open("%s/%s.json" % [ONLINE_CACHE, id], FileAccess.WRITE)
+	if cf:
+		cf.store_string(JSON.stringify(prof.to_dict()))
+		cf.close()
+	_profile_cache[id] = prof
+	return prof
+
+
+## Downloads a GDTF-Share revision (a ".gdtf" zip, streamed whole) and
+## converts it with the same code the manual **Import…** path uses for a
+## local .gdtf file. The zip only ever touches disk as a scratch temp file
+## (ZIPReader needs a real path) — deleted right after parsing; only the
+## converted profile is cached, same as _download_online().
+func _download_gdtf(id: String) -> FixtureProfile:
+	var e = _gdtf_online_by_id.get(id, null)
+	if e == null:
+		_gdtf_error = "unknown fixture id"
+		return null
+	if _gdtf_cookie == "":
+		_gdtf_error = "not logged in"
+		return null
+	var url := "%s?rid=%s" % [GDTF_DOWNLOAD_URL, String(e["rid"]).uri_encode()]
+	var r := await _http_raw(HTTPClient.METHOD_GET, url,
+		["Cookie: " + _gdtf_cookie, "User-Agent: " + _UA], "")
+	if not r["ok"]:
+		if int(r["code"]) == 401:
+			_gdtf_cookie = ""
+		_gdtf_error = "download failed (%s)" % _last_http
+		return null
+
+	DirAccess.make_dir_recursive_absolute(ONLINE_CACHE)
+	var tmp_path := ProjectSettings.globalize_path(GDTF_TMP)
+	var tf := FileAccess.open(GDTF_TMP, FileAccess.WRITE)
+	if tf == null:
+		_gdtf_error = "couldn't write a temp file for the download"
+		return null
+	tf.store_buffer(r["body"])
+	tf.close()
+
+	var res: Dictionary = FixtureImport.from_path(tmp_path)
+	DirAccess.remove_absolute(tmp_path)
+	if res.has("error"):
+		_gdtf_error = res["error"]
+		return null
+	var prof: FixtureProfile = res["profile"]
+	prof.id = id
+	prof.profile_name = "%s %s" % [e["maker"], e["model"]]
+	e["name"] = prof.profile_name
 	var cf := FileAccess.open("%s/%s.json" % [ONLINE_CACHE, id], FileAccess.WRITE)
 	if cf:
 		cf.store_string(JSON.stringify(prof.to_dict()))
@@ -331,6 +593,53 @@ func _http_json(url: String, headers: Array):
 		_last_http = "HTTP %d" % code
 		return null
 	return JSON.parse_string((r[3] as PackedByteArray).get_string_from_utf8())
+
+
+## One-shot HTTP request returning the raw response — used for GDTF-Share,
+## which needs the response headers (to pick up the session cookie) and
+## sometimes a binary body (the downloaded .gdtf), neither of which
+## _http_json() exposes. `body` is the request body (a JSON string for the
+## login POST, "" for a GET). Sets `_last_http`.
+func _http_raw(method: int, url: String, headers: PackedStringArray, body: String) -> Dictionary:
+	var req := HTTPRequest.new()
+	req.timeout = 20.0
+	add_child(req)
+	var err := req.request(url, headers, method, body)
+	if err != OK:
+		req.queue_free()
+		_last_http = "request error %d" % err
+		return {"ok": false, "code": 0, "headers": PackedStringArray(), "body": PackedByteArray()}
+	var r = await req.request_completed
+	req.queue_free()
+	if int(r[0]) != HTTPRequest.RESULT_SUCCESS:
+		_last_http = "connection failed (%d)" % int(r[0])
+		return {"ok": false, "code": 0, "headers": PackedStringArray(), "body": PackedByteArray()}
+	var code := int(r[1])
+	_last_http = "HTTP %d" % code
+	return {"ok": code >= 200 and code < 300, "code": code, "headers": r[2], "body": r[3]}
+
+
+## Joins every "Set-Cookie:" response header into one "name=value; ..."
+## string suitable for a subsequent request's "Cookie:" header. HTTPRequest
+## doesn't track cookies itself (unlike a browser), so GDTF-Share's session
+## auth has to be carried by hand between requests.
+func _extract_cookie(headers: PackedStringArray) -> String:
+	var parts: PackedStringArray = []
+	for h in headers:
+		if h.to_lower().begins_with("set-cookie:"):
+			var v := h.substr(h.find(":") + 1).strip_edges()
+			var semi := v.find(";")
+			parts.append(v.substr(0, semi) if semi >= 0 else v)
+	return "; ".join(parts)
+
+
+## int(), but null-safe: Dictionary.get()'s default only applies when the
+## key is *absent* — a key present with a JSON `null` (GDTF-Share has a few,
+## e.g. "description") still reaches here as the literal null, and
+## int(null) throws "Invalid call. Nonexistent 'int' constructor" just like
+## String(float) does for a value type it has no constructor overload for.
+func _safe_int(v, default := 0) -> int:
+	return default if v == null else int(v)
 
 
 ## id-safe key, identical to tools/build_fixture_library.gd so an online id

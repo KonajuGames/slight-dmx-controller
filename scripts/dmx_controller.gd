@@ -1040,6 +1040,7 @@ func _open_library_dialog() -> void:
 	var source_opt := OptionButton.new()
 	source_opt.add_item("Bundled library")
 	source_opt.add_item("OFL online")
+	source_opt.add_item("GDTF-Share")
 	filters.add_child(source_opt)
 
 	var search := LineEdit.new()
@@ -1122,12 +1123,27 @@ func _open_library_dialog() -> void:
 	root.add_child(src)
 
 	# --- state + behaviour ---------------------------------------
-	var state := {"sel_id": "", "profile": null, "gen": 0, "online": false}
+	# gdtf_login_prompt lives inside `state` (not a plain local) because
+	# set_source below needs to call it before it's assigned further down —
+	# a plain local Callable var is captured *by value* (empty) at the
+	# point set_source's closure is created, same as GDScript's int-closure
+	# gotcha; a Dictionary's contents are mutable-by-reference instead, so
+	# reassigning state["gdtf_login_prompt"] later is visible to set_source.
+	var state := {
+		"sel_id": "", "profile": null, "gen": 0, "online": false, "gdtf": false,
+		"gdtf_login_prompt": Callable(),
+	}
 
-	var fill_makers := func(online: bool) -> void:
+	var fill_makers := func(online: bool, gdtf: bool) -> void:
 		maker_opt.clear()
 		maker_opt.add_item("All manufacturers")
-		var list: PackedStringArray = Library.online_manufacturers() if online else Library.manufacturers()
+		var list: PackedStringArray
+		if gdtf:
+			list = Library.gdtf_online_manufacturers()
+		elif online:
+			list = Library.online_manufacturers()
+		else:
+			list = Library.manufacturers()
 		for m in list:
 			maker_opt.add_item(m)
 
@@ -1161,7 +1177,9 @@ func _open_library_dialog() -> void:
 	var refresh := func() -> void:
 		var mk := "" if maker_opt.selected <= 0 else maker_opt.get_item_text(maker_opt.selected)
 		var rows: Array
-		if state["online"]:
+		if state["gdtf"]:
+			rows = Library.search_gdtf(search.text, mk)
+		elif state["online"]:
 			rows = Library.search_online(search.text, mk)
 		else:
 			var ct := "" if cat_opt.selected <= 0 else String(cat_keys[cat_opt.selected - 1])
@@ -1171,7 +1189,11 @@ func _open_library_dialog() -> void:
 		for i in range(rows.size()):
 			var e: Dictionary = rows[i]
 			var text: String
-			if state["online"]:
+			if state["gdtf"]:
+				text = "%s   ·   v%s" % [String(e["name"]), String(e.get("version", "?"))]
+				if e.get("bundled", false):
+					text += "   ·   bundled"
+			elif state["online"]:
 				text = String(e["name"])
 				if e.get("bundled", false):
 					text += "   ·   bundled"
@@ -1189,7 +1211,10 @@ func _open_library_dialog() -> void:
 			results.set_item_metadata(i, e["id"])
 			if e["id"] == state["sel_id"]:
 				reselect = i
-		if state["online"]:
+		if state["gdtf"]:
+			count_lbl.text = "%d of %d GDTF-Share fixtures · %d cached · logged in as %s" % [
+				rows.size(), Library.gdtf_online_count(), Library.cached_gdtf_count(), Library.gdtf_username()]
+		elif state["online"]:
 			count_lbl.text = "%d of %d OFL fixtures · %d cached" % [
 				rows.size(), Library.online_count(), Library.cached_online_count()]
 		else:
@@ -1200,16 +1225,39 @@ func _open_library_dialog() -> void:
 			select.call("")
 
 	var set_source := func(idx: int) -> void:
-		var online: bool = idx == 1
+		var online: bool = idx != 0
+		var gdtf: bool = idx == 2
 		state["online"] = online
+		state["gdtf"] = gdtf
 		state["sel_id"] = ""
 		search.text = ""
 		cat_opt.disabled = online
 		pt_check.disabled = online
 		maxch_spin.editable = not online
 		clearcache_btn.visible = online
-		fill_makers.call(online)
-		if online and not Library.online_ready():
+		fill_makers.call(online, gdtf)
+		if gdtf and not Library.gdtf_logged_in():
+			results.clear()
+			results.add_item("Log in to GDTF-Share to browse…")
+			results.set_item_disabled(0, true)
+			count_lbl.text = ""
+			(state["gdtf_login_prompt"] as Callable).call()
+			return
+		if gdtf and not Library.gdtf_ready():
+			results.clear()
+			results.add_item("Fetching the GDTF-Share catalogue…")
+			results.set_item_disabled(0, true)
+			count_lbl.text = "contacting GDTF-Share…"
+			source_opt.disabled = true
+			var got_gdtf: bool = await Library.refresh_gdtf()
+			source_opt.disabled = false
+			if not got_gdtf:
+				results.clear()
+				results.add_item("Couldn't reach GDTF-Share: %s" % Library.gdtf_error())
+				results.set_item_disabled(0, true)
+				count_lbl.text = ""
+				return
+		elif online and not gdtf and not Library.online_ready():
 			results.clear()
 			results.add_item("Fetching the OFL catalogue from GitHub…")
 			results.set_item_disabled(0, true)
@@ -1225,6 +1273,83 @@ func _open_library_dialog() -> void:
 				return
 		refresh.call()
 
+	## A small popup asking for GDTF-Share credentials. Used only for the
+	## login.php request (see fixture_library.gd's gdtf_login()) — never
+	## written to disk, gone on Cancel/close, gone for good when the app
+	## quits (the session cookie it produces isn't persisted either).
+	state["gdtf_login_prompt"] = func() -> void:
+		var lwin := Window.new()
+		lwin.title = "Log in to GDTF-Share"
+		# Auto-size to content instead of a guessed fixed height (which cut
+		# the buttons off — theme/DPI-dependent control heights made a
+		# hand-picked size unreliable). The hint label below gets an
+		# explicit width cap so it wraps to a known number of lines instead
+		# of reporting its whole one-line sentence as the "minimum" width.
+		lwin.wrap_controls = true
+		win.add_child(lwin)
+
+		var lmargin := MarginContainer.new()
+		lmargin.set_anchors_preset(Control.PRESET_FULL_RECT)
+		for side in ["left", "right", "top", "bottom"]:
+			lmargin.add_theme_constant_override("margin_" + side, 12)
+		lwin.add_child(lmargin)
+
+		var lvbox := VBoxContainer.new()
+		lvbox.add_theme_constant_override("separation", 8)
+		lmargin.add_child(lvbox)
+
+		var hint := _label("Your gdtf-share.com account. Used only for this session — never saved to disk; log in again next launch.")
+		hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		hint.custom_minimum_size = Vector2(320, 0)
+		hint.modulate = Color(1, 1, 1, 0.7)
+		lvbox.add_child(hint)
+
+		var user_edit := LineEdit.new()
+		user_edit.placeholder_text = "Username"
+		user_edit.custom_minimum_size = Vector2(320, 0)
+		lvbox.add_child(user_edit)
+		var pass_edit := LineEdit.new()
+		pass_edit.placeholder_text = "Password"
+		pass_edit.secret = true
+		lvbox.add_child(pass_edit)
+		var err_lbl := _label("")
+		err_lbl.modulate = Color(1, 0.55, 0.55)
+		err_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		lvbox.add_child(err_lbl)
+
+		var lbtns := HBoxContainer.new()
+		lvbox.add_child(lbtns)
+		var login_btn := Button.new()
+		login_btn.text = "Log In"
+		lbtns.add_child(login_btn)
+		var cancel_btn := Button.new()
+		cancel_btn.text = "Cancel"
+		lbtns.add_child(cancel_btn)
+
+		var back_to_bundled := func() -> void:
+			lwin.queue_free()
+			source_opt.select(0)
+			set_source.call(0)
+
+		var do_login := func() -> void:
+			login_btn.disabled = true
+			err_lbl.text = "Logging in…"
+			var ok: bool = await Library.gdtf_login(user_edit.text, pass_edit.text)
+			pass_edit.text = ""
+			if not ok:
+				err_lbl.text = Library.gdtf_error()
+				login_btn.disabled = false
+				return
+			lwin.queue_free()
+			set_source.call(2)
+
+		login_btn.pressed.connect(do_login)
+		pass_edit.text_submitted.connect(func(_t): do_login.call())
+		cancel_btn.pressed.connect(back_to_bundled)
+		lwin.close_requested.connect(back_to_bundled)
+		lwin.popup_centered()
+		user_edit.grab_focus()
+
 	source_opt.item_selected.connect(set_source)
 	search.text_changed.connect(func(_t): refresh.call())
 	maker_opt.item_selected.connect(func(_i): refresh.call())
@@ -1234,7 +1359,10 @@ func _open_library_dialog() -> void:
 	results.item_selected.connect(func(i: int): select.call(String(results.get_item_metadata(i))))
 	results.item_activated.connect(func(_i: int): add_btn.pressed.emit())
 	clearcache_btn.pressed.connect(func():
-		Library.clear_online_cache()
+		if state["gdtf"]:
+			Library.clear_gdtf_cache()
+		else:
+			Library.clear_online_cache()
 		refresh.call())
 
 	add_btn.pressed.connect(func():
@@ -1245,7 +1373,7 @@ func _open_library_dialog() -> void:
 	close_btn.pressed.connect(func(): win.queue_free())
 	win.close_requested.connect(func(): win.queue_free())
 
-	fill_makers.call(false)
+	fill_makers.call(false, false)
 	refresh.call()
 	search.grab_focus()
 	win.popup_centered()
