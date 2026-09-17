@@ -8,6 +8,10 @@ extends Node
 ##
 ## Idle (active == false) it does nothing and every value decays to 0, so
 ## it is always safe to read.
+##
+## Also exposes the raw mic/line-in PCM (capture_frames_available() /
+## pull_capture()) for video_rec.gd's audio track — a no-op returning
+## empty/0 while inactive, same as everything else here.
 
 signal beat                       ## emitted on the frame a beat is detected
 signal devices_changed
@@ -37,6 +41,7 @@ var beat_pulse := 0.0             ## 1.0 on a beat, decays back to 0
 
 var _player: AudioStreamPlayer
 var _analyzer: AudioEffectSpectrumAnalyzerInstance
+var _capture: AudioEffectCapture   ## for video_rec.gd's audio track (mic/line-in)
 var _bass_hist := PackedFloat32Array()
 var _hist_len := 50
 var _hist_i := 0
@@ -52,6 +57,17 @@ func _ready() -> void:
 
 func input_devices() -> PackedStringArray:
 	return AudioServer.get_input_device_list()
+
+
+## Raw mic/line-in PCM buffered since the last pull_capture() (0 while
+## inactive — the bus/capture effect don't exist until _start() runs).
+func capture_frames_available() -> int:
+	return _capture.get_frames_available() if _capture != null else 0
+
+
+## Pulls (and consumes) up to `frames` stereo samples, [-1, 1].
+func pull_capture(frames: int) -> PackedVector2Array:
+	return _capture.get_buffer(frames) if _capture != null else PackedVector2Array()
 
 
 func _set_active(v: bool) -> void:
@@ -77,8 +93,18 @@ func _start() -> void:
 		an.buffer_length = 0.15
 		an.fft_size = AudioEffectSpectrumAnalyzer.FFT_SIZE_2048
 		AudioServer.add_bus_effect(_bus_idx, an)
+		var cap := AudioEffectCapture.new()
+		cap.buffer_length = 0.5
+		AudioServer.add_bus_effect(_bus_idx, cap)
 
 	_analyzer = AudioServer.get_bus_effect_instance(_bus_idx, 0)
+	# AudioEffectCapture is unlike most effects: get_buffer()/
+	# get_frames_available() live on the effect resource itself, not a
+	# separate "...Instance" runtime object -- get_bus_effect(), not
+	# get_bus_effect_instance() (which only returns the generic base
+	# AudioEffectInstance for this one; a static-type mismatch that fails
+	# to even compile if you try to assign it to an AudioEffectCapture var).
+	_capture = AudioServer.get_bus_effect(_bus_idx, 1)
 
 	if _player == null:
 		_player = AudioStreamPlayer.new()

@@ -2,10 +2,17 @@
 
 #include "minih264e.h" // declarations only — the implementation is in codec_impl.c
 #include "minimp4.h"
+// shine's header has no extern "C" guard of its own (unlike the two
+// above), so its C-linkage declarations need one here or the C++ compiler
+// mangles the calls while the .c files it's declaring export plain C symbols.
+extern "C" {
+#include "layer3.h" // shine MP3 encoder's public API
+}
 
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/string.hpp>
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -77,6 +84,13 @@ struct VideoRecorder::Enc {
 	// referenced for inter prediction, so the two buffers alternate.
 	std::vector<uint8_t> yuv[2];
 	int cur = 0;
+
+	// audio (optional -- only set once start_audio() succeeds)
+	shine_t mp3 = nullptr;
+	int audio_track = -1;
+	int a_rate = 0, a_channels = 0;
+	int a_samples_per_pass = 0;        // shine_samples_per_pass(mp3), per channel
+	std::vector<int16_t> a_pcm;        // interleaved int16, accumulated until a_samples_per_pass is ready
 };
 
 // --------------------------------------------------------------- bind --
@@ -84,6 +98,8 @@ struct VideoRecorder::Enc {
 void VideoRecorder::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("start", "path", "width", "height", "fps", "kbps"), &VideoRecorder::start);
 	ClassDB::bind_method(D_METHOD("push_frame", "rgba8"), &VideoRecorder::push_frame);
+	ClassDB::bind_method(D_METHOD("start_audio", "sample_rate", "channels"), &VideoRecorder::start_audio);
+	ClassDB::bind_method(D_METHOD("push_audio", "interleaved"), &VideoRecorder::push_audio);
 	ClassDB::bind_method(D_METHOD("stop"), &VideoRecorder::stop);
 	ClassDB::bind_method(D_METHOD("is_recording"), &VideoRecorder::is_recording);
 	ClassDB::bind_method(D_METHOD("get_frame_count"), &VideoRecorder::get_frame_count);
@@ -190,6 +206,7 @@ bool VideoRecorder::start(const String &path, int width, int height, int fps, in
 	{
 		std::lock_guard<std::mutex> lk(_q_mtx);
 		_queue.clear();
+		_a_queue.clear();
 	}
 	_thread = std::thread(&VideoRecorder::_worker, this);
 	_set_status("recording");
@@ -220,6 +237,85 @@ void VideoRecorder::push_frame(const PackedByteArray &rgba8) {
 	_q_cv.notify_one();
 }
 
+// --------------------------------------------------------------- audio --
+
+bool VideoRecorder::start_audio(int sample_rate, int channels) {
+	if (!_running.load() || _enc == nullptr || _enc->mux == nullptr) {
+		return false;
+	}
+	Enc *e = _enc;
+	if (e->mp3 != nullptr) {
+		return true; // already started
+	}
+	channels = (channels == 1) ? 1 : 2;
+
+	shine_config_t cfg;
+	memset(&cfg, 0, sizeof(cfg));
+	shine_set_config_mpeg_defaults(&cfg.mpeg);
+	cfg.wave.samplerate = sample_rate;
+	cfg.wave.channels = static_cast<enum channels>(channels);
+	cfg.mpeg.mode = (channels == 1) ? MONO : JOINT_STEREO;
+	cfg.mpeg.bitr = 192; // good-quality default for a screen-recording soundtrack
+	if (shine_find_samplerate_index(sample_rate) < 0 || shine_check_config(sample_rate, cfg.mpeg.bitr) < 0) {
+		return false; // e.g. an unusual mix rate shine's Layer III tables don't cover
+	}
+
+	shine_t mp3 = shine_initialise(&cfg);
+	if (mp3 == nullptr) {
+		return false;
+	}
+
+	MP4E_track_t tr;
+	memset(&tr, 0, sizeof(tr));
+	tr.track_media_kind = e_audio;
+	// 0x6B == MPEG-1 Part 3 (Layer I/II/III) audio -- the standard MP4RA
+	// object type for an MP3 track; unlike AAC it carries no ASC/DSI, each
+	// frame is self-describing.
+	tr.object_type_indication = 0x6B;
+	tr.time_scale = sample_rate;
+	tr.default_duration = 0;
+	tr.u.a.channelcount = channels;
+	int track_id = MP4E_add_track(e->mux, &tr);
+	if (track_id < 0) {
+		shine_close(mp3);
+		return false;
+	}
+	// Empty on purpose: MP3 has no AAC-style AudioSpecificConfig to carry
+	// (each frame's own header is self-describing) -- this call exists only
+	// to make minimp4 actually write the esds box's DecoderConfigDescriptor
+	// (which is where the real object_type_indication byte lands; see the
+	// "LOCAL PATCH" in minimp4.h), since it otherwise skips that whole
+	// write path for a track with no DSI at all.
+	uint8_t empty_dsi = 0;
+	MP4E_set_dsi(e->mux, track_id, &empty_dsi, 0);
+
+	e->mp3 = mp3;
+	e->audio_track = track_id;
+	e->a_rate = sample_rate;
+	e->a_channels = channels;
+	e->a_samples_per_pass = shine_samples_per_pass(mp3);
+	e->a_pcm.clear();
+	return true;
+}
+
+void VideoRecorder::push_audio(const PackedFloat32Array &interleaved) {
+	if (!_running.load() || _finishing.load() || _enc == nullptr || _enc->mp3 == nullptr) {
+		return;
+	}
+	if (interleaved.size() == 0) {
+		return;
+	}
+	std::vector<float> v(interleaved.ptr(), interleaved.ptr() + interleaved.size());
+	{
+		std::lock_guard<std::mutex> lk(_q_mtx);
+		if (static_cast<int>(_a_queue.size()) >= MAX_A_QUEUE) {
+			return; // drop silently -- a gap in the soundtrack beats blocking the caller
+		}
+		_a_queue.emplace_back(std::move(v));
+	}
+	_q_cv.notify_one();
+}
+
 void VideoRecorder::stop() {
 	if (_thread.joinable()) {
 		_finishing = true;
@@ -238,23 +334,36 @@ void VideoRecorder::stop() {
 void VideoRecorder::_worker() {
 	for (;;) {
 		std::vector<uint8_t> frame;
+		std::vector<float> audio;
+		bool have_frame = false, have_audio = false;
 		{
 			std::unique_lock<std::mutex> lk(_q_mtx);
-			_q_cv.wait(lk, [&] { return !_queue.empty() || _finishing.load(); });
-			if (_queue.empty()) {
-				if (_finishing.load()) {
-					break;
-				}
-				continue;
+			_q_cv.wait(lk, [&] { return !_queue.empty() || !_a_queue.empty() || _finishing.load(); });
+			if (!_queue.empty()) {
+				frame = std::move(_queue.front());
+				_queue.pop_front();
+				have_frame = true;
+			} else if (!_a_queue.empty()) {
+				audio = std::move(_a_queue.front());
+				_a_queue.pop_front();
+				have_audio = true;
+			} else if (_finishing.load()) {
+				break;
 			}
-			frame = std::move(_queue.front());
-			_queue.pop_front();
 		}
-		if (_encode_one(frame.data())) {
-			_encoded++;
-		} else {
-			_set_status("encode error — recording stopped");
-			_finishing = true; // bail; stop() will finish the file
+		// Both writes land on the same muxer, but only ever from this one
+		// worker thread -- MP4E_mux_t isn't safe to touch concurrently.
+		if (have_frame) {
+			if (_encode_one(frame.data())) {
+				_encoded++;
+			} else {
+				_set_status("encode error — recording stopped");
+				_finishing = true; // bail; stop() will finish the file
+			}
+		}
+		if (have_audio && !_encode_audio(audio)) {
+			_set_status("audio encode error — recording stopped");
+			_finishing = true;
 		}
 	}
 	_finalize();
@@ -295,10 +404,54 @@ bool VideoRecorder::_encode_one(const uint8_t *rgba) {
 	return true;
 }
 
+// Worker-thread only (see _worker()). Buffers `interleaved` (float, one
+// call's worth of new samples) onto whatever's left over from the previous
+// call, then shine-encodes and muxes every complete pass it can make.
+bool VideoRecorder::_encode_audio(const std::vector<float> &interleaved) {
+	Enc *e = _enc;
+	if (e == nullptr || e->mp3 == nullptr) {
+		return true; // audio track not started -- silently ignore, video keeps going
+	}
+	size_t base = e->a_pcm.size();
+	e->a_pcm.resize(base + interleaved.size());
+	for (size_t i = 0; i < interleaved.size(); i++) {
+		float f = interleaved[i] * 32767.0f;
+		f = f < -32768.0f ? -32768.0f : (f > 32767.0f ? 32767.0f : f);
+		e->a_pcm[base + i] = static_cast<int16_t>(lroundf(f));
+	}
+
+	int need = e->a_samples_per_pass * e->a_channels; // interleaved samples per encoder pass
+	size_t consumed = 0;
+	while (static_cast<int>(e->a_pcm.size() - consumed) >= need) {
+		int written = 0;
+		unsigned char *mp3 = shine_encode_buffer_interleaved(e->mp3, e->a_pcm.data() + consumed, &written);
+		consumed += need;
+		if (mp3 != nullptr && written > 0) {
+			if (MP4E_put_sample(e->mux, e->audio_track, mp3, written, e->a_samples_per_pass,
+						MP4E_SAMPLE_RANDOM_ACCESS) != MP4E_STATUS_OK) {
+				return false;
+			}
+		}
+	}
+	if (consumed > 0) {
+		e->a_pcm.erase(e->a_pcm.begin(), e->a_pcm.begin() + consumed);
+	}
+	return true;
+}
+
 void VideoRecorder::_finalize() {
 	Enc *e = _enc;
 	if (!e) {
 		return;
+	}
+	if (e->mp3) {
+		int written = 0;
+		unsigned char *tail = shine_flush(e->mp3, &written);
+		if (tail != nullptr && written > 0 && e->mux != nullptr) {
+			MP4E_put_sample(e->mux, e->audio_track, tail, written, e->a_samples_per_pass, MP4E_SAMPLE_RANDOM_ACCESS);
+		}
+		shine_close(e->mp3);
+		e->mp3 = nullptr;
 	}
 	if (e->mux) {
 		mp4_h26x_write_close(&e->mp4wr);

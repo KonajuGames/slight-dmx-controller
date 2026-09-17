@@ -922,6 +922,7 @@ func _process(delta: float) -> void:
 	if is_visible_in_tree():
 		ArtNet.tick(false)
 	if _rec != null:
+		_rec.pull_audio()   # every frame, not FPS-throttled -- keeps the capture buffers drained
 		_rec_accum += delta
 		var step := 1.0 / VideoRec.FPS
 		var grabbed := 0

@@ -144,13 +144,18 @@ technical reference.
   recorder, MVR import/export, and a "Dock to Main" button (the shell
   reparents the panel into its own window when its tab is dragged off).
 - `video_rec.gd` — the `VideoRec` class: records the visualizer to an
-  `.mp4` (H.264) through the optional `addons/native` GDExtension, or
-  a PNG sequence + `ffmpeg` line when it isn't built.
+  `.mp4` (H.264 + an MP3 audio track) through the optional `addons/native`
+  GDExtension, or a silent PNG sequence + `ffmpeg` line when it isn't
+  built. The audio track mixes whatever's actually audible: an
+  `AudioEffectCapture` on the Master bus (AutoShow's music) plus `Sound`'s
+  own mic/line-in tap (deliberately muted out of Master so it doesn't
+  feed back through speakers, hence its own capture).
 - `addons/native/` — one optional GDExtension (C++) bundling USB DMX
-  output (FTDI D2XX + libusb), the MP4 encoder (minih264 + minimp4), the
-  song decode + analysis front-end (minimp3 + stb_vorbis), and native MIDI
-  output (RtMidi) — one shared library so an exported build only ships a
-  single GDExtension. Has one `build.py` and `BUILD.md`; ships disabled so
+  output (FTDI D2XX + libusb), the MP4 encoder (minih264 + minimp4 +
+  shine for the audio track), the song decode + analysis front-end
+  (minimp3 + stb_vorbis), and native MIDI output (RtMidi) — one shared
+  library so an exported build only ships a single GDExtension. Has one
+  `build.py` and `BUILD.md`; ships disabled so
   an unbuilt checkout is quiet.
 - `fixture_profile.gd` — the `FixtureProfile` class: one or more DMX
   *modes*, each an ordered channel list. Every channel has a role
@@ -654,10 +659,13 @@ the on-screen controls for an unobstructed view.
   Position matrix (rotation included, GDTF Z-up → Godot Y-up); otherwise
   a schematic body picked from the `physical` category.
 - **Render**: **Screenshot** saves a PNG. **Record** writes an `.mp4`
-  (H.264) straight from the viewport via the optional `native`
-  GDExtension (minih264 + minimp4 — no FFmpeg); without it built, Record
-  falls back to a PNG sequence + an `assemble.txt` ffmpeg line. Both land
-  in `user://render/` and open the folder when done. See
+  (H.264 + an MP3 audio track) straight from the viewport via the
+  optional `native` GDExtension (minih264 + minimp4 + shine — no
+  FFmpeg); without it built, Record falls back to a silent PNG sequence
+  + an `assemble.txt` ffmpeg line. The audio track is whatever's actually
+  audible — AutoShow's music plus the mic/line-in — mixed live while
+  recording; there's no audio in the PNG fallback. Both land in
+  `user://render/` and open the folder when done. See
   `addons/native/BUILD.md`.
 - **Pop out**: drag the **3D Visualizer** tab off the tab bar and it
   tears into its own OS window — put it on a second monitor for
@@ -792,14 +800,13 @@ on a machine without the extension falls back to Art-Net.
 - **3D visualizer**: already implemented — a Forward+ SubViewport with
   volumetric beams + real gobo projectors + bloom, GDTF geometry / glTF
   fixture models, glTF set-piece props, spot shadows, saved camera views,
-  an in-app **H.264 MP4 recorder** (the `addons/native` GDExtension —
-  minih264 + minimp4; PNG-sequence fallback), multi-head fixtures (one
-  light per RGB triplet, with offset and aim from the definition file's
-  geometry matrices), **tear-off into its own OS window**, and MVR
-  import/export, all driven by the live output. Room to grow: prism /
-  animation wheels, an audio track in the recording, a deterministic
-  offline render of an Auto Show, an MVR round-trip that survives every
-  consumer.
+  an in-app **H.264 + MP3 MP4 recorder** (the `addons/native` GDExtension —
+  minih264 + minimp4 + shine; silent PNG-sequence fallback), multi-head
+  fixtures (one light per RGB triplet, with offset and aim from the
+  definition file's geometry matrices), **tear-off into its own OS
+  window**, and MVR import/export, all driven by the live output. Room to
+  grow: prism / animation wheels, a deterministic offline render of an
+  Auto Show, an MVR round-trip that survives every consumer.
 
 ## License
 

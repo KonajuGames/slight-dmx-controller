@@ -19,12 +19,19 @@ feature:
     greyed out until both this extension is built *and* one of the above
     is installed on the machine that *runs* the app.
 
-- **In-app H.264/MP4 recording** (`VideoRecorder`) — the visualizer's
-  **Record** button encodes an RGBA8 frame stream straight to `.mp4`, no
-  FFmpeg. Encoder: **minih264** (software H.264 baseline) + **minimp4**
-  (muxer), single-header, public domain (CC0), vendored under
-  `third_party/video_rec/`. Without this component built, Record falls
-  back to a PNG sequence + an `assemble.txt` ffmpeg one-liner.
+- **In-app H.264/MP4 recording, with audio** (`VideoRecorder`) — the
+  visualizer's **Record** button encodes an RGBA8 frame stream straight to
+  `.mp4`, no FFmpeg. Video: **minih264** (software H.264 baseline) +
+  **minimp4** (muxer), single-header, public domain (CC0), vendored under
+  `third_party/video_rec/`. Audio (optional — `start_audio()` /
+  `push_audio()`, used automatically once this component is built):
+  **shine**, a small fixed-point MP3 encoder, **LGPL-2.0-only** — the one
+  vendored library here that isn't public domain/permissive, see
+  `third_party/shine/README.md` for why that's fine for how this project
+  ships. `video_rec.gd` mixes an `AudioEffectCapture` on the Master bus
+  (AutoShow's music) with `Sound`'s own mic/line-in tap into the track.
+  Without this component built, Record falls back to a silent PNG
+  sequence + an `assemble.txt` ffmpeg one-liner.
 
 - **Fast song analysis** (`SongFeatures`) — decodes a music file (MP3 /
   OGG / WAV) straight to PCM and runs the STFT chroma/timbre frames, onset
@@ -120,11 +127,13 @@ if out.driver_available():
     out.set_frame(my_512_byte_PackedByteArray)   # call every tick
     out.close()
 
-# Video recording
+# Video recording (+ optional MP3 audio track)
 var rec := VideoRecorder.new()
 rec.start("C:/clips/show.mp4", 1920, 1080, 30, 12000)   # w, h, fps, kbps
-rec.push_frame(img.get_data())   # each frame, from an RGBA8 image
-rec.stop()                       # finalises the moov atom; check rec.get_status()
+rec.start_audio(AudioServer.get_mix_rate(), 2)   # optional; call once, before push_audio()
+rec.push_frame(img.get_data())     # each video frame, from an RGBA8 image
+rec.push_audio(interleaved_pcm)    # any chunk size, interleaved float32 in [-1, 1]
+rec.stop()                         # finalises the moov atom; check rec.get_status()
 
 # Song analysis
 var sf := SongFeatures.new()

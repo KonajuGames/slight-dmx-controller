@@ -18,6 +18,7 @@ env.Append(CPPPATH=[
     "src/midi_out/",
     "third_party/video_rec/",
     "third_party/song_dsp/",
+    "third_party/shine/",
 ])
 
 # minimp4's SPS/PPS-id transcoder redefines minih264's bitstream helpers
@@ -34,6 +35,7 @@ sources = (
     + Glob("src/video_rec/*.cpp") + Glob("src/video_rec/*.c")
     + Glob("src/song_dsp/*.cpp") + Glob("src/song_dsp/*.c")
     + Glob("src/midi_out/*.cpp")
+    + Glob("third_party/shine/*.c")   # MP3 encoder, for video_rec's audio track
 )
 
 # RtMidi (src/midi_out/) picks its backend from these defines -- one native

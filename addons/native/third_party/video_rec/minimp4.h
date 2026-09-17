@@ -1484,7 +1484,13 @@ static int mp4e_flush_index(MP4E_mux_t *mux)
                                     WRITE_OD_LEN(dcd_bytes);
                                     if (tr->info.track_media_kind == e_audio)
                                     {
-                                        WRITE_1(MP4_OBJECT_TYPE_AUDIO_ISO_IEC_14496_3); // OD_DCD
+                                        // LOCAL PATCH (not upstream): this used to hardcode
+                                        // MP4_OBJECT_TYPE_AUDIO_ISO_IEC_14496_3 (AAC) here
+                                        // regardless of the track's actual codec, so an MP3
+                                        // track (object_type_indication 0x6B, no AAC-style DSI)
+                                        // got tagged as AAC in its own esds box -- decoders then
+                                        // (correctly) refused to decode MP3 bytes as AAC.
+                                        WRITE_1(tr->info.object_type_indication); // OD_DCD
                                         WRITE_1(5 << 2); // stream_type == AudioStream
                                     } else
                                     {
