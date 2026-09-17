@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Build the usb_dmx GDExtension.
+"""Build the "native" GDExtension: USB DMX output, MP4 video recording,
+fast song analysis, and native MIDI output, bundled into one shared library
+so the exported package only ships a single GDExtension.
 
 Clones godot-cpp next to this file (once), then runs SCons for the current
 platform. Needs: git, a C++ toolchain (MSVC "Desktop development with C++"
@@ -60,9 +62,9 @@ def main():
     for f in sorted((HERE / "bin").glob("*")):
         print("  ", f.name)
 
-    # activate the extension (Godot ignores usb_dmx.gdextension.disabled)
-    tmpl = HERE / "usb_dmx.gdextension.disabled"
-    active = HERE / "usb_dmx.gdextension"
+    # activate the extension (Godot ignores native.gdextension.disabled)
+    tmpl = HERE / "native.gdextension.disabled"
+    active = HERE / "native.gdextension"
     if tmpl.exists() and not active.exists():
         active.write_text(tmpl.read_text())
         print(f"\nActivated {active.name} — reopen the Godot project.")

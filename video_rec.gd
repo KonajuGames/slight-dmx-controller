@@ -1,8 +1,8 @@
 class_name VideoRec
 extends RefCounted
-## Records a frame stream to an `.mp4` (H.264) via the optional `video_rec`
+## Records a frame stream to an `.mp4` (H.264) via the optional `native`
 ## GDExtension (minih264 + minimp4). Build it with
-## `addons/video_rec/build.py`. Without it, this falls back to a numbered
+## `addons/native/build.py`. Without it, this falls back to a numbered
 ## PNG sequence + an `assemble.txt` holding the ffmpeg line — the old
 ## behaviour.
 

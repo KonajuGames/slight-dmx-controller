@@ -1,8 +1,8 @@
 extends Node
 ## Autoload singleton: "MidiOut"
 ##
-## Optional native MIDI output through the `midi_out` GDExtension (RtMidi —
-## WinMM / CoreMIDI / ALSA). Build it with `addons/midi_out/build.py`.
+## Optional native MIDI output through the `native` GDExtension (RtMidi —
+## WinMM / CoreMIDI / ALSA). Build it with `addons/native/build.py`.
 ## Unlike UsbDmx, there's no separate runtime driver to install: the native
 ## OS MIDI API ships with the OS, so once the extension is built this just
 ## works. Until then, `available` is false and every call here is a
@@ -27,7 +27,7 @@ func _ready() -> void:
 	elif _out != null:
 		print("MidiOut: extension loaded, but no MIDI backend available on this system")
 	else:
-		print("MidiOut: extension not built — see addons/midi_out/BUILD.md")
+		print("MidiOut: extension not built — see addons/native/BUILD.md")
 
 
 ## Every visible MIDI output port name.

@@ -4,14 +4,14 @@
 
 A ready-to-run Godot 4 project with a GUI for controlling DMX lighting
 fixtures. Each universe outputs over **Art-Net** or **sACN (E1.31)** —
-both plain UDP, no plugin needed — or, with the optional `addons/usb_dmx`
+both plain UDP, no plugin needed — or, with the optional `addons/native`
 GDExtension built, straight to a **USB DMX interface** (Enttec, Open DMX,
-uDMX). Three more optional GDExtensions speed things up or fill in gaps
-locally: `addons/video_rec` records the 3D view to MP4, `addons/song_dsp`
-decodes and analyses a music file for the Auto Show in C++ instead of
-playing it 4× through a capture bus, and `addons/midi_out` sends MIDI
-feedback straight to a real port instead of through a Python bridge
-script. The app runs fine without any of them.
+uDMX). That same extension bundles three more optional features that
+speed things up or fill in gaps locally: recording the 3D view to MP4,
+decoding and analysing a music file for the Auto Show in C++ instead of
+playing it 4× through a capture bus, and sending MIDI feedback straight to
+a real port instead of through a Python bridge script. It's one shared
+library, built with one command; the app runs fine without it.
 
 New to sLight? See the [**User Guide**](docs/USER_GUIDE.md) for a
 step-by-step walkthrough with screenshots. This README is the complete
@@ -29,7 +29,7 @@ technical reference.
   the 3D view reads); `transmit()` puts that on the wire as an `ArtDMX`
   packet.
 - `usb_dmx_bridge.gd` — the `UsbDmx` autoload: optional USB-DMX universe
-  output via the `addons/usb_dmx` GDExtension (FTDI D2XX + libusb
+  output via the `addons/native` GDExtension (FTDI D2XX + libusb
   backends — Open DMX, Enttec Pro, uDMX). A no-op when it isn't built.
 - `sacn.gd` — the `Sacn` class: builds E1.31 (streaming ACN) Data packets
   and the universe multicast address. Used by `ArtNetUniverse` when a
@@ -63,12 +63,12 @@ technical reference.
   action + feedback), the config dialog with a Learn mode, and the
   outbound MIDI/OSC sender.
 - `midi_out_bridge.gd` — the `MidiOut` autoload: native MIDI output
-  through the optional `addons/midi_out` GDExtension (RtMidi), for MIDI
+  through the optional `addons/native` GDExtension (RtMidi), for MIDI
   feedback. Godot's built-in MIDI support is input-only; this fills in
   the output half without a separate process. Falls back to
   `tools/midi_bridge.py` (below) when the extension isn't built.
 - `tools/midi_bridge.py` — forwards sLight's UDP MIDI-feedback packets to
-  a real MIDI port. Only needed when `addons/midi_out` isn't built —
+  a real MIDI port. Only needed when `addons/native` isn't built —
   Godot has no built-in MIDI output of its own.
 - `auto_show.gd` — the `AutoShow` autoload: the Auto Show run mode — plays
   a music file and drives a crossfading section layer (plus the generated
@@ -80,7 +80,7 @@ technical reference.
   detection, Krumhansl-Schmuckler musical key detection) into a tempo,
   beat grid, downbeats, labelled sections and a detected key; the
   detection maths, result data class, and a small radix-2 FFT. With
-  the `addons/song_dsp` GDExtension built, the decode + STFT + onset +
+  the `addons/native` GDExtension built, the decode + STFT + onset +
   waveform front-end runs in C++ on a worker thread; otherwise the track
   is played 4× through a muted capture bus first.
 - `show_generator.gd` / `auto_show_panel.gd` — turns an analysis + the
@@ -144,14 +144,14 @@ technical reference.
   recorder, MVR import/export, and a "Dock to Main" button (the shell
   reparents the panel into its own window when its tab is dragged off).
 - `video_rec.gd` — the `VideoRec` class: records the visualizer to an
-  `.mp4` (H.264) through the optional `addons/video_rec` GDExtension, or
+  `.mp4` (H.264) through the optional `addons/native` GDExtension, or
   a PNG sequence + `ffmpeg` line when it isn't built.
-- `addons/usb_dmx/`, `addons/video_rec/`, `addons/song_dsp/` and
-  `addons/midi_out/` — the optional GDExtensions (C++): USB DMX output
-  (FTDI D2XX + libusb), the MP4 encoder (minih264 + minimp4), the song
-  decode + analysis front-end (minimp3 + stb_vorbis), and native MIDI
-  output (RtMidi). Each has a `build.py` and a `BUILD.md`; all ship
-  disabled so an unbuilt checkout is quiet.
+- `addons/native/` — one optional GDExtension (C++) bundling USB DMX
+  output (FTDI D2XX + libusb), the MP4 encoder (minih264 + minimp4), the
+  song decode + analysis front-end (minimp3 + stb_vorbis), and native MIDI
+  output (RtMidi) — one shared library so an exported build only ships a
+  single GDExtension. Has one `build.py` and `BUILD.md`; ships disabled so
+  an unbuilt checkout is quiet.
 - `fixture_profile.gd` — the `FixtureProfile` class: one or more DMX
   *modes*, each an ordered channel list. Every channel has a role
   (`DIMMER`, `RED`, `PAN`, ...) plus a default/home value, min/max
@@ -183,7 +183,7 @@ Each tab's **Output** selector routes that universe to **Art-Net** (the
 IP / port / universe number), **sACN** (E1.31 — multicast by default,
 with a priority and an optional unicast IP), or a **USB DMX** interface
 (pick a device + interface type, **Rescan**, **Apply Connection**). USB
-needs the `usb_dmx` GDExtension built (`addons/usb_dmx/BUILD.md`); until
+needs the `native` GDExtension built (`addons/native/BUILD.md`); until
 then it's greyed out. See
 [Output: Art-Net, sACN, or USB DMX](#output-art-net-sacn-or-usb-dmx).
 
@@ -294,8 +294,8 @@ Pads clear when their state ends and all are cleared on exit. OSC
 feedback goes straight to the device (`OSC →` host / port). Godot has no
 built-in MIDI *output*, so MIDI feedback needs one of two paths:
 
-- With the optional `addons/midi_out` GDExtension built (see
-  `addons/midi_out/BUILD.md` — no separate runtime driver to install,
+- With the optional `addons/native` GDExtension built (see
+  `addons/native/BUILD.md` — no separate runtime driver to install,
   unlike USB DMX), the Feedback row shows a **MIDI output** port picker —
   pick a real MIDI port straight from the list and **Rescan** after
   plugging something in. No extra process to run.
@@ -319,7 +319,7 @@ Build a light show from a song's structure, then refine it.
   a self-similarity / novelty analysis — then labels the sections by
   **repetition and energy**: the recurring loud part is the **Chorus**,
   the recurring quieter part the **Verse**, with Intro / Bridge / Build /
-  Drop / Outro around them. With the `addons/song_dsp` GDExtension built,
+  Drop / Outro around them. With the `addons/native` GDExtension built,
   the file is decoded and the front-end runs in C++ on a worker thread — a
   few seconds, UI stays live. Without it, the track is first played 4×
   through a muted bus to capture the audio (the **speed** control trades
@@ -645,11 +645,11 @@ the on-screen controls for an unobstructed view.
   Position matrix (rotation included, GDTF Z-up → Godot Y-up); otherwise
   a schematic body picked from the `physical` category.
 - **Render**: **Screenshot** saves a PNG. **Record** writes an `.mp4`
-  (H.264) straight from the viewport via the optional `video_rec`
+  (H.264) straight from the viewport via the optional `native`
   GDExtension (minih264 + minimp4 — no FFmpeg); without it built, Record
   falls back to a PNG sequence + an `assemble.txt` ffmpeg line. Both land
   in `user://render/` and open the folder when done. See
-  `addons/video_rec/BUILD.md`.
+  `addons/native/BUILD.md`.
 - **Pop out**: drag the **3D Visualizer** tab off the tab bar and it
   tears into its own OS window — put it on a second monitor for
   front-of-house while the console stays on the main screen. To dock it
@@ -731,17 +731,17 @@ gear, DMXKing/Enttec sACN nodes, etc.
 
 Devices from whichever backends are installed show in one list; pick
 **Auto** to let it guess the interface type, or force one. Build it once
-with `python addons/usb_dmx/build.py` (needs SCons + a C++ toolchain;
+with `python addons/native/build.py` (needs SCons + a C++ toolchain;
 clones `godot-cpp`). The backend library (`ftd2xx` and/or `libusb-1.0`)
 must be present on the machine that *runs* the app — both are loaded
-dynamically. Details in `addons/usb_dmx/BUILD.md`. The `UsbDmx` autoload
+dynamically. Details in `addons/native/BUILD.md`. The `UsbDmx` autoload
 no-ops cleanly when the extension isn't built. The chosen output (device
 serial + interface type) is saved in the show file; loading a USB show
 on a machine without the extension falls back to Art-Net.
 
 ## Extending it
 
-- **More USB backends**: `addons/usb_dmx` has FTDI D2XX and libusb (uDMX +
+- **More USB backends**: `addons/native` has FTDI D2XX and libusb (uDMX +
   raw FTDI). A `libftdi`-style path for multi-port FT2232/FT4232 or an
   FT232H clock scheme would slot in behind the same `UsbDmxOutput`.
 - **sACN input / discovery**: output is done (`sacn.gd`); receiving E1.31

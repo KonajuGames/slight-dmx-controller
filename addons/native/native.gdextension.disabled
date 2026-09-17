@@ -1,0 +1,14 @@
+[configuration]
+
+entry_symbol = "native_library_init"
+compatibility_minimum = "4.3"
+reloadable = true
+
+[libraries]
+
+windows.debug.x86_64 = "res://addons/native/bin/libnative.windows.template_debug.x86_64.dll"
+windows.release.x86_64 = "res://addons/native/bin/libnative.windows.template_release.x86_64.dll"
+linux.debug.x86_64 = "res://addons/native/bin/libnative.linux.template_debug.x86_64.so"
+linux.release.x86_64 = "res://addons/native/bin/libnative.linux.template_release.x86_64.so"
+macos.debug = "res://addons/native/bin/libnative.macos.template_debug.dylib"
+macos.release = "res://addons/native/bin/libnative.macos.template_release.dylib"

@@ -1,0 +1,54 @@
+#!/usr/bin/env python
+# Build the "native" GDExtension: every optional native feature (USB DMX
+# output, MP4 video recording, fast song analysis, native MIDI output)
+# bundled into a single shared library, so the exported package ships one
+# GDExtension instead of four.
+#   python -m SCons platform=windows target=template_debug
+#   python -m SCons platform=windows target=template_release
+# godot_cpp=<path> points at a godot-cpp checkout (build.py fills this in).
+
+godot_cpp = ARGUMENTS.get("godot_cpp", "godot-cpp")
+env = SConscript(godot_cpp + "/SConstruct")
+
+env.Append(CPPPATH=[
+    "src/",
+    "src/usb_dmx/",
+    "src/video_rec/",
+    "src/song_dsp/",
+    "src/midi_out/",
+    "third_party/video_rec/",
+    "third_party/song_dsp/",
+])
+
+# minimp4's SPS/PPS-id transcoder redefines minih264's bitstream helpers
+# (bs_t, h264e_bs_*) unless told not to. We feed a single encoder that
+# already emits correct ids, so turn it off — everywhere, since it changes
+# struct layout (video_rec only; doesn't affect the other components).
+env.Append(CPPDEFINES=["MINIMP4_TRANSCODE_SPS_ID=0"])
+
+# minih264 / minimp4 / minimp3 / stb_vorbis are C; everything else (and the
+# Godot glue) is C++.
+sources = (
+    Glob("src/*.cpp")
+    + Glob("src/usb_dmx/*.cpp")
+    + Glob("src/video_rec/*.cpp") + Glob("src/video_rec/*.c")
+    + Glob("src/song_dsp/*.cpp") + Glob("src/song_dsp/*.c")
+    + Glob("src/midi_out/*.cpp")
+)
+
+# RtMidi (src/midi_out/) picks its backend from these defines -- one native
+# OS MIDI API per platform, always present on a stock install.
+if env["platform"] == "windows":
+    env.Append(CPPDEFINES=["__WINDOWS_MM__"])
+    env.Append(LIBS=["winmm"])          # also: timeBeginPeriod / timeEndPeriod (usb_dmx)
+elif env["platform"] == "macos":
+    env.Append(CPPDEFINES=["__MACOSX_CORE__"])
+    env.Append(FRAMEWORKS=["CoreMIDI", "CoreFoundation", "CoreAudio"])
+elif env["platform"] in ("linux", "android"):
+    env.Append(CPPDEFINES=["__LINUX_ALSA__"])
+    env.Append(LIBS=["asound", "pthread", "dl"])  # dl: usb_dmx's dlopen/dlsym
+
+libname = "libnative{}{}".format(env["suffix"], env["SHLIBSUFFIX"])
+library = env.SharedLibrary("bin/{}".format(libname), source=sources)
+
+Default(library)

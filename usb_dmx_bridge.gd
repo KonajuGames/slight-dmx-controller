@@ -1,9 +1,9 @@
 extends Node
 ## Autoload singleton: "UsbDmx"
 ##
-## Optional USB-DMX universe output through the `usb_dmx` GDExtension
+## Optional USB-DMX universe output through the `native` GDExtension
 ## (FTDI D2XX backend — Enttec DMX USB Pro, Open DMX USB, DMXKing, …).
-## Build it with `addons/usb_dmx/build.py`. Until then, and on any machine
+## Build it with `addons/native/build.py`. Until then, and on any machine
 ## without the FTDI runtime, `available` is false and every call here is a
 ## harmless no-op, so the rest of the app doesn't care.
 
@@ -29,9 +29,9 @@ func _ready() -> void:
 	if available:
 		print("UsbDmx: ready")
 	elif _probe != null:
-		print("UsbDmx: extension loaded, but no FTDI D2XX / libusb runtime — see addons/usb_dmx/BUILD.md")
+		print("UsbDmx: extension loaded, but no FTDI D2XX / libusb runtime — see addons/native/BUILD.md")
 	else:
-		print("UsbDmx: extension not built — see addons/usb_dmx/BUILD.md")
+		print("UsbDmx: extension not built — see addons/native/BUILD.md")
 
 
 ## [{ serial, description, guessed_mode }] for every connected interface.

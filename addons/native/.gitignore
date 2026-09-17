@@ -10,5 +10,6 @@ bin/
 compile_commands.json
 
 # activated by build.py once the library is built
-video_rec.gdextension
-video_rec.gdextension.uid
+native.gdextension
+native.gdextension.uid
+*.obj.import

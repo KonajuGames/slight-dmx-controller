@@ -861,7 +861,7 @@ func _toggle_record() -> void:
 		return
 	_rec_accum = 0.0
 	_rec_btn.text = "Stop"
-	_rec_label.text = "REC → %s%s" % [out.get_file(), "" if _rec.is_mp4() else "  (PNG — build video_rec)"]
+	_rec_label.text = "REC → %s%s" % [out.get_file(), "" if _rec.is_mp4() else "  (PNG — build addons/native)"]
 
 
 func _capture_frame() -> void:

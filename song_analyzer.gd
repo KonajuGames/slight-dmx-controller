@@ -16,10 +16,10 @@ extends Node
 ## Fast playback pitches the audio up by whole octaves (2× / 4×), which
 ## leaves the chroma unchanged; times are scaled back to song time.
 ##
-## With the optional `song_dsp` GDExtension built, the file is decoded and
+## With the optional `native` GDExtension built, the file is decoded and
 ## the STFT / onset / waveform front-end is run in C++ off the main thread
 ## instead — no muted-playback capture, analysis in a few seconds. Build
-## it with `addons/song_dsp/build.py`.
+## it with `addons/native/build.py`.
 
 signal progress(fraction: float)
 signal finished(analysis: SongAnalysis)

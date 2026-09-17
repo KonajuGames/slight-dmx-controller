@@ -260,7 +260,7 @@ func _build_connection_row() -> Control:
 	output_option.add_item("USB DMX")   # OUT_USB
 	output_option.set_item_disabled(2, not UsbDmx.available)
 	if not UsbDmx.available:
-		output_option.set_item_tooltip(2, "Build addons/usb_dmx — see BUILD.md")
+		output_option.set_item_tooltip(2, "Build addons/native — see BUILD.md")
 	output_option.item_selected.connect(func(_i): _sync_output_ui())
 	row.add_child(output_option)
 

@@ -40,7 +40,7 @@ func skip(label: String) -> void:
 func _initialize() -> void:
 	print("== structure detection regression ==")
 	if not SongAnalyzer.fast_available():
-		printerr("song_dsp extension not built — see addons/song_dsp/BUILD.md")
+		printerr("native extension not built — see addons/native/BUILD.md")
 		quit(1)
 		return
 
