@@ -7,9 +7,12 @@ extends Node
 ## panels. The Triggers dialog edits `triggers` and drives Learn.
 ##
 ## Also sends **feedback**: when a binding's target is active (its cue is
-## live, its chase / effect is running) its pad is lit. Godot has no MIDI
-## output, so MIDI feedback goes as UDP to `tools/midi_bridge.py`; OSC
-## feedback goes straight to the device.
+## live, its chase / effect is running) its pad is lit. Godot has no
+## built-in MIDI output, so MIDI feedback prefers the native `midi_out`
+## GDExtension (see `midi_out_bridge.gd`'s `MidiOut` autoload) when it's
+## built and a port is selected; otherwise it falls back to UDP, sent to
+## `tools/midi_bridge.py`. OSC feedback goes straight to the device either
+## way.
 
 signal fired(action: int, target: String)     ## a binding matched
 signal activity(text: String)                 ## last message seen (dialog display)
@@ -25,7 +28,8 @@ var osc_port := 9000
 # feedback
 var feedback_enabled := false
 var midi_out_host := "127.0.0.1"
-var midi_out_port := 9010                      ## the midi_bridge.py UDP port
+var midi_out_port := 9010                      ## the midi_bridge.py UDP port (fallback)
+var midi_out_port_name := ""                   ## native MidiOut port name (preferred)
 var osc_out_host := "127.0.0.1"
 var osc_out_port := 9001
 ## Set by the shell: func(action: int, target: String) -> bool.
@@ -146,6 +150,21 @@ func set_feedback(enabled: bool, midi_port: int, osc_host: String, osc_port_: in
 		refresh_feedback()
 
 
+## Open a native MIDI output port for feedback (the `midi_out` extension's
+## MidiOut autoload) — the first port whose name contains `name_substr`
+## (case-insensitive; "" picks the first available port). No-op, `MidiOut`
+## stays closed, if the extension isn't built: feedback then falls back to
+## the UDP bridge. Call again with "" to release the port.
+func set_midi_output_port(name_substr: String) -> void:
+	midi_out_port_name = name_substr
+	if not MidiOut.available:
+		return
+	if name_substr.strip_edges() == "":
+		MidiOut.close()
+	else:
+		MidiOut.open_port(name_substr)
+
+
 ## Force every feedback binding to re-send its current state (call after a
 ## show load, or when a controller is plugged in).
 func refresh_feedback() -> void:
@@ -214,7 +233,13 @@ func _exit_tree() -> void:
 func _send_feedback(t: Trigger, value: int) -> void:
 	if t.source == Trigger.SRC_MIDI:
 		var ch: int = maxi(t.midi_channel, 0)
-		if t.midi_kind == Trigger.MIDI_CC:
+		if MidiOut.is_open():
+			# native path (midi_out extension) -- no UDP hop, no bridge script
+			if t.midi_kind == Trigger.MIDI_CC:
+				MidiOut.cc(ch, t.midi_number, value)
+			else:
+				MidiOut.note(ch, t.midi_number, value)
+		elif t.midi_kind == Trigger.MIDI_CC:
 			FeedbackOut.cc(midi_out_host, midi_out_port, ch, t.midi_number, value)
 		else:
 			FeedbackOut.note(midi_out_host, midi_out_port, ch, t.midi_number, value)
@@ -258,6 +283,7 @@ func to_dict() -> Dictionary:
 		"osc_port": osc_port,
 		"feedback_enabled": feedback_enabled,
 		"midi_out_port": midi_out_port,
+		"midi_out_port_name": midi_out_port_name,
 		"osc_out_host": osc_out_host,
 		"osc_out_port": osc_out_port,
 	}
@@ -275,3 +301,4 @@ func from_dict(d: Dictionary) -> void:
 		int(d.get("midi_out_port", 9010)),
 		String(d.get("osc_out_host", "127.0.0.1")),
 		int(d.get("osc_out_port", 9001)))
+	set_midi_output_port(String(d.get("midi_out_port_name", "")))

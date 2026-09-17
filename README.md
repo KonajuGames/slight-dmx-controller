@@ -6,10 +6,12 @@ A ready-to-run Godot 4 project with a GUI for controlling DMX lighting
 fixtures. Each universe outputs over **Art-Net** or **sACN (E1.31)** —
 both plain UDP, no plugin needed — or, with the optional `addons/usb_dmx`
 GDExtension built, straight to a **USB DMX interface** (Enttec, Open DMX,
-uDMX). Two more optional GDExtensions speed things up locally:
-`addons/video_rec` records the 3D view to MP4, and `addons/song_dsp`
+uDMX). Three more optional GDExtensions speed things up or fill in gaps
+locally: `addons/video_rec` records the 3D view to MP4, `addons/song_dsp`
 decodes and analyses a music file for the Auto Show in C++ instead of
-playing it 4× through a capture bus. The app runs fine without any of them.
+playing it 4× through a capture bus, and `addons/midi_out` sends MIDI
+feedback straight to a real port instead of through a Python bridge
+script. The app runs fine without any of them.
 
 New to sLight? See the [**User Guide**](docs/USER_GUIDE.md) for a
 step-by-step walkthrough with screenshots. This README is the complete
@@ -60,8 +62,14 @@ technical reference.
   minimal OSC 1.0 reader/writer, the `Trigger` binding class (match +
   action + feedback), the config dialog with a Learn mode, and the
   outbound MIDI/OSC sender.
+- `midi_out_bridge.gd` — the `MidiOut` autoload: native MIDI output
+  through the optional `addons/midi_out` GDExtension (RtMidi), for MIDI
+  feedback. Godot's built-in MIDI support is input-only; this fills in
+  the output half without a separate process. Falls back to
+  `tools/midi_bridge.py` (below) when the extension isn't built.
 - `tools/midi_bridge.py` — forwards sLight's UDP MIDI-feedback packets to
-  a real MIDI port (Godot has no MIDI output).
+  a real MIDI port. Only needed when `addons/midi_out` isn't built —
+  Godot has no built-in MIDI output of its own.
 - `auto_show.gd` — the `AutoShow` autoload: the Auto Show run mode — plays
   a music file and drives a crossfading section layer (plus the generated
   chases / effects) from a timeline locked to playback position;
@@ -138,10 +146,11 @@ technical reference.
 - `video_rec.gd` — the `VideoRec` class: records the visualizer to an
   `.mp4` (H.264) through the optional `addons/video_rec` GDExtension, or
   a PNG sequence + `ffmpeg` line when it isn't built.
-- `addons/usb_dmx/`, `addons/video_rec/` and `addons/song_dsp/` — the
-  optional GDExtensions (C++): USB DMX output (FTDI D2XX + libusb), the MP4
-  encoder (minih264 + minimp4), and the song decode + analysis front-end
-  (minimp3 + stb_vorbis). Each has a `build.py` and a `BUILD.md`; all ship
+- `addons/usb_dmx/`, `addons/video_rec/`, `addons/song_dsp/` and
+  `addons/midi_out/` — the optional GDExtensions (C++): USB DMX output
+  (FTDI D2XX + libusb), the MP4 encoder (minih264 + minimp4), the song
+  decode + analysis front-end (minimp3 + stb_vorbis), and native MIDI
+  output (RtMidi). Each has a `build.py` and a `BUILD.md`; all ship
   disabled so an unbuilt checkout is quiet.
 - `fixture_profile.gd` — the `FixtureProfile` class: one or more DMX
   *modes*, each an ordered channel list. Every channel has a role
@@ -283,10 +292,17 @@ binding tick **light this pad** and pick what it **follows** with an
 
 Pads clear when their state ends and all are cleared on exit. OSC
 feedback goes straight to the device (`OSC →` host / port). Godot has no
-MIDI *output*, so MIDI feedback is sent as UDP to a small bridge — run
-`python tools/midi_bridge.py --port "<your controller>"` (needs
-`pip install mido python-rtmidi`) and point **MIDI → bridge :** at the
-same port (default 9010).
+built-in MIDI *output*, so MIDI feedback needs one of two paths:
+
+- With the optional `addons/midi_out` GDExtension built (see
+  `addons/midi_out/BUILD.md` — no separate runtime driver to install,
+  unlike USB DMX), the Feedback row shows a **MIDI output** port picker —
+  pick a real MIDI port straight from the list and **Rescan** after
+  plugging something in. No extra process to run.
+- Without it, MIDI feedback falls back to UDP, sent to a small bridge
+  script — run `python tools/midi_bridge.py --port "<your controller>"`
+  (needs `pip install mido python-rtmidi`) and point **MIDI → bridge :**
+  at the same port (default 9010).
 
 Bindings and all of the MIDI / OSC / feedback settings are saved in the
 show file.
@@ -746,8 +762,9 @@ on a machine without the extension falls back to Art-Net.
   base-value pickup) on a role across a universe or a fixture group;
   MIDI / OSC bindings fire cue / chase / effect actions with a Learn
   mode and light the controller's pads back — mirroring the action, or a
-  standalone beat / sending / run-mode indicator (MIDI feedback via a
-  small UDP bridge, OSC feedback direct). Room to grow: cue-to-cue
+  standalone beat / sending / run-mode indicator (MIDI feedback native via
+  the optional `midi_out` GDExtension, or a small UDP bridge script
+  without it; OSC feedback direct). Room to grow: cue-to-cue
   auto-follow / wait times, a fade progress bar, per-channel track flags
   in the cue editor.
 - **Run modes**: **Cue Mode** (cue list drives playback), **Sound

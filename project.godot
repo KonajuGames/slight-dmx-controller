@@ -31,6 +31,7 @@ driver/enable_input=true
 
 ArtNet="*res://artnet_sender.gd"
 UsbDmx="*res://usb_dmx_bridge.gd"
+MidiOut="*res://midi_out_bridge.gd"
 Sound="*res://sound_engine.gd"
 Fx="*res://effects_engine.gd"
 AutoShow="*res://auto_show.gd"

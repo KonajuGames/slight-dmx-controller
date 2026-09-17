@@ -223,6 +223,12 @@ based on what it controls, or as a standalone beat/sending/run-mode
 indicator. This is entirely optional — most of the app works fine with
 just a mouse and keyboard.
 
+MIDI feedback needs somewhere to send it: the screenshot above shows the
+default **MIDI → bridge :** field, which needs a small helper script
+running (`python tools/midi_bridge.py`, see the README). If the optional
+`midi_out` component is built, this row becomes a **MIDI output** port
+picker instead — pick a real MIDI port directly, no extra script needed.
+
 ## Saving your work
 
 **Save Show** (top bar) writes everything — every universe's connection

@@ -1,0 +1,30 @@
+#!/usr/bin/env python
+# Build the midi_out GDExtension (RtMidi).
+#   python -m SCons platform=windows target=template_debug
+#   python -m SCons platform=windows target=template_release
+# godot_cpp=<path> points at a godot-cpp checkout (build.py fills this in;
+# it reuses a sibling addon's godot-cpp when present).
+
+godot_cpp = ARGUMENTS.get("godot_cpp", "godot-cpp")
+env = SConscript(godot_cpp + "/SConstruct")
+
+env.Append(CPPPATH=["src/"])
+sources = Glob("src/*.cpp")
+
+# RtMidi picks its backend(s) from these defines -- one native OS MIDI
+# API per platform, all present on a stock install (no vendor runtime
+# driver to install, unlike usb_dmx's FTDI D2XX / libusb).
+if env["platform"] == "windows":
+    env.Append(CPPDEFINES=["__WINDOWS_MM__"])
+    env.Append(LIBS=["winmm"])
+elif env["platform"] == "macos":
+    env.Append(CPPDEFINES=["__MACOSX_CORE__"])
+    env.Append(FRAMEWORKS=["CoreMIDI", "CoreFoundation", "CoreAudio"])
+elif env["platform"] in ("linux", "android"):
+    env.Append(CPPDEFINES=["__LINUX_ALSA__"])
+    env.Append(LIBS=["asound", "pthread"])
+
+libname = "libmidi_out{}{}".format(env["suffix"], env["SHLIBSUFFIX"])
+library = env.SharedLibrary("bin/{}".format(libname), source=sources)
+
+Default(library)

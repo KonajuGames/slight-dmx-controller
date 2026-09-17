@@ -39,7 +39,8 @@ var _osc_on: CheckBox
 var _osc_port: SpinBox
 var _osc_status: Label
 var _fb_enable: CheckBox
-var _fb_midi_port: SpinBox
+var _fb_midi_port: SpinBox            # UDP bridge fallback (midi_out extension not built)
+var _fb_midi_port_option: OptionButton  # native MidiOut port picker (extension built)
 var _fb_osc_host: LineEdit
 var _fb_osc_port: SpinBox
 var _activity: Label
@@ -142,13 +143,26 @@ func _build_io_section() -> Control:
 	_fb_enable.toggled.connect(func(_on: bool): _apply_feedback())
 	grid.add_child(_fb_enable)
 	var mrow := HBoxContainer.new()
-	mrow.add_child(_lbl("MIDI → bridge :"))
-	_fb_midi_port = SpinBox.new()
-	_fb_midi_port.min_value = 1
-	_fb_midi_port.max_value = 65535
-	_fb_midi_port.value = Triggers.midi_out_port
-	_fb_midi_port.custom_minimum_size = Vector2(90, 0)
-	mrow.add_child(_fb_midi_port)
+	if MidiOut.available:
+		# native output (midi_out extension built) -- pick a real MIDI
+		# port directly, no tools/midi_bridge.py needed.
+		mrow.add_child(_lbl("MIDI output:"))
+		_fb_midi_port_option = OptionButton.new()
+		_fb_midi_port_option.custom_minimum_size = Vector2(170, 0)
+		_fb_midi_port_option.item_selected.connect(_on_midi_port_selected)
+		mrow.add_child(_fb_midi_port_option)
+		var rescan_midi_out := Button.new()
+		rescan_midi_out.text = "Rescan"
+		rescan_midi_out.pressed.connect(_refresh_midi_out_ports)
+		mrow.add_child(rescan_midi_out)
+	else:
+		mrow.add_child(_lbl("MIDI → bridge :"))
+		_fb_midi_port = SpinBox.new()
+		_fb_midi_port.min_value = 1
+		_fb_midi_port.max_value = 65535
+		_fb_midi_port.value = Triggers.midi_out_port
+		_fb_midi_port.custom_minimum_size = Vector2(90, 0)
+		mrow.add_child(_fb_midi_port)
 	grid.add_child(mrow)
 	var apply2 := Button.new()
 	apply2.text = "Apply"
@@ -173,13 +187,36 @@ func _build_io_section() -> Control:
 	grid.add_child(Control.new())
 
 	_refresh_midi_devices()
+	_refresh_midi_out_ports()
 	return grid
 
 
 func _apply_feedback() -> void:
-	Triggers.set_feedback(_fb_enable.button_pressed, int(_fb_midi_port.value),
+	var udp_port: int = int(_fb_midi_port.value) if _fb_midi_port != null else Triggers.midi_out_port
+	Triggers.set_feedback(_fb_enable.button_pressed, udp_port,
 		_fb_osc_host.text, int(_fb_osc_port.value))
 	_fb_enable.set_pressed_no_signal(Triggers.feedback_enabled)
+
+
+## Repopulate the native MIDI output port picker (no-op when the midi_out
+## extension isn't built — the UDP bridge port field is shown instead).
+func _refresh_midi_out_ports() -> void:
+	if _fb_midi_port_option == null:
+		return
+	var ports := MidiOut.list_ports()
+	var cur := Triggers.midi_out_port_name.to_lower()
+	_fb_midi_port_option.clear()
+	_fb_midi_port_option.add_item("(none)")
+	var select_idx := 0
+	for i in range(ports.size()):
+		_fb_midi_port_option.add_item(String(ports[i]))
+		if cur != "" and String(ports[i]).to_lower().find(cur) != -1:
+			select_idx = i + 1
+	_fb_midi_port_option.selected = select_idx
+
+
+func _on_midi_port_selected(idx: int) -> void:
+	Triggers.set_midi_output_port("" if idx <= 0 else _fb_midi_port_option.get_item_text(idx))
 
 
 func _apply_osc() -> void:
@@ -448,7 +485,9 @@ func _on_shown() -> void:
 	_refresh_list()
 	_sync_editor()
 	_fb_enable.set_pressed_no_signal(Triggers.feedback_enabled)
-	_fb_midi_port.set_value_no_signal(Triggers.midi_out_port)
+	if _fb_midi_port != null:
+		_fb_midi_port.set_value_no_signal(Triggers.midi_out_port)
+	_refresh_midi_out_ports()
 	_fb_osc_host.text = Triggers.osc_out_host
 	_fb_osc_port.set_value_no_signal(Triggers.osc_out_port)
 	_osc_on.set_pressed_no_signal(Triggers.osc_enabled)

@@ -2,9 +2,12 @@ class_name FeedbackOut
 extends RefCounted
 ## Outbound control-surface messages for MIDI / OSC feedback.
 ##
-## Godot has no MIDI output, so MIDI feedback is sent as 3-byte packets
-## over UDP to a small bridge script (tools/midi_bridge.py) that forwards
-## them to a real MIDI port. OSC feedback is sent straight to the device.
+## This is the fallback MIDI path: 3-byte packets over UDP to a small
+## bridge script (tools/midi_bridge.py) that forwards them to a real MIDI
+## port, for when the optional `midi_out` GDExtension isn't built (see
+## midi_out_bridge.gd's `MidiOut` autoload, which triggers_engine.gd
+## prefers when it's available). OSC feedback is sent straight to the
+## device either way.
 
 static var _udp := PacketPeerUDP.new()
 
