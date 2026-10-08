@@ -32,6 +32,7 @@ var sound_panel: SoundPanel
 var auto_show_panel: AutoShowPanel
 var groups_panel: GroupsPanel
 var viz_panel: VisualizerPanel
+var dmx_output_panel: DmxOutputPanel
 ## The right-hand tabs (Patch + 3D Visualizer) and, while the visualizer
 ## is popped out, its own window.
 var _right_tabs: TabContainer
@@ -146,8 +147,13 @@ func _ready() -> void:
 	viz_panel.mvr_export_cb = _do_mvr_export
 	viz_panel.popout_pressed.connect(_dock_viz)
 	_right_tabs.add_child(viz_panel)
+
+	dmx_output_panel = DmxOutputPanel.new()
+	_right_tabs.add_child(dmx_output_panel)
+
 	_right_tabs.set_tab_title(0, "Patch")
 	_right_tabs.set_tab_title(_VIZ_TAB, "3D Visualizer")
+	_right_tabs.set_tab_title(2, "DMX Output")
 	_right_tabs.get_tab_bar().gui_input.connect(_on_right_tabbar_input)
 	set_process(false)
 
