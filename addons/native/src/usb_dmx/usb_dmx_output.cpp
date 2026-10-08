@@ -5,6 +5,7 @@
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/string.hpp>
+#include <godot_cpp/variant/utility_functions.hpp>
 
 #include <chrono>
 #include <cstring>
@@ -143,6 +144,9 @@ UsbDmxOutput::~UsbDmxOutput() {
 
 void UsbDmxOutput::_set_status(const String &s) {
 	std::lock_guard<std::mutex> lk(_status_mtx);
+	if (s != _status) {
+		UtilityFunctions::print("UsbDmxOutput: ", s);
+	}
 	_status = s;
 }
 
@@ -477,14 +481,33 @@ void UsbDmxOutput::_worker() {
 		}
 		if (!ok) {
 			_link_ok.store(false);
-			_set_status("write failed — device disconnected?");
+			// Each _write_* sets a specific _status before returning false.
 			std::this_thread::sleep_for(milliseconds(250));
 			continue;
 		}
+		if (!_link_ok.exchange(true)) {
+			_set_status("streaming");
+		}
+
+		// FT_Write()/bulk_transfer() only hand the 513 bytes to the driver's
+		// buffer -- the FTDI chip is still draining them onto the 250k wire
+		// for ~22.6 ms afterwards. For bit-banged Open DMX (both backends;
+		// Enttec Pro and uDMX need no help here, their own MCU/firmware
+		// paces the wire), the next BREAK must not fire before that drain
+		// finishes, or it truncates this frame's tail and desyncs the next
+		// one -- exactly what the old "fell behind, snap to now" catch-up
+		// did under any scheduling hiccup, producing flicker/cross-talk.
+		auto write_done = steady_clock::now();
+		bool bitbang_open_dmx = (m == MODE_OPEN_DMX);
 
 		next += microseconds(1000000 / _fps.load());
 		auto now = steady_clock::now();
-		if (next < now) {
+		if (bitbang_open_dmx) {
+			auto floor = write_done + microseconds(23000);
+			if (next < floor) {
+				next = floor;
+			}
+		} else if (next < now) {
 			next = now; // fell behind (uDMX EP0 is slow) — don't spiral
 		}
 		sleep_until(next);
@@ -494,16 +517,23 @@ void UsbDmxOutput::_worker() {
 bool UsbDmxOutput::_write_open_dmx(const uint8_t *frame513) {
 	usbdmx::Ftdi &f = usbdmx::ftdi();
 	// BREAK (>= 88 us; USB latency makes ours ~1 ms, which is legal) + MAB
-	if (f.SetBreakOn(_handle) != 0) {
+	usbdmx::FT_STATUS st;
+	if ((st = f.SetBreakOn(_handle)) != 0) {
+		_set_status(String("write failed — SetBreakOn FT_STATUS ") + itos((int)st));
 		return false;
 	}
 	std::this_thread::sleep_for(microseconds(120));
-	if (f.SetBreakOff(_handle) != 0) {
+	if ((st = f.SetBreakOff(_handle)) != 0) {
+		_set_status(String("write failed — SetBreakOff FT_STATUS ") + itos((int)st));
 		return false;
 	}
 	std::this_thread::sleep_for(microseconds(12));
 	usbdmx::FT_ULONG wrote = 0;
-	return f.Write(_handle, (void *)frame513, 513, &wrote) == 0 && wrote == 513;
+	if ((st = f.Write(_handle, (void *)frame513, 513, &wrote)) != 0 || wrote != 513) {
+		_set_status(String("write failed — FT_Write status ") + itos((int)st) + " wrote " + itos((int)wrote) + "/513");
+		return false;
+	}
+	return true;
 }
 
 bool UsbDmxOutput::_write_enttec_pro(const uint8_t *frame513) {
@@ -519,7 +549,12 @@ bool UsbDmxOutput::_write_enttec_pro(const uint8_t *frame513) {
 	std::memcpy(msg + 4, frame513, PAYLOAD);
 	msg[4 + PAYLOAD] = 0xE7;
 	usbdmx::FT_ULONG wrote = 0;
-	return usbdmx::ftdi().Write(_handle, msg, MSG_LEN, &wrote) == 0 && (int)wrote == MSG_LEN;
+	usbdmx::FT_STATUS st = usbdmx::ftdi().Write(_handle, msg, MSG_LEN, &wrote);
+	if (st != 0 || (int)wrote != MSG_LEN) {
+		_set_status(String("write failed — FT_Write status ") + itos((int)st) + " wrote " + itos((int)wrote) + "/" + itos(MSG_LEN));
+		return false;
+	}
+	return true;
 }
 
 bool UsbDmxOutput::_write_udmx(const uint8_t *frame513) {
@@ -532,7 +567,11 @@ bool UsbDmxOutput::_write_udmx(const uint8_t *frame513) {
 			(usbdmx::libusb_device_handle *)_handle,
 			0x40, UDMX_CMD_SET_CHANNEL_RANGE, count, 0,
 			(unsigned char *)(frame513 + 1), count, 250);
-	return r >= 0;
+	if (r < 0) {
+		_set_status(String("write failed — uDMX control_transfer libusb error ") + itos(r));
+		return false;
+	}
+	return true;
 }
 
 // Raw FTDI over libusb: the same wire format as the D2XX paths, but the
@@ -553,17 +592,31 @@ bool UsbDmxOutput::_write_libftdi(const uint8_t *frame513, bool enttec_pro) {
 		msg[3] = (PAYLOAD >> 8) & 0xFF;
 		std::memcpy(msg + 4, frame513, PAYLOAD);
 		msg[4 + PAYLOAD] = 0xE7;
-		return u.bulk_transfer(h, FTDI_EP_OUT, msg, MSG_LEN, &tr, 250) == 0 && tr == MSG_LEN;
+		int r = u.bulk_transfer(h, FTDI_EP_OUT, msg, MSG_LEN, &tr, 250);
+		if (r != 0 || tr != MSG_LEN) {
+			_set_status(String("write failed — bulk_transfer libusb error ") + itos(r) + " wrote " + itos(tr) + "/" + itos(MSG_LEN));
+			return false;
+		}
+		return true;
 	}
 
 	// Open DMX: BREAK, MAB, then the 513-byte frame.
-	if (u.control_transfer(h, 0x40, SIO_SET_DATA, FTDI_8N2_BREAK, 0, nullptr, 0, 100) < 0) {
+	int r = u.control_transfer(h, 0x40, SIO_SET_DATA, FTDI_8N2_BREAK, 0, nullptr, 0, 100);
+	if (r < 0) {
+		_set_status(String("write failed — BREAK-on control_transfer libusb error ") + itos(r));
 		return false;
 	}
 	std::this_thread::sleep_for(microseconds(120));
-	if (u.control_transfer(h, 0x40, SIO_SET_DATA, FTDI_8N2, 0, nullptr, 0, 100) < 0) {
+	r = u.control_transfer(h, 0x40, SIO_SET_DATA, FTDI_8N2, 0, nullptr, 0, 100);
+	if (r < 0) {
+		_set_status(String("write failed — BREAK-off control_transfer libusb error ") + itos(r));
 		return false;
 	}
 	std::this_thread::sleep_for(microseconds(12));
-	return u.bulk_transfer(h, FTDI_EP_OUT, (unsigned char *)frame513, 513, &tr, 250) == 0 && tr == 513;
+	r = u.bulk_transfer(h, FTDI_EP_OUT, (unsigned char *)frame513, 513, &tr, 250);
+	if (r != 0 || tr != 513) {
+		_set_status(String("write failed — bulk_transfer libusb error ") + itos(r) + " wrote " + itos(tr) + "/513");
+		return false;
+	}
+	return true;
 }

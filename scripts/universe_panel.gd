@@ -60,6 +60,22 @@ func _ready() -> void:
 	apply_connection()
 
 
+## While routed to a USB interface, keep the status line live — the
+## worker thread's write-failure detail (FT_STATUS / libusb error code)
+## only shows up if something re-reads UsbDmx.status() after the initial
+## apply_connection() call.
+var _status_poll := 0.0
+
+func _process(delta: float) -> void:
+	if sender == null or sender.output_mode != ArtNetUniverse.OUT_USB or sender.usb_serial == "":
+		return
+	_status_poll += delta
+	if _status_poll < 0.5:
+		return
+	_status_poll = 0.0
+	set_status("USB DMX → %s  [%s]" % [sender.usb_serial, UsbDmx.status(sender.usb_serial)])
+
+
 # ---------------------------------------------------------------- HELPERS --
 
 func _label(text: String) -> Label:
