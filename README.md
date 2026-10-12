@@ -172,6 +172,13 @@ technical reference.
   session-only credentials, never persisted); both download/cache
   individual fixtures under `user://fixture_online/`.
   `tools/build_fixture_library.gd` regenerates the bundle from an OFL checkout.
+- `virtualdj_database.gd` — the `VirtualDjDatabase` class: reads
+  VirtualDJ's `database.xml` song databases (the one in
+  `Documents/VirtualDJ/` plus `<drive>:/VirtualDJ/` on every drive),
+  merged by file path — tags, VirtualDJ's BPM / key / beat-phase
+  analysis (including the variable-tempo `BeatGrid` it stores for long
+  mixes, expanded to per-beat times by `beat_times()`), hot cues,
+  automix points and named remix sections. Not yet wired into the UI.
 - `recent_dirs.gd` — the `RecentDirs` class: every file dialog (Load Song,
   Import fixture, Load glTF model, Import/Export MVR) reopens in the
   folder it was last used in, remembered per dialog rather than as one
