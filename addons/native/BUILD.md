@@ -34,13 +34,23 @@ feature:
   sequence + an `assemble.txt` ffmpeg one-liner.
 
 - **Fast song analysis** (`SongFeatures`) — decodes a music file (MP3 /
-  OGG / WAV) straight to PCM and runs the STFT chroma/timbre frames, onset
-  envelope, and whole-song waveform in C++ on a worker thread (a few
-  seconds total). `SongAnalyzer` (GDScript) uses it when present; without
-  it, analysis falls back to playing the track 4× through a muted
-  `AudioEffectCapture` bus and running the STFT in GDScript (~60s+).
+  OGG / WAV, and M4A / AAC / MP4 — see below) straight to PCM and runs the
+  STFT chroma/timbre frames, onset envelope, and whole-song waveform in
+  C++ on a worker thread (a few seconds total). `SongAnalyzer` (GDScript)
+  uses it when present; without it, analysis falls back to playing the
+  track 4× through a muted `AudioEffectCapture` bus and running the STFT
+  in GDScript (~60s+). `waveform_file()` builds just the waveform, at up
+  to 1000 columns per second, in one streaming pass with no length limit
+  — the Music Library's track timeline uses it (a 3-minute track in under
+  a second; an 80-minute mix in ~25 s, cancellable).
   Decoders: **minimp3** (MP3) and **stb_vorbis** (Ogg), single-file public
   domain, vendored under `third_party/song_dsp/`; WAV is parsed directly.
+  **AAC** (`.m4a` / `.aac` / `.mp4` — most iTunes/VirtualDJ libraries) has
+  no bundled decoder; it uses the **OS's own**: Windows Media Foundation
+  (`mfplat.dll` / `mfreadwrite.dll`, loaded at run time — Windows "N"
+  editions lack them unless the Media Feature Pack is installed) or macOS
+  AudioToolbox's ExtAudioFile. There's no AAC decoding on Linux.
+  (`SongFeatures.os_decoder_available()` reports which.)
 
 - **Native MIDI output** (`MidiOutput`) — MIDI **feedback** (lighting a
   controller's pad LEDs) goes straight to a real MIDI port instead of over
@@ -166,6 +176,15 @@ if d.ok:
     d.chroma            # PackedFloat32Array, nframes*12 row-major
     d.rms; d.centroid; d.flux; d.onset; d.onset_hz
     d.wave_lo; d.wave_mid; d.wave_hi; d.wave_peak
+
+# Waveform only, high resolution, any length (call from a worker thread)
+var w: Dictionary = sf.waveform_file("D:/Music/mix.m4a", 100)   # columns per second
+if w.ok:
+    w.duration; w.cols_per_sec
+    w.wave_lo; w.wave_mid; w.wave_hi; w.wave_peak   # normalised 0..1
+sf.get_progress()                  # 0..1, from the main thread while it runs
+sf.cancel()                        # from another thread: returns error "cancelled"
+SongFeatures.os_decoder_available()   # can .m4a / .aac / .mp4 be decoded here?
 
 # MIDI output
 var midi := MidiOutput.new()

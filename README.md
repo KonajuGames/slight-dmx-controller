@@ -51,7 +51,9 @@ technical reference.
   Sound tab.
 - `structure_bar.gd` / `wave_heatmap.gd` — the analysed-song structure
   strip and a whole-song colour-coded waveform (loudness height, spectral
-  hue), stacked on the Auto Show tab. The structure strip is editable:
+  hue), stacked on the Auto Show tab. The waveform can also show part of
+  a song and zoom with the mouse wheel (the Music Library's timeline
+  uses that). The structure strip is editable:
   drag a section border (snapped to the beat grid) to fix a boundary the
   analyser placed slightly wrong, or right-click a section to relabel,
   split, or delete it.
@@ -82,7 +84,8 @@ technical reference.
   beat grid, downbeats, labelled sections and a detected key; the
   detection maths, result data class, and a small radix-2 FFT. With
   the `addons/native` GDExtension built, the decode + STFT + onset +
-  waveform front-end runs in C++ on a worker thread; otherwise the track
+  waveform front-end runs in C++ on a worker thread — and can read M4A /
+  AAC through the OS's decoder (Windows, macOS); otherwise the track
   is played 4× through a muted capture bus first.
 - `show_generator.gd` / `auto_show_panel.gd` — turns an analysis + the
   patch into a per-kind section-look layer, three chases, six pan/tilt
@@ -109,6 +112,14 @@ technical reference.
   selecting one lists its music on the right — title, artist, BPM, key,
   length, album, genre, file — from VirtualDJ's database where it knows
   the track, sortable by any column, with missing files flagged.
+  Double-clicking a track replaces the list with its timeline; selecting
+  a folder goes back.
+- `music_timeline.gd` — the `MusicTimeline` class: a track's timeline —
+  the zoomable colour waveform along the bottom (mouse wheel zooms,
+  Shift+wheel scrolls) above a slim whole-track overview whose rectangle
+  marks the visible part: drag it, or click elsewhere to jump. Decoded on
+  a worker thread by the native extension (`SongFeatures.waveform_file`,
+  100 columns per second), including M4A through the OS's decoder.
 - `universe_panel.gd` — the `UniversePanel` class: one universe's tab —
   its connection settings, blackout/full, and fixture patch with
   purpose-built per-fixture controls.
@@ -160,7 +171,8 @@ technical reference.
 - `addons/native/` — one optional GDExtension (C++) bundling USB DMX
   output (FTDI D2XX + libusb), the MP4 encoder (minih264 + minimp4 +
   shine for the audio track), the song decode + analysis front-end
-  (minimp3 + stb_vorbis), native MIDI output (RtMidi), and DNS-SD service
+  (minimp3 + stb_vorbis, plus the OS's AAC decoder for M4A), native MIDI
+  output (RtMidi), and DNS-SD service
   advertising through the OS's own mDNS responder — one shared
   library so an exported build only ships a single GDExtension. Has one
   `build.py` and `BUILD.md`; ships disabled so

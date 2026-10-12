@@ -36,3 +36,38 @@ int sd_decode_ogg(const uint8_t *data, size_t n, sd_audio *out) {
 	out->frames = frames;
 	return 0;
 }
+
+int sd_stream_ogg(const uint8_t *data, size_t n, sd_sink sink, void *ctx) {
+	int err = 0;
+	stb_vorbis *v = stb_vorbis_open_memory((const unsigned char *)data, (int)n, &err, NULL);
+	if (!v) {
+		return -1;
+	}
+	stb_vorbis_info info = stb_vorbis_get_info(v);
+	int ch = info.channels, rate = (int)info.sample_rate;
+	if (ch < 1 || rate < 1) {
+		stb_vorbis_close(v);
+		return -2;
+	}
+	int64_t total = (int64_t)stb_vorbis_stream_length_in_samples(v);
+	enum { CHUNK = 8192 };
+	float *buf = (float *)malloc(sizeof(float) * CHUNK * ch);
+	if (!buf) {
+		stb_vorbis_close(v);
+		return -3;
+	}
+	int rc = 0;
+	for (;;) {
+		int got = stb_vorbis_get_samples_float_interleaved(v, ch, buf, CHUNK * ch);
+		if (got <= 0) {
+			break;
+		}
+		if (sink(ctx, buf, got, ch, rate, total) != 0) {
+			rc = SD_STOPPED;
+			break;
+		}
+	}
+	free(buf);
+	stb_vorbis_close(v);
+	return rc;
+}

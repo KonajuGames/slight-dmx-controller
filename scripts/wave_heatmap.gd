@@ -4,35 +4,132 @@ extends Control
 ## loudness envelope, hue is the spectral balance (bass amber, mid green,
 ## air blue). Section tints behind it and downbeat ticks line it up with
 ## the structure strip. Click anywhere to seek.
+##
+## It can also show just part of the song — `view_start` / `view_len`
+## seconds — and, with `zoomable` set, the mouse wheel zooms in and out
+## around the pointer (horizontal wheel / Shift+wheel pans). Detail comes
+## from however many columns the analysis carries; a pyramid of
+## progressively merged columns keeps redraws to about one column per
+## pixel even for an hours-long track.
 
 signal seek_requested(seconds: float)
+## The visible window changed (zoom, pan or set_view()).
+signal view_changed(start: float, length: float)
 
 var analysis: SongAnalysis
 var song_pos := 0.0
+## Draw the `song_pos` playhead.
+var show_cursor := true
+## Mouse wheel zooms (and pans) the view.
+var zoomable := false
+## Narrowest view the wheel can zoom in to, seconds.
+var min_view := 2.0
+## Wheel zoom factor per notch.
+const ZOOM_STEP := 1.25
+
+## The visible window, seconds. view_len <= 0 means the whole song.
+var view_start := 0.0
+var view_len := 0.0
 
 const _LO := Color(1.00, 0.62, 0.20)     # bass
 const _MID := Color(0.35, 0.80, 0.42)    # mid
 const _HI := Color(0.40, 0.72, 1.00)     # air
-const _IMG_H := 128
+## One bar's six vertices (top, centre and bottom, left and right) as
+## four triangles.
+const _BAR_TRIS := [0, 1, 2, 1, 3, 2, 2, 3, 4, 3, 5, 4]
 
-var _tex: ImageTexture
-var _built_w := -1
+## [{ lo, mid, hi, peak }] — level 0 is the analysis' own columns, each
+## level above merges pairs (bands averaged, peak maxed).
+var _levels: Array = []
 
 
 func _ready() -> void:
-	custom_minimum_size = Vector2(0, 92)
+	if custom_minimum_size.y <= 0.0:
+		custom_minimum_size = Vector2(0, 92)
 	mouse_filter = Control.MOUSE_FILTER_STOP
+	resized.connect(queue_redraw)
 
 
 func set_analysis(a: SongAnalysis) -> void:
 	analysis = a
-	_tex = null
-	_built_w = -1
+	_levels.clear()
+	if a != null and a.has_wave():
+		_build_levels()
+	view_start = 0.0
+	view_len = 0.0
 	queue_redraw()
 
 
-func _dur() -> float:
+func duration() -> float:
 	return maxf(analysis.duration, 0.001) if analysis != null else 1.0
+
+
+## The visible window's length in seconds (the whole song when unzoomed).
+func visible_length() -> float:
+	return view_len if view_len > 0.0 else duration()
+
+
+## Show `length` seconds from `start` (clamped to the song). length <= 0
+## shows the whole song.
+func set_view(start: float, length: float) -> void:
+	var dur := duration()
+	var ln := dur if length <= 0.0 or length >= dur else maxf(length, minf(min_view, dur))
+	var st := clampf(start, 0.0, maxf(dur - ln, 0.0))
+	var new_len := 0.0 if is_equal_approx(ln, dur) else ln
+	if is_equal_approx(st, view_start) and is_equal_approx(new_len, view_len):
+		return
+	view_start = st
+	view_len = new_len
+	queue_redraw()
+	view_changed.emit(view_start, visible_length())
+
+
+## Zoom by `factor` (<1 zooms in) keeping the time under `at_x` pixels put.
+func zoom_at(factor: float, at_x: float) -> void:
+	var w := maxf(size.x, 1.0)
+	var frac := clampf(at_x / w, 0.0, 1.0)
+	var t := view_start + frac * visible_length()
+	var ln := clampf(visible_length() * factor, minf(min_view, duration()), duration())
+	set_view(t - frac * ln, ln)
+
+
+func time_to_x(t: float) -> float:
+	return (t - view_start) / visible_length() * size.x
+
+
+func x_to_time(x: float) -> float:
+	return view_start + x / maxf(size.x, 1.0) * visible_length()
+
+
+func _build_levels() -> void:
+	var lo := analysis.wave_lo
+	var mid := analysis.wave_mid
+	var hi := analysis.wave_hi
+	var pk := analysis.wave_peak
+	_levels.append({"lo": lo, "mid": mid, "hi": hi, "peak": pk})
+	while pk.size() > 64:
+		var n := ceili(pk.size() / 2.0)
+		var nlo := PackedFloat32Array()
+		var nmid := PackedFloat32Array()
+		var nhi := PackedFloat32Array()
+		var npk := PackedFloat32Array()
+		nlo.resize(n)
+		nmid.resize(n)
+		nhi.resize(n)
+		npk.resize(n)
+		var last := pk.size() - 1
+		for i in range(n):
+			var a := i * 2
+			var b := mini(a + 1, last)
+			nlo[i] = (lo[a] + lo[b]) * 0.5
+			nmid[i] = (mid[a] + mid[b]) * 0.5
+			nhi[i] = (hi[a] + hi[b]) * 0.5
+			npk[i] = maxf(pk[a], pk[b])
+		lo = nlo
+		mid = nmid
+		hi = nhi
+		pk = npk
+		_levels.append({"lo": lo, "mid": mid, "hi": hi, "peak": pk})
 
 
 func _draw() -> void:
@@ -46,64 +143,122 @@ func _draw() -> void:
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.5, 0.5, 0.55))
 		return
 
-	var dur := _dur()
+	var t0 := view_start
+	var t1 := view_start + visible_length()
 
 	for sec in analysis.sections:
-		var x0: float = float(sec["start"]) / dur * w
-		var x1: float = float(sec["end"]) / dur * w
+		var s0: float = float(sec["start"])
+		var s1: float = float(sec["end"])
+		if s1 < t0 or s0 > t1:
+			continue
+		var x0 := time_to_x(s0)
+		var x1 := time_to_x(s1)
 		var tint: Color = StructureBar.LABEL_HUE.get(
 			String(sec["label"]), Color(0.3, 0.3, 0.35))
 		tint.a = 0.16
 		draw_rect(Rect2(x0, 0, maxf(x1 - x0, 1.0), h), tint)
 
-	if _tex == null or _built_w != int(w):
-		_rebuild(maxi(int(w), 1))
-	if _tex != null:
-		draw_texture_rect(_tex, Rect2(0, 0, w, h), false)
+	_draw_wave(w, h, t0, t1)
 
 	for db in analysis.downbeats:
-		var x: float = float(db) / dur * w
+		if db < t0 or db > t1:
+			continue
+		var x := time_to_x(db)
 		draw_line(Vector2(x, h - 4), Vector2(x, h), Color(1, 1, 1, 0.22), 1.0)
 
-	var px: float = clampf(song_pos / dur, 0.0, 1.0) * w
-	draw_line(Vector2(px, 0), Vector2(px, h), Color(1, 1, 1, 0.9), 2.0)
+	if show_cursor and song_pos >= t0 and song_pos <= t1:
+		var px := time_to_x(song_pos)
+		draw_line(Vector2(px, 0), Vector2(px, h), Color(1, 1, 1, 0.9), 2.0)
 
 
-func _rebuild(w: int) -> void:
-	_built_w = w
-	_tex = null
-	var lo := analysis.wave_lo
-	var mid := analysis.wave_mid
-	var hi := analysis.wave_hi
-	var pk := analysis.wave_peak
-	var n := pk.size()
-	if n == 0:
+## Bars for the visible window, as one triangle batch: each column is a
+## vertical bar mirrored about the centre line, fading from opaque at the
+## centre to 60% at its tips.
+func _draw_wave(w: float, h: float, t0: float, t1: float) -> void:
+	if _levels.is_empty() or w < 1.0:
 		return
+	var dur := duration()
+	var n0: int = _levels[0]["peak"].size()
+	# Pick the level with roughly one to two columns per pixel.
+	var cols_visible := (t1 - t0) / dur * n0
+	var lvl := clampi(int(floor(log(maxf(cols_visible / w, 1.0)) / log(2.0))), 0, _levels.size() - 1)
+	var L: Dictionary = _levels[lvl]
+	var lo: PackedFloat32Array = L["lo"]
+	var mid: PackedFloat32Array = L["mid"]
+	var hi: PackedFloat32Array = L["hi"]
+	var pk: PackedFloat32Array = L["peak"]
+	var n := pk.size()
+	var col_dur := dur / n
+	var c0 := clampi(int(floor(t0 / col_dur)), 0, n - 1)
+	var c1 := clampi(int(ceil(t1 / col_dur)), c0 + 1, n)
 
-	var img := Image.create_empty(w, _IMG_H, false, Image.FORMAT_RGBA8)
-	img.fill(Color(0, 0, 0, 0))
-	var mid_y := _IMG_H / 2
-	for x in range(w):
-		var s := clampi(int(float(x) / w * n), 0, n - 1)
+	var mid_y := h * 0.5
+	var pts := PackedVector2Array()
+	var cols := PackedColorArray()
+	var idx := PackedInt32Array()
+	var count := c1 - c0
+	pts.resize(count * 6)
+	cols.resize(count * 6)
+	idx.resize(count * 12)
+	var v := 0
+	var k := 0
+	for c in range(c0, c1):
+		var x0 := time_to_x(c * col_dur)
+		var x1 := maxf(time_to_x((c + 1) * col_dur), x0 + 1.0)
 		# sharpen the dominant band so bass / air read, not a mid wall
-		var l := lo[s] * lo[s] * 1.3
-		var m := mid[s] * mid[s]
-		var a := hi[s] * hi[s] * 1.3
+		var l := lo[c] * lo[c] * 1.3
+		var m := mid[c] * mid[c]
+		var a := hi[c] * hi[c] * 1.3
 		var sum := l + m + a
 		var col := Color(0.55, 0.55, 0.6)
 		if sum > 0.0001:
 			col = (_LO * l + _MID * m + _HI * a) / sum
-		var amp := sqrt(clampf(pk[s], 0.0, 1.0))
-		var half := int(amp * (mid_y - 1))
-		for dy in range(half + 1):
-			var fade := 1.0 - 0.4 * float(dy) / maxf(half, 1.0)
-			var c := Color(col.r, col.g, col.b, fade)
-			img.set_pixel(x, mid_y - dy, c)
-			img.set_pixel(x, mini(_IMG_H - 1, mid_y + dy), c)
-	_tex = ImageTexture.create_from_image(img)
+		var half := sqrt(clampf(pk[c], 0.0, 1.0)) * (mid_y - 1.0)
+		var tip := Color(col.r, col.g, col.b, 0.6)
+		var core := Color(col.r, col.g, col.b, 1.0)
+		pts[v] = Vector2(x0, mid_y - half)
+		pts[v + 1] = Vector2(x1, mid_y - half)
+		pts[v + 2] = Vector2(x0, mid_y)
+		pts[v + 3] = Vector2(x1, mid_y)
+		pts[v + 4] = Vector2(x0, mid_y + half)
+		pts[v + 5] = Vector2(x1, mid_y + half)
+		cols[v] = tip
+		cols[v + 1] = tip
+		cols[v + 2] = core
+		cols[v + 3] = core
+		cols[v + 4] = tip
+		cols[v + 5] = tip
+		for t in _BAR_TRIS:
+			idx[k] = v + t
+			k += 1
+		v += 6
+	RenderingServer.canvas_item_add_triangle_array(get_canvas_item(), idx, pts, cols)
 
 
 func _gui_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.pressed \
-			and event.button_index == MOUSE_BUTTON_LEFT and analysis != null:
-		seek_requested.emit(clampf(event.position.x / size.x, 0.0, 1.0) * _dur())
+	if analysis == null:
+		return
+	if event is InputEventMouseButton and event.pressed:
+		var mb := event as InputEventMouseButton
+		match mb.button_index:
+			MOUSE_BUTTON_LEFT:
+				seek_requested.emit(clampf(x_to_time(mb.position.x), 0.0, duration()))
+			MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN:
+				if not zoomable:
+					return
+				if mb.shift_pressed:
+					_pan(-1.0 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0)
+				else:
+					zoom_at(1.0 / ZOOM_STEP if mb.button_index == MOUSE_BUTTON_WHEEL_UP else ZOOM_STEP,
+						mb.position.x)
+				accept_event()
+			MOUSE_BUTTON_WHEEL_LEFT, MOUSE_BUTTON_WHEEL_RIGHT:
+				if not zoomable:
+					return
+				_pan(-1.0 if mb.button_index == MOUSE_BUTTON_WHEEL_LEFT else 1.0)
+				accept_event()
+
+
+## Scroll the view by a tenth of its width.
+func _pan(direction: float) -> void:
+	set_view(view_start + direction * visible_length() * 0.1, view_len)

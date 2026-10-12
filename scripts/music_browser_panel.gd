@@ -24,6 +24,8 @@ const _MISSING_COLOR := Color(1.0, 0.5, 0.5)
 var _tree: Tree                 # left: drives / folders / Virtual Folders
 var _list: Tree                 # right: the tracks
 var _heading: Label
+var _list_view: Control         # the heading + track list
+var _timeline: MusicTimeline    # replaces _list_view while a track is open
 var _db: VirtualDjDatabase = null
 var _lists: Array = []          # [VirtualDjList]
 var _loaded := false
@@ -44,12 +46,26 @@ func _ready() -> void:
 	_tree.select_mode = Tree.SELECT_SINGLE
 	_tree.item_collapsed.connect(_on_item_collapsed)
 	_tree.item_selected.connect(_on_folder_selected)
+	# Clicking the folder that's already selected doesn't re-select it, but
+	# should still leave a track's timeline for the list.
+	_tree.item_mouse_selected.connect(func(_pos: Vector2, _button: int): _on_folder_clicked())
 	add_child(_tree)
+
+	# The right side shows either the track list or a track's timeline.
+	var right_holder := VBoxContainer.new()
+	right_holder.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	add_child(right_holder)
 
 	var right := VBoxContainer.new()
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	right.add_theme_constant_override("separation", 6)
-	add_child(right)
+	right_holder.add_child(right)
+	_list_view = right
+
+	_timeline = MusicTimeline.new()
+	_timeline.visible = false
+	right_holder.add_child(_timeline)
 
 	_heading = Label.new()
 	_heading.text = "Select a folder or a VirtualDJ Virtual Folder."
@@ -80,6 +96,8 @@ func _ready() -> void:
 	_list.set_column_expand_ratio(Col.GENRE, 1)
 	_list.set_column_expand_ratio(Col.FILE, 3)
 	_list.column_title_clicked.connect(_on_column_title_clicked)
+	# Double-click (or Enter) a track: its timeline replaces the list.
+	_list.item_activated.connect(_on_track_activated)
 	right.add_child(_list)
 
 	visibility_changed.connect(func():
@@ -217,11 +235,51 @@ func _on_folder_selected() -> void:
 			show_list(meta["list"])
 
 
+func _on_folder_clicked() -> void:
+	var item := _tree.get_selected()
+	if item != null and item.get_metadata(0) is Dictionary \
+			and item.get_metadata(0).get("kind") in ["dir", "list"]:
+		show_track_list()
+
+
+func _on_track_activated() -> void:
+	var it := _list.get_selected()
+	if it == null:
+		return
+	for r in _rows:
+		if r["path"] == it.get_metadata(0):
+			open_track(r)
+			return
+
+
+## Replace the track list with `row`'s timeline.
+func open_track(row: Dictionary) -> void:
+	_list_view.visible = false
+	_timeline.visible = true
+	_timeline.open(row["path"])
+
+
+## Back from a track's timeline to the track list.
+func show_track_list() -> void:
+	_timeline.visible = false
+	_list_view.visible = true
+
+
+## Whether a track's timeline is showing (rather than the track list).
+func is_timeline_shown() -> bool:
+	return _timeline.visible
+
+
+func timeline() -> MusicTimeline:
+	return _timeline
+
+
 # ------------------------------------------------------------------ LIST --
 
 ## List the music in a folder on disk (not its subfolders).
 func show_folder(path: String) -> void:
 	ensure_loaded()
+	show_track_list()
 	_rows.clear()
 	var files := list_audio_files(path)
 	for i in range(files.size()):
@@ -236,6 +294,7 @@ func show_folder(path: String) -> void:
 ## List a VirtualDJ Virtual Folder's tracks, in its order.
 func show_list(list: VirtualDjList) -> void:
 	ensure_loaded()
+	show_track_list()
 	_rows.clear()
 	for i in range(list.entries.size()):
 		var e: VirtualDjList.Entry = list.entries[i]

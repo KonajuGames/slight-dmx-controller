@@ -3,6 +3,7 @@
 #include "decode.h"
 
 #include <godot_cpp/classes/file_access.hpp>
+#include <godot_cpp/classes/project_settings.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
 #include <godot_cpp/variant/packed_float32_array.hpp>
@@ -124,6 +125,150 @@ PackedFloat32Array to_pfa(const std::vector<float> &v) {
 	return a;
 }
 
+// Extensions with no bundled decoder, handed to the OS's (dec_os.cpp).
+bool is_os_format(const String &ext) {
+	return ext == "m4a" || ext == "aac" || ext == "mp4";
+}
+
+// Stream-decode any supported file into `sink`. Returns the decoder's
+// result (0, SD_STOPPED or < 0); on failure `err` says why.
+int stream_file(const String &path, sd_sink sink, void *ctx, String &err) {
+	String ext = path.get_extension().to_lower();
+	if (is_os_format(ext)) {
+		CharString p = ProjectSettings::get_singleton()->globalize_path(path).utf8();
+		int rc = sd_stream_os(p.get_data(), sink, ctx);
+		if (rc == SD_NO_OS_DECODER) {
+			err = "no ." + ext + " decoder on this system";
+		} else if (rc < 0) {
+			err = "couldn't decode the audio (" + String::num_int64(rc) + ")";
+		}
+		return rc;
+	}
+	// The compressed file is small; only the decoded PCM is streamed.
+	PackedByteArray bytes = FileAccess::get_file_as_bytes(path);
+	if (bytes.is_empty()) {
+		err = "can't read " + path;
+		return -1;
+	}
+	int rc;
+	if (ext == "mp3") {
+		rc = sd_stream_mp3(bytes.ptr(), static_cast<size_t>(bytes.size()), sink, ctx);
+	} else if (ext == "ogg" || ext == "oga") {
+		rc = sd_stream_ogg(bytes.ptr(), static_cast<size_t>(bytes.size()), sink, ctx);
+	} else if (ext == "wav") {
+		rc = sd_stream_wav(bytes.ptr(), static_cast<size_t>(bytes.size()), sink, ctx);
+	} else {
+		err = "unsupported file type ." + ext;
+		return -2;
+	}
+	if (rc < 0) {
+		err = "couldn't decode the audio (" + String::num_int64(rc) + ")";
+	}
+	return rc;
+}
+
+// --- whole-PCM collection (analyze_file on OS-decoded formats) -------
+struct PcmCollect {
+	std::vector<float> pcm;
+	int channels = 0;
+	int rate = 0;
+	double max_seconds = 0.0;
+	bool too_long = false;
+	std::atomic<bool> *cancel = nullptr;
+};
+
+int collect_sink(void *ctx, const float *pcm, int64_t frames, int channels, int rate, int64_t) {
+	PcmCollect *c = static_cast<PcmCollect *>(ctx);
+	if (c->cancel->load()) {
+		return 1;
+	}
+	if (c->channels == 0) {
+		c->channels = channels;
+		c->rate = rate;
+	}
+	if (channels != c->channels) {
+		return 0; // a mid-stream format change: drop it rather than garble
+	}
+	c->pcm.insert(c->pcm.end(), pcm, pcm + frames * channels);
+	// Stop before a long mix fills memory, not after.
+	if (static_cast<double>(c->pcm.size()) / channels / rate > c->max_seconds) {
+		c->too_long = true;
+		return 1;
+	}
+	return 0;
+}
+
+// --- streaming waveform envelope (waveform_file) ----------------------
+// Per column: RMS loudness, and RMS of three bands split with two one-pole
+// filters -- bass below ~250 Hz, air above ~2.5 kHz, mid between -- the
+// same bands the STFT version uses, but cheap enough to run per sample.
+struct WaveAcc {
+	std::atomic<bool> *cancel = nullptr;
+	std::atomic<float> *progress = nullptr;
+	int cps = 100;
+	int rate = 0;
+	int channels = 0;
+	double a_lo = 0.0, a_hi = 0.0, lp1 = 0.0, lp2 = 0.0;
+	double s_all = 0.0, s_lo = 0.0, s_mid = 0.0, s_hi = 0.0;
+	int64_t n = 0;           // samples in the current column
+	int64_t frame = 0;       // samples so far
+	int64_t col_end = 0;     // sample index where the current column ends
+	std::vector<float> lo, mid, hi, pk;
+
+	void flush() {
+		double inv = n > 0 ? 1.0 / n : 0.0;
+		pk.push_back(static_cast<float>(std::sqrt(s_all * inv)));
+		lo.push_back(static_cast<float>(std::sqrt(s_lo * inv)));
+		mid.push_back(static_cast<float>(std::sqrt(s_mid * inv)));
+		hi.push_back(static_cast<float>(std::sqrt(s_hi * inv)));
+		s_all = s_lo = s_mid = s_hi = 0.0;
+		n = 0;
+		col_end = static_cast<int64_t>(std::llround(static_cast<double>(pk.size() + 1) * rate / cps));
+	}
+};
+
+int wave_sink(void *ctx, const float *pcm, int64_t frames, int channels, int rate, int64_t total) {
+	WaveAcc *a = static_cast<WaveAcc *>(ctx);
+	if (a->cancel->load()) {
+		return 1;
+	}
+	if (a->rate == 0) {
+		a->rate = rate;
+		a->channels = channels;
+		a->a_lo = 1.0 - std::exp(-kTau * 250.0 / rate);
+		a->a_hi = 1.0 - std::exp(-kTau * 2500.0 / rate);
+		a->col_end = static_cast<int64_t>(std::llround(static_cast<double>(rate) / a->cps));
+	}
+	if (channels != a->channels) {
+		return 0; // see collect_sink
+	}
+	const double inv_ch = 1.0 / channels;
+	for (int64_t i = 0; i < frames; i++) {
+		double x = 0.0;
+		const float *f = pcm + i * channels;
+		for (int c = 0; c < channels; c++) {
+			x += f[c];
+		}
+		x *= inv_ch;
+		a->lp1 += a->a_lo * (x - a->lp1);
+		a->lp2 += a->a_hi * (x - a->lp2);
+		double l = a->lp1, m = a->lp2 - a->lp1, h = x - a->lp2;
+		a->s_all += x * x;
+		a->s_lo += l * l;
+		a->s_mid += m * m;
+		a->s_hi += h * h;
+		a->n++;
+		if (++a->frame >= a->col_end) {
+			a->flush();
+		}
+	}
+	if (total > 0) {
+		float p = static_cast<float>(static_cast<double>(a->frame) / total);
+		a->progress->store(p < 0.99f ? p : 0.99f);
+	}
+	return 0;
+}
+
 } // namespace
 
 void SongFeatures::_bind_methods() {
@@ -131,6 +276,67 @@ void SongFeatures::_bind_methods() {
 			D_METHOD("analyze_file", "path", "n_fft", "hop", "wave_cols"),
 			&SongFeatures::analyze_file);
 	ClassDB::bind_method(D_METHOD("get_progress"), &SongFeatures::get_progress);
+	ClassDB::bind_method(D_METHOD("waveform_file", "path", "cols_per_sec"), &SongFeatures::waveform_file);
+	ClassDB::bind_method(D_METHOD("cancel"), &SongFeatures::cancel);
+	ClassDB::bind_static_method("SongFeatures", D_METHOD("os_decoder_available"),
+			&SongFeatures::os_decoder_available);
+}
+
+void SongFeatures::cancel() {
+	_cancel.store(true);
+}
+
+bool SongFeatures::os_decoder_available() {
+	return sd_os_decoder_available() != 0;
+}
+
+Dictionary SongFeatures::waveform_file(const String &path, int cols_per_sec) {
+	_progress.store(0.0f);
+	_cancel.store(false);
+	WaveAcc acc;
+	acc.cancel = &_cancel;
+	acc.progress = &_progress;
+	acc.cps = cols_per_sec < 1 ? 1 : (cols_per_sec > 1000 ? 1000 : cols_per_sec);
+
+	String err;
+	int rc = stream_file(path, &wave_sink, &acc, err);
+	if (rc == SD_STOPPED) {
+		return fail("cancelled");
+	}
+	if (rc < 0) {
+		return fail(err);
+	}
+	if (acc.n > 0) {
+		acc.flush();
+	}
+	if (acc.rate < 1 || acc.pk.empty()) {
+		return fail("no audio in the file");
+	}
+
+	float pk_max = 1e-9f, band_max = 1e-9f;
+	for (size_t i = 0; i < acc.pk.size(); i++) {
+		pk_max = acc.pk[i] > pk_max ? acc.pk[i] : pk_max;
+		float b = acc.lo[i] > acc.mid[i] ? acc.lo[i] : acc.mid[i];
+		b = acc.hi[i] > b ? acc.hi[i] : b;
+		band_max = b > band_max ? b : band_max;
+	}
+	for (size_t i = 0; i < acc.pk.size(); i++) {
+		acc.pk[i] /= pk_max;
+		acc.lo[i] /= band_max;
+		acc.mid[i] /= band_max;
+		acc.hi[i] /= band_max;
+	}
+
+	Dictionary d;
+	d["ok"] = true;
+	d["duration"] = static_cast<double>(acc.frame) / acc.rate;
+	d["cols_per_sec"] = acc.cps;
+	d["wave_lo"] = to_pfa(acc.lo);
+	d["wave_mid"] = to_pfa(acc.mid);
+	d["wave_hi"] = to_pfa(acc.hi);
+	d["wave_peak"] = to_pfa(acc.pk);
+	_progress.store(1.0f);
+	return d;
 }
 
 SongFeatures::SongFeatures() {}
@@ -147,29 +353,68 @@ Dictionary SongFeatures::analyze_file(const String &path, int n_fft, int hop, in
 		return fail("bad analysis parameters");
 	}
 
-	PackedByteArray bytes = FileAccess::get_file_as_bytes(path);
-	if (bytes.is_empty()) {
-		return fail("can't read " + path);
-	}
-	const uint8_t *raw = bytes.ptr();
-	size_t raw_n = static_cast<size_t>(bytes.size());
-
+	constexpr double kMaxSeconds = 3600.0;
 	String ext = path.get_extension().to_lower();
 	sd_audio au;
 	std::memset(&au, 0, sizeof(au));
-	int rc;
-	if (ext == "mp3") {
-		rc = sd_decode_mp3(raw, raw_n, &au);
-	} else if (ext == "ogg" || ext == "oga") {
-		rc = sd_decode_ogg(raw, raw_n, &au);
-	} else if (ext == "wav") {
-		rc = sd_decode_wav(raw, raw_n, &au);
+	// OS-decoded formats are collected here (and stopped at the length cap
+	// while decoding); the bundled decoders malloc their own buffer.
+	std::vector<float> os_pcm;
+	auto release_pcm = [&]() {
+		if (os_pcm.empty()) {
+			sd_audio_free(&au);
+		} else {
+			os_pcm.clear();
+			os_pcm.shrink_to_fit();
+			au.pcm = nullptr;
+		}
+	};
+
+	if (is_os_format(ext)) {
+		_cancel.store(false);
+		PcmCollect col;
+		col.cancel = &_cancel;
+		col.max_seconds = kMaxSeconds;
+		String err;
+		int rc = stream_file(path, &collect_sink, &col, err);
+		if (col.too_long) {
+			return fail("track is too long");
+		}
+		if (rc == SD_STOPPED) {
+			return fail("cancelled");
+		}
+		if (rc < 0) {
+			return fail(err);
+		}
+		if (col.channels < 1 || col.rate < 1 || col.pcm.empty()) {
+			return fail("no audio in the file");
+		}
+		os_pcm.swap(col.pcm);
+		au.pcm = os_pcm.data();
+		au.channels = col.channels;
+		au.rate = col.rate;
+		au.frames = static_cast<int64_t>(os_pcm.size()) / col.channels;
 	} else {
-		return fail("unsupported file type ." + ext);
-	}
-	if (rc != 0 || !au.pcm || au.frames < 1 || au.channels < 1 || au.rate < 1) {
-		sd_audio_free(&au);
-		return fail("couldn't decode the audio (" + String::num_int64(rc) + ")");
+		PackedByteArray bytes = FileAccess::get_file_as_bytes(path);
+		if (bytes.is_empty()) {
+			return fail("can't read " + path);
+		}
+		const uint8_t *raw = bytes.ptr();
+		size_t raw_n = static_cast<size_t>(bytes.size());
+		int rc;
+		if (ext == "mp3") {
+			rc = sd_decode_mp3(raw, raw_n, &au);
+		} else if (ext == "ogg" || ext == "oga") {
+			rc = sd_decode_ogg(raw, raw_n, &au);
+		} else if (ext == "wav") {
+			rc = sd_decode_wav(raw, raw_n, &au);
+		} else {
+			return fail("unsupported file type ." + ext);
+		}
+		if (rc != 0 || !au.pcm || au.frames < 1 || au.channels < 1 || au.rate < 1) {
+			sd_audio_free(&au);
+			return fail("couldn't decode the audio (" + String::num_int64(rc) + ")");
+		}
 	}
 
 	const int64_t frames_native = au.frames;
@@ -177,11 +422,11 @@ Dictionary SongFeatures::analyze_file(const String &path, int n_fft, int hop, in
 	const double duration = static_cast<double>(frames_native) / rate_native;
 
 	if (duration < 5.0) {
-		sd_audio_free(&au);
+		release_pcm();
 		return fail("track is too short");
 	}
-	if (duration > 3600.0) {
-		sd_audio_free(&au);
+	if (duration > kMaxSeconds) {
+		release_pcm();
 		return fail("track is too long");
 	}
 	_progress.store(0.28f);
@@ -205,7 +450,7 @@ Dictionary SongFeatures::analyze_file(const String &path, int n_fft, int hop, in
 			}
 		}
 	}
-	sd_audio_free(&au);
+	release_pcm();
 
 	// --- decimate to the working rate --------------------------------
 	int factor = static_cast<int>(std::lround(rate_native / kWorkRate));

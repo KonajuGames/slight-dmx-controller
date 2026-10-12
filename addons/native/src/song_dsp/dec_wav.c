@@ -102,3 +102,25 @@ int sd_decode_wav(const uint8_t *d, size_t n, sd_audio *out) {
 	out->frames = frames;
 	return 0;
 }
+
+/* WAV is already PCM, so "streaming" just converts it whole and hands it
+   to the sink in chunks -- the same peak memory as sd_decode_wav. */
+int sd_stream_wav(const uint8_t *data, size_t n, sd_sink sink, void *ctx) {
+	sd_audio au;
+	memset(&au, 0, sizeof(au));
+	int rc = sd_decode_wav(data, n, &au);
+	if (rc != 0) {
+		return rc;
+	}
+	const int64_t chunk = 8192;
+	rc = 0;
+	for (int64_t f = 0; f < au.frames; f += chunk) {
+		int64_t m = au.frames - f < chunk ? au.frames - f : chunk;
+		if (sink(ctx, au.pcm + f * au.channels, m, au.channels, au.rate, au.frames) != 0) {
+			rc = SD_STOPPED;
+			break;
+		}
+	}
+	sd_audio_free(&au);
+	return rc;
+}

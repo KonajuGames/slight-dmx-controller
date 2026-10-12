@@ -32,6 +32,9 @@ const ONSET_DECIM := 128          # onset-envelope hop, in capture samples
 const WAVE_COLS := 1024           # columns in the whole-song waveform view
 
 const _FAST_EXTS := ["mp3", "ogg", "oga", "wav"]
+## Formats the extension decodes with the OS's own decoder (Windows Media
+## Foundation / macOS) — no fallback: Godot can't play them either.
+const _OS_EXTS := ["m4a", "aac", "mp4"]
 
 var _force_capture := false       # set when the fast path bails to the slow one
 var _fast_thread: Thread
@@ -85,7 +88,16 @@ static func fast_available() -> bool:
 
 
 func _fast_can_handle(path: String) -> bool:
-	return fast_available() and path.get_extension().to_lower() in _FAST_EXTS
+	if not fast_available():
+		return false
+	var ext := path.get_extension().to_lower()
+	return ext in _FAST_EXTS or (ext in _OS_EXTS and os_decoding_available())
+
+
+## Whether .m4a / .aac / .mp4 (AAC) can be decoded here: the native
+## extension built, on Windows with Media Foundation or on macOS.
+static func os_decoding_available() -> bool:
+	return fast_available() and ClassDB.class_call_static("SongFeatures", "os_decoder_available")
 
 
 func analyse(path: String, speed := 4.0) -> void:
@@ -155,6 +167,11 @@ func _fast_finish() -> void:
 	if _fast_result != null:
 		progress.emit(1.0)
 		finished.emit(_fast_result)
+		return
+	# Godot can't play the OS-decoded formats, so there's nothing to fall
+	# back to — report the extension's reason ("track is too long", ...).
+	if _path.get_extension().to_lower() in _OS_EXTS:
+		failed.emit("Couldn't analyse this track: %s." % (_fast_error if _fast_error != "" else "decode failed"))
 		return
 	# the extension couldn't handle this file — fall back to the capture path
 	push_warning("song_dsp: %s — falling back to playback analysis"

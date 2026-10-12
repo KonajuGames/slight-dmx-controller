@@ -56,9 +56,13 @@ sources = (
 if env["platform"] == "windows":
     env.Append(CPPDEFINES=["__WINDOWS_MM__"])
     env.Append(LIBS=["winmm"])          # also: timeBeginPeriod / timeEndPeriod (usb_dmx)
+    # COM, for song_dsp's Media Foundation decoder (Media Foundation itself
+    # is loaded at run time -- see src/song_dsp/dec_os.cpp).
+    env.Append(LIBS=["ole32"])
 elif env["platform"] == "macos":
     env.Append(CPPDEFINES=["__MACOSX_CORE__"])
-    env.Append(FRAMEWORKS=["CoreMIDI", "CoreFoundation", "CoreAudio"])
+    env.Append(FRAMEWORKS=["CoreMIDI", "CoreFoundation", "CoreAudio",
+                           "AudioToolbox"])     # song_dsp's AAC decoding (ExtAudioFile)
 elif env["platform"] in ("linux", "android"):
     env.Append(CPPDEFINES=["__LINUX_ALSA__"])
     env.Append(LIBS=["asound", "pthread", "dl"])  # dl: usb_dmx's dlopen/dlsym
