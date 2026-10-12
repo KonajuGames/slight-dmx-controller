@@ -35,6 +35,7 @@ func _initialize() -> void:
 	_test_bad_files()
 	_test_parse_key()
 	_test_beat_grid()
+	_test_tempo()
 	_test_real_databases()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
@@ -242,6 +243,39 @@ func _test_beat_grid() -> void:
 	ok(m != null and m.beat_times().size() == 10, "loaded grid expands")
 
 
+## Tempo / first-beat helpers, pinned to what a live VirtualDJ reported
+## over OS2L for the same tracks.
+func _test_tempo() -> void:
+	print("- tempo and first beat (vs live VirtualDJ)")
+	# best_bpm(): the scan wins over the tag — a track tagged 94 played at
+	# the scanned 124.99 on the deck.
+	var t := VirtualDjDatabase.Song.new()
+	t.bpm = 94.0
+	t.scan_bpm = 124.994
+	ok(t.best_bpm() == 124.994, "best_bpm prefers the scan over the tag")
+	t.scan_bpm = 0.0
+	ok(t.best_bpm() == 94.0, "...and falls back to the tag")
+	t.phase = 0.269955
+	ok(t.first_beat() == 0.269955 and t.bpm_at(100.0) == 94.0, "no grid: phase, constant tempo")
+
+	# A slice of a real variable-tempo grid; VirtualDJ reported 140.72,
+	# 144.97, 148.51, 147.06, 145.63, 137.38 BPM on these beats.
+	var g := VirtualDjDatabase.Song.new()
+	g.phase = 45.560112     # the scan phase is a beat far into the track
+	g.grid_segments = VirtualDjDatabase.parse_beat_grid(
+		"9644[34.4:1,0.42639][34.82:1,0.41389][35.228:1,0.404][35.6:1,0.408][36:1,0.412][36.44:3,0.43674][37.75:0,0.43674]")["segments"]
+	ok(g.first_beat() == 34.4, "grid: first beat is the grid's, not the phase (%.3f)" % g.first_beat())
+	var want := {34.4: 140.72, 34.82: 144.97, 35.228: 148.51, 35.6: 147.06, 36.0: 145.63, 36.44: 137.38}
+	var all_ok := true
+	for at in want:
+		all_ok = all_ok and absf(g.bpm_at(at) - want[at]) < 0.01
+	ok(all_ok, "bpm_at() = segment tempo at each segment start")
+	ok(absf(g.bpm_at(34.6) - 140.72) < 0.01, "bpm_at() inside a segment")
+	ok(absf(g.bpm_at(34.79) - 144.97) < 0.01, "bpm_at() just before a rounded start counts as inside it")
+	ok(absf(g.bpm_at(10.0) - 140.72) < 0.01, "bpm_at() before the grid -> first segment")
+	ok(absf(g.bpm_at(500.0) - 137.38) < 0.01, "bpm_at() after the grid -> last segment")
+
+
 func _test_real_databases() -> void:
 	print("- databases on this machine")
 	var files := VirtualDjDatabase.find_database_files()
@@ -290,3 +324,33 @@ func _test_real_databases() -> void:
 		skip("no BeatGrid in the local databases")
 	else:
 		ok(grid_bad == 0, "%d real BeatGrids expand cleanly (%d bad)" % [grids, grid_bad])
+
+	_test_live_capture(db)
+
+
+## What a live VirtualDJ reported over OS2L (get_firstbeat in ms, get_bpm,
+## and `beat` events' pos/bpm) for tracks in this machine's library;
+## skipped where they aren't in the database.
+func _test_live_capture(db: VirtualDjDatabase) -> void:
+	var believer := db.find_song("D:\\Music\\Imagine Dragons\\Evolve\\04 Believer.m4a")
+	if believer == null:
+		skip("live capture: Believer not in this library")
+	else:
+		ok(absf(believer.best_bpm() - 124.994011) < 0.01, "Believer: best_bpm = deck's 124.99 (%.3f)" % believer.best_bpm())
+		ok(absf(believer.first_beat() * 1000.0 - 269.955017) < 0.01, "Believer: first beat = get_firstbeat")
+
+	var blah := db.find_song("D:\\Music\\Compilations\\Blah Blah Blah (Remixes)\\08 Blah Blah Blah.m4a")
+	if blah == null or not blah.has_beat_grid():
+		skip("live capture: Blah Blah Blah (variable grid) not in this library")
+		return
+	ok(absf(blah.first_beat() * 1000.0 - 30.459) < 0.01, "Blah Blah Blah: first beat = get_firstbeat (%.3f ms)" % (blah.first_beat() * 1000.0))
+	# beat pos -> the bpm VirtualDJ sent with it, across its tempo changes
+	var captured := {0: 137.85, 40: 137.85, 79: 140.72, 80: 144.97, 81: 148.51, 82: 147.06,
+		83: 145.63, 84: 137.38, 120: 137.38, 127: 140.81, 128: 137.92, 139: 137.92}
+	var b := blah.beat_times()
+	var bad := []
+	for pos in captured:
+		var got := blah.bpm_at(b[pos])
+		if absf(got - captured[pos]) > 0.01:
+			bad.append("pos %d: %.2f vs %.2f" % [pos, got, captured[pos]])
+	ok(bad.is_empty(), "Blah Blah Blah: bpm_at(beat) = VirtualDJ's live bpm on %d beats %s" % [captured.size(), str(bad)])

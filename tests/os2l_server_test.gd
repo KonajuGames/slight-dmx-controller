@@ -24,6 +24,7 @@ func _initialize() -> void:
 	print("== OS2L server ==")
 	_test_split()
 	_test_handle_message()
+	_test_captured_virtualdj()
 	_test_tcp()
 	_test_advertising()
 	print("== %d passed, %d failed ==" % [_p, _f])
@@ -79,8 +80,8 @@ func _test_handle_message() -> void:
 	s.value_changed.connect(func(t, v): got["val"] = [t, v]; got["val_n"] = got.get("val_n", 0) + 1)
 	s.message.connect(func(msg, _peer): got["msg_n"] = got.get("msg_n", 0) + 1)
 
-	s.handle_message({"evt": "beat", "change": true, "pos": 33.0, "bpm": 127.98, "strength": 85.0})
-	ok(got.get("beat") == [true, 33, 127.98, 85.0], "beat -> beat signal %s" % str(got.get("beat")))
+	s.handle_message({"evt": "beat", "change": true, "pos": 33.0, "bpm": 127.98, "strength": 0.8})
+	ok(got.get("beat") == [true, 33, 127.98, 0.8], "beat -> beat signal %s" % str(got.get("beat")))
 	ok(s.last_beat["pos"] == 33, "last_beat cached")
 	s.handle_message({"evt": "btn", "name": "Strobe", "page": "FX", "state": "on"})
 	ok(got.get("btn") == ["Strobe", "FX", true], "btn -> button signal")
@@ -96,6 +97,45 @@ func _test_handle_message() -> void:
 	s.handle_message({"evt": "something-new", "x": 1})
 	ok(got.get("msg_n") == 7,"every message reaches `message` (%s)" % str(got.get("msg_n")))
 	ok(s.deck_value(2, "get_bpm", -1) == -1, "deck_value default")
+	s.free()
+
+
+## Messages exactly as a live VirtualDJ sent them (one TCP read's worth,
+## back to back), so the format assumptions are pinned to real traffic.
+const _CAPTURED := '{"evt":"subscribed","trigger":"deck 1 get_filepath","value":"D:\\\\Music\\\\Imagine Dragons\\\\Evolve\\\\04 Believer.m4a"}' \
+	+ '{"evt":"subscribed","trigger":"deck 1 get_bpm","value":124.994011}' \
+	+ '{"evt":"subscribed","trigger":"deck 1 get_firstbeat","value":269.955017}' \
+	+ '{"evt":"subscribed","trigger":"deck 1 play","value":"on"}' \
+	+ '{"evt":"subscribed","trigger":"deck 1 get_time elapsed absolute","value":374.0}' \
+	+ '{"evt":"subscribed","trigger":"deck 1 get_beatpos","value":0.217015}' \
+	+ '{"bpm":124.99,"change":true,"evt":"beat","pos":0.0,"strength":0.8}' \
+	+ '{"bpm":124.99,"change":false,"evt":"beat","pos":1.0,"strength":0.0}' \
+	+ '{"evt":"subscribed","trigger":"crossfader","value":0.506849}'
+
+
+func _test_captured_virtualdj() -> void:
+	print("- captured VirtualDJ traffic")
+	var split := Os2lServer.split_messages(_CAPTURED.to_utf8_buffer())
+	ok(split["messages"].size() == 9 and split["rest"].is_empty(), "9 messages split")
+	var s := Os2lServer.new()
+	var beats := []
+	s.beat.connect(func(c, pos, bpm, strength): beats.append([c, pos, bpm, strength]))
+	for text in split["messages"]:
+		s.handle_message(JSON.parse_string(text))
+	ok(s.deck_value(1, "get_filepath") == "D:\\Music\\Imagine Dragons\\Evolve\\04 Believer.m4a",
+		"file path, backslashes kept")
+	ok(is_equal_approx(s.deck_value(1, "get_bpm"), 124.994011), "bpm")
+	ok(is_equal_approx(s.deck_value(1, "get_firstbeat"), 269.955017), "first beat (ms)")
+	ok(s.deck_value(1, "play") == "on", "play is a string")
+	ok(beats == [[true, 0, 124.99, 0.8], [false, 1, 124.99, 0.0]], "beats, strength 0..1 %s" % str(beats))
+	ok(is_equal_approx(s.values.get("crossfader", -1.0), 0.506849), "crossfader")
+	# The path VirtualDJ reports finds the song in a database.
+	var db := VirtualDjDatabase.new()
+	var song := VirtualDjDatabase.Song.new()
+	song.path = "D:/Music/Imagine Dragons/Evolve/04 Believer.m4a"
+	song.source = "D:/VirtualDJ/database.xml"
+	db._add_song(song)
+	ok(db.find_song(s.deck_value(1, "get_filepath")) == song, "find_song() accepts the reported path")
 	s.free()
 
 

@@ -27,8 +27,14 @@ extends Node
 
 signal client_connected(peer: String)
 signal client_disconnected(peer: String)
-## A beat. `change` is true when the beat source changed (deck switch,
-## new track); `pos` is the beat number; `strength` VirtualDJ's 0..100.
+## A beat of the playing deck. `pos` is its beat number from the track's
+## first beat (-1 just before it); `bpm` the deck's current tempo;
+## `strength` 0..1 (how strong the beat is in the audio).
+## `change` is set when this beat doesn't continue the previous rhythm — a
+## tempo change in a variable-tempo grid, a seek (scrubbing backwards sends
+## a burst of beats counting down), playback starting. VirtualDJ sets it on
+## many beats within one track, so don't read it as "new track"; watch
+## `deck N get_filepath` for that.
 signal beat(change: bool, pos: int, bpm: float, strength: float)
 signal button(name: String, page: String, on: bool)
 signal command(id: int, param: float)
@@ -66,7 +72,8 @@ var service_name := "sLight"
 
 ## Last value reported for each subscribed query.
 var values: Dictionary = {}
-## The last beat: { change, pos, bpm, strength, time } (time = msec ticks).
+## The last beat: { change, pos, bpm, strength, time } (time = msec ticks
+## when it arrived).
 var last_beat: Dictionary = {}
 
 var _server := TCPServer.new()
@@ -78,7 +85,24 @@ var _mdns_status := "not advertised"
 
 
 ## The VDJscript queries subscribed to by default, per deck: what's
-## loaded, tempo and beat phase, transport, and the mix position.
+## loaded, tempo and beat phase, transport, and the mix position. What
+## VirtualDJ reports for each (checked against a live VirtualDJ):
+##   crossfader                 0..1 (0 = left)
+##   deck N get_filepath        Windows path with backslashes; empty decks
+##                              aren't reported. VirtualDjDatabase.find_song()
+##                              accepts it as is.
+##   deck N get_bpm             current tempo, including a variable grid's
+##                              changes (= Song.bpm_at() for the position)
+##   deck N get_beatpos         fractional beats from the first beat;
+##                              negative before it
+##   deck N get_firstbeat       MILLISECONDS (the database is in seconds:
+##                              Song.first_beat() * 1000)
+##   deck N play / loop         "on" / "off"
+##   deck N level               0..1
+##   deck N get_time elapsed absolute   MILLISECONDS into the track
+##   deck N get_loop            loop length in beats
+## Values are only re-sent when they change, at most every
+## `subscription_frequency_ms`.
 static func default_subscriptions(decks: int) -> PackedStringArray:
 	var out := PackedStringArray(["crossfader"])
 	for i in range(1, decks + 1):

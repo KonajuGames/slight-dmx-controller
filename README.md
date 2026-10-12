@@ -179,7 +179,8 @@ technical reference.
   `Documents/VirtualDJ/` plus `<drive>:/VirtualDJ/` on every drive),
   merged by file path — tags, VirtualDJ's BPM / key / beat-phase
   analysis (including the variable-tempo `BeatGrid` it stores for long
-  mixes, expanded to per-beat times by `beat_times()`), hot cues,
+  mixes, expanded to per-beat times by `beat_times()`, with `bpm_at()`
+  giving the tempo VirtualDJ's deck reports at any point), hot cues,
   automix points and named remix sections. Not yet wired into the UI.
 - `virtualdj_list.gd` — the `VirtualDjList` class: reads VirtualDJ's
   playlists — the `.vdjfolder` Virtual Folders in the `MyLists`

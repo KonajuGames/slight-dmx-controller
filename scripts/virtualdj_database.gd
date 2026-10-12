@@ -21,6 +21,11 @@ const DB_FILE := "database.xml"
 ## `<Song Flag>` bit VirtualDJ sets on video files.
 const SONG_FLAG_VIDEO := 64
 
+## BeatGrid segment starts are stored to ~5 significant digits (±0.05 s
+## for times of 1000 s and up), so Song.bpm_at() lets a time this far
+## before a segment's start still count as inside it.
+const GRID_START_SLACK := 0.05
+
 
 ## One `<Song>` entry. Times (`length`, `phase`, every POI `pos`) are in
 ## seconds from the start of the file.
@@ -55,7 +60,7 @@ class Song:
 	var scanned: bool = false
 	var scan_bpm: float = 0.0        # beats per minute
 	var scan_alt_bpm: float = 0.0    # the half/double-time alternative
-	var phase: float = 0.0           # seconds; position of a beat
+	var phase: float = 0.0           # seconds; position of a beat (not always the first — see first_beat())
 	var volume: float = 1.0          # VirtualDJ's auto-gain factor
 	var scan_key: String = ""
 	## Variable-tempo grid from <Scan BeatGrid>, when VirtualDJ stored one
@@ -72,21 +77,45 @@ class Song:
 	func is_video() -> bool:
 		return flags & SONG_FLAG_VIDEO != 0
 
-	## Best-known tempo: the tag (which the user may have corrected),
-	## falling back to the scan.
+	## Best-known tempo: VirtualDJ's scan (what its decks actually play at —
+	## checked live over OS2L, where a track tagged 94 BPM played at the
+	## scanned 124.99), falling back to the file's tag. For a variable-tempo
+	## grid, bpm_at() gives the tempo at a given point.
 	func best_bpm() -> float:
-		return bpm if bpm > 0.0 else scan_bpm
+		return scan_bpm if scan_bpm > 0.0 else bpm
 
 	## Best-known key, in VirtualDJ notation.
 	func best_key() -> String:
 		return key if key != "" else scan_key
 
-	## First beat position: the first beatgrid anchor, else the scan phase.
+	## First beat position in seconds: the variable-tempo grid's first beat
+	## when there is one (its `phase` can be a beat far into the song), else
+	## the first beatgrid anchor, else the scan phase. Matches what VirtualDJ
+	## reports live as `get_firstbeat` (which is in milliseconds).
 	func first_beat() -> float:
+		if has_beat_grid():
+			return float(grid_segments[0]["start"])
 		return float(beatgrid[0]) if not beatgrid.is_empty() else phase
 
 	func has_beat_grid() -> bool:
 		return not grid_segments.is_empty()
+
+	## The tempo at `t` seconds into the song. With a variable-tempo grid,
+	## that's the declared tempo of the grid segment playing at `t` — what
+	## VirtualDJ reports for the deck (unpitched) — not one derived from
+	## the gap between two beats, which the grid's rounded segment starts
+	## make jittery. Otherwise best_bpm(). 0 when unknown.
+	func bpm_at(t: float) -> float:
+		if not has_beat_grid():
+			return best_bpm()
+		var spb: float = grid_segments[0]["spb"]
+		for seg in grid_segments:
+			# Segment starts are rounded to ~5 significant digits, so a beat
+			# can land slightly before the start it belongs to.
+			if float(seg["start"]) > t + GRID_START_SLACK:
+				break
+			spb = seg["spb"]
+		return 60.0 / spb if spb > 0.0 else 0.0
 
 	## Every beat time in seconds, ascending. Uses the variable-tempo grid
 	## when there is one, otherwise a constant grid at best_bpm() locked to
