@@ -2,9 +2,10 @@ extends Control
 ## Main DMX control shell. Attached to the root Control node in main.tscn.
 ## Builds its whole UI in code so the scene file stays trivial.
 ##
-## Layout: a top bar (grand master, Sending, add/remove universe, whole-
-## show + preset save/load) above a TabContainer with one UniversePanel
-## per Art-Net universe. Each panel owns its own ArtNetUniverse sender and
+## Layout: a top bar (view selector, grand master, Sending, add/remove
+## universe, whole-show + preset save/load) above either the console —
+## playback tabs beside a TabContainer with one UniversePanel per Art-Net
+## universe — or the Music Library view (MusicBrowserPanel). Each panel owns its own ArtNetUniverse sender and
 ## fixture patch; this shell owns the shared fixture-profile list and the
 ## refresh loop.
 
@@ -33,6 +34,12 @@ var auto_show_panel: AutoShowPanel
 var groups_panel: GroupsPanel
 var viz_panel: VisualizerPanel
 var dmx_output_panel: DmxOutputPanel
+## The alternate "Music Library" view, swapped in for the console area
+## (`_console_view`) by the top bar's View selector.
+var music_panel: MusicBrowserPanel
+var _console_view: Control
+var view_option: OptionButton
+const VIEWS := ["Console", "Music Library"]
 ## The right-hand tabs (Patch + 3D Visualizer) and, while the visualizer
 ## is popped out, its own window.
 var _right_tabs: TabContainer
@@ -79,6 +86,13 @@ func _ready() -> void:
 	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	split.split_offset = 340
 	main_vbox.add_child(split)
+	_console_view = split
+
+	# The alternate view: drives / folders / VirtualDJ Virtual Folders and
+	# their music. Hidden until picked in the top bar's View selector.
+	music_panel = MusicBrowserPanel.new()
+	music_panel.visible = false
+	main_vbox.add_child(music_panel)
 
 	var playback_tabs := TabContainer.new()
 	playback_tabs.custom_minimum_size = Vector2(336, 0)
@@ -370,6 +384,14 @@ func _build_top_bar() -> Control:
 	row.add_theme_constant_override("h_separation", 8)
 	row.add_theme_constant_override("v_separation", 4)
 
+	row.add_child(_label("View:"))
+	view_option = OptionButton.new()
+	for v in VIEWS:
+		view_option.add_item(v)
+	view_option.item_selected.connect(set_view)
+	row.add_child(view_option)
+	row.add_child(VSeparator.new())
+
 	row.add_child(_label("Grand Master:"))
 	master_slider = HSlider.new()
 	master_slider.min_value = 0
@@ -440,6 +462,17 @@ func _build_top_bar() -> Control:
 	col.add_child(status_label)
 
 	return col
+
+
+## Switch the main area: 0 = the console (playback tabs + patch /
+## visualizer / DMX output), 1 = the Music Library. The top bar stays, and
+## the console keeps running underneath either way.
+func set_view(idx: int) -> void:
+	idx = clampi(idx, 0, VIEWS.size() - 1)
+	_console_view.visible = idx == 0
+	music_panel.visible = idx == 1
+	if view_option.selected != idx:
+		view_option.selected = idx
 
 
 # ------------------------------------------------------------- UNIVERSES --
@@ -756,10 +789,10 @@ func _on_refresh_timeout() -> void:
 
 
 ## Space fires the next cue, like a real console — but only when no text
-## field or button ate the keypress first.
+## field or button ate the keypress first, and only in the Console view.
 func _unhandled_key_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_SPACE and run_mode == 0:
+		if event.keycode == KEY_SPACE and run_mode == 0 and _console_view.visible:
 			cue_panel.go()
 			get_viewport().set_input_as_handled()
 

@@ -96,13 +96,19 @@ technical reference.
   wheel fixtures get their nearest matching wheel slot instead of plain
   RGB, and a shutter channel is opened rather than defaulted closed.
 - `main.tscn` — a single root `Control` node with the GUI script attached.
-- `dmx_controller.gd` — the shell: a top bar (grand master, run mode,
-  Sending, add/remove universe, whole-show + preset save/load, MIDI/OSC
-  triggers) above a
-  split view — playback tabs (Cues / Chases / Effects / Sound / Auto
-  Show / Groups)
-  on the left, one universe tab each on the right — plus the shared
-  fixture-profile list and the profile new/edit/delete flow.
+- `dmx_controller.gd` — the shell: a top bar (view selector, grand
+  master, run mode, Sending, add/remove universe, whole-show + preset
+  save/load, MIDI/OSC triggers) above either the console — a split view
+  of playback tabs (Cues / Chases / Effects / Sound / Auto Show / Groups)
+  on the left, one universe tab each on the right — or the Music Library
+  view; plus the shared fixture-profile list and the profile
+  new/edit/delete flow.
+- `music_browser_panel.gd` — the `MusicBrowserPanel` class: the Music
+  Library view. A narrow tree of this machine's drives and folders
+  (loaded as they're expanded) followed by VirtualDJ's Virtual Folders;
+  selecting one lists its music on the right — title, artist, BPM, key,
+  length, album, genre, file — from VirtualDJ's database where it knows
+  the track, sortable by any column, with missing files flagged.
 - `universe_panel.gd` — the `UniversePanel` class: one universe's tab —
   its connection settings, blackout/full, and fixture patch with
   purpose-built per-fixture controls.
@@ -217,6 +223,13 @@ then it's greyed out. See
 [Output: Art-Net, sACN, or USB DMX](#output-art-net-sacn-or-usb-dmx).
 
 Global controls live in the top bar:
+
+- **View** — switches the area below the top bar between the
+  **Console** (everything described here) and the **Music Library**: a
+  tree of drives and folders plus VirtualDJ's Virtual Folders, and the
+  music in whichever is selected (details from VirtualDJ's database;
+  click a column title to sort). The console keeps running while the
+  Music Library is showing; the spacebar GO only works in the Console.
 
 - **Grand Master** — one 0–255 fader that scales *every* universe's
   output on send (non-destructive: the per-channel values you dialed
