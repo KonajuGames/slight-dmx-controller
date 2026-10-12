@@ -183,6 +183,13 @@ technical reference.
   playlists — the `.vdjfolder` Virtual Folders in the `MyLists`
   directory next to each `database.xml` — in VirtualDJ's display order,
   with `resolve()` matching each track to its `VirtualDjDatabase` entry.
+- `os2l_server.gd` — the `Os2lServer` node: an OS2L (Open Sound to Light)
+  TCP server that DJ software connects to — `beat` / `btn` / `cmd`
+  events as signals, `feedback` back, and VirtualDJ's `subscribe`
+  extension for live per-deck values (track, BPM, beat position, play
+  state, ...). No mDNS advertising yet, so VirtualDJ needs its
+  `os2lDirectIp` option pointed at it. Not yet wired into the UI;
+  `tools/os2l_monitor.gd` runs one headless and prints what arrives.
 - `recent_dirs.gd` — the `RecentDirs` class: every file dialog (Load Song,
   Import fixture, Load glTF model, Import/Export MVR) reopens in the
   folder it was last used in, remembered per dialog rather than as one
