@@ -55,9 +55,24 @@ feature:
   everywhere. Without it, MIDI feedback falls back to the
   `tools/midi_bridge.py` UDP path.
 
+- **DNS-SD advertising** (`MdnsAdvertiser`) — advertises the OS2L server
+  (`_os2l._tcp`) over mDNS so VirtualDJ finds it without being pointed at
+  an IP. It registers the service with the **OS's own mDNS responder**
+  rather than sending mDNS packets itself, so it never competes with the
+  system for UDP 5353 (which Windows' Dnscache, and Bonjour if installed,
+  already hold). Backends, all loaded at run time:
+  - Windows: `DnsServiceRegister` in `dnsapi.dll` (Windows 10 1809+).
+  - macOS: `DNSServiceRegister` (dns_sd, part of libSystem).
+  - Linux: the same dns_sd API from Avahi's compatibility library,
+    `libdns_sd.so.1` (`libavahi-compat-libdnssd1` on Debian/Ubuntu,
+    `avahi-compat-libdns_sd` on Fedora) — needs `avahi-daemon` running.
+  Without it, `Os2lServer` still runs; VirtualDJ just has to be pointed at
+  it with its `os2lDirectIp` option.
+
 The app runs fine with none of this built — every feature above checks
 `ClassDB.class_exists(...)` and no-ops cleanly (see `usb_dmx_bridge.gd`,
-`video_rec.gd`, `song_analyzer.gd`, `midi_out_bridge.gd`).
+`video_rec.gd`, `song_analyzer.gd`, `midi_out_bridge.gd`,
+`os2l_server.gd`).
 
 ## Requirements
 
@@ -71,8 +86,9 @@ The app runs fine with none of this built — every feature above checks
   - macOS: Xcode command-line tools
 - Nothing extra at run time for video/audio/MIDI — those are compiled in.
   USB DMX output additionally needs FTDI D2XX or libusb-1.0 present on the
-  machine that *runs* the app (see above); that's the only run-time
-  dependency of anything in this extension.
+  machine that *runs* the app (see above), and DNS-SD advertising on Linux
+  needs Avahi's `libdns_sd` (Windows and macOS have theirs built in);
+  those are the only run-time dependencies of anything in this extension.
 
 ## Build
 
@@ -152,8 +168,17 @@ if midi.driver_available():
     midi.open_port_by_name("Launchpad")   # first port whose name contains this
     midi.send(0x90, 60, 127)              # note on, channel 1, note 60, velocity 127
     midi.close()
+
+# DNS-SD advertising
+var adv := MdnsAdvertiser.new()
+if adv.backend_available():                # adv.get_backend(): "windows-dnsapi" / "dns_sd"
+    adv.start("sLight", "_os2l._tcp", 9960, {"key": "value"})   # TXT optional
+    adv.poll()                             # every frame; needed by dns_sd to deliver replies
+    adv.get_state()                        # STATE_REGISTERING -> STATE_REGISTERED / STATE_FAILED
+    adv.get_registered_name()              # "sLight", or "sLight(1)" after a name conflict
+    adv.stop()                             # withdraws it (goodbye packets)
 ```
 
 In this project, the `UsbDmx`, `VideoRec`/`video_rec.gd`, `SongAnalyzer`,
-and `MidiOut` wrappers handle all of the above — you just use the app
+`MidiOut` and `Os2lServer` wrappers handle all of the above — you just use the app
 normally; each falls back gracefully when this extension isn't built.

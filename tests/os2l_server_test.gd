@@ -25,6 +25,7 @@ func _initialize() -> void:
 	_test_split()
 	_test_handle_message()
 	_test_tcp()
+	_test_advertising()
 	print("== %d passed, %d failed ==" % [_p, _f])
 	quit(1 if _f > 0 else 0)
 
@@ -178,4 +179,33 @@ func _test_tcp() -> void:
 	s2.free()
 	s.stop()
 	ok(not s.is_listening(), "stop")
+	ok(not s.is_advertised() and s.advertising_status() == "not advertised",
+		"loopback-only bind isn't advertised (%s)" % s.advertising_status())
+	s.free()
+
+
+## mDNS advertising when the server listens on every interface: real
+## registration with the native extension built, the os2lDirectIp hint
+## without it.
+func _test_advertising() -> void:
+	print("- mDNS advertising")
+	var s := Os2lServer.new()
+	s.subscriptions = PackedStringArray()
+	s.service_name = "sLight test %d" % (Time.get_ticks_usec() % 100000)
+	var changes := []
+	s.advertising_changed.connect(func(on, detail): changes.append([on, detail]))
+	ok(s.start(0) == OK, "listens on all interfaces, port %d" % s.get_port())
+	if not ClassDB.class_exists("MdnsAdvertiser"):
+		ok(not s.is_advertised() and "os2lDirectIp" in s.advertising_status(),
+			"without the extension: not advertised, points at os2lDirectIp (%s)" % s.advertising_status())
+	else:
+		var t := Time.get_ticks_msec()
+		while not s.is_advertised() and Time.get_ticks_msec() - t < 5000:
+			s.poll()
+			OS.delay_msec(20)
+		print("    ", s.advertising_status())
+		ok(s.is_advertised() or "no DNS-SD" in s.advertising_status(), "advertised (or no DNS-SD service here)")
+	s.stop()
+	ok(not s.is_advertised(), "stop withdraws it")
+	ok(not changes.is_empty(), "advertising_changed emitted %s" % str(changes))
 	s.free()

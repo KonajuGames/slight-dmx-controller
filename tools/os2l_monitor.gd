@@ -4,8 +4,10 @@ extends SceneTree
 ##
 ##   godot --headless --script tools/os2l_monitor.gd [-- --port 9960 --decks 2]
 ##
-## No mDNS advertising yet, so in VirtualDJ set the `os2lDirectIp` option
-## to this machine (e.g. 127.0.0.1:9960). Ctrl+C to stop.
+## With the `addons/native` extension built, the server is advertised
+## over mDNS and VirtualDJ finds it on its own; otherwise set VirtualDJ's
+## `os2lDirectIp` option to this machine (e.g. 127.0.0.1:9960). Ctrl+C to
+## stop.
 
 func _initialize() -> void:
 	var port := Os2lServer.DEFAULT_PORT
@@ -20,6 +22,7 @@ func _initialize() -> void:
 	var s := Os2lServer.new()
 	s.subscriptions = Os2lServer.default_subscriptions(decks)
 	s.state_changed.connect(func(on, detail): print("[OS2L] ", detail))
+	s.advertising_changed.connect(func(on, detail): print("[OS2L] ", detail))
 	s.client_connected.connect(func(p): print("[OS2L] connection from ", p))
 	s.client_disconnected.connect(func(p): print("[OS2L] closed ", p))
 	s.message.connect(func(msg, _p): print(JSON.stringify(msg)))

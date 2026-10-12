@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # Build the "native" GDExtension: every optional native feature (USB DMX
-# output, MP4 video recording, fast song analysis, native MIDI output)
-# bundled into a single shared library, so the exported package ships one
-# GDExtension instead of four.
+# output, MP4 video recording, fast song analysis, native MIDI output,
+# DNS-SD advertising) bundled into a single shared library, so the exported
+# package ships one GDExtension instead of five.
 #   python -m SCons platform=windows target=template_debug
 #   python -m SCons platform=windows target=template_release
 # godot_cpp=<path> points at a godot-cpp checkout (build.py fills this in).
@@ -16,6 +16,7 @@ env.Append(CPPPATH=[
     "src/video_rec/",
     "src/song_dsp/",
     "src/midi_out/",
+    "src/mdns/",
     "third_party/video_rec/",
     "third_party/song_dsp/",
     "third_party/shine/",
@@ -35,6 +36,7 @@ sources = (
     + Glob("src/video_rec/*.cpp") + Glob("src/video_rec/*.c")
     + Glob("src/song_dsp/*.cpp") + Glob("src/song_dsp/*.c")
     + Glob("src/midi_out/*.cpp")
+    + Glob("src/mdns/*.cpp")          # DNS-SD advertising (OS2L discovery)
     + Glob("third_party/shine/*.c")   # MP3 encoder, for video_rec's audio track
 )
 

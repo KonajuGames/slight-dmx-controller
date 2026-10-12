@@ -6,11 +6,12 @@ A ready-to-run Godot 4 project with a GUI for controlling DMX lighting
 fixtures. Each universe outputs over **Art-Net** or **sACN (E1.31)** —
 both plain UDP, no plugin needed — or, with the optional `addons/native`
 GDExtension built, straight to a **USB DMX interface** (Enttec, Open DMX,
-uDMX). That same extension bundles three more optional features that
+uDMX). That same extension bundles four more optional features that
 speed things up or fill in gaps locally: recording the 3D view to MP4,
 decoding and analysing a music file for the Auto Show in C++ instead of
-playing it 4× through a capture bus, and sending MIDI feedback straight to
-a real port instead of through a Python bridge script. It's one shared
+playing it 4× through a capture bus, sending MIDI feedback straight to
+a real port instead of through a Python bridge script, and advertising
+the OS2L server over mDNS so VirtualDJ finds it on its own. It's one shared
 library, built with one command; the app runs fine without it.
 
 New to sLight? See the [**User Guide**](docs/USER_GUIDE.md) for a
@@ -153,7 +154,8 @@ technical reference.
 - `addons/native/` — one optional GDExtension (C++) bundling USB DMX
   output (FTDI D2XX + libusb), the MP4 encoder (minih264 + minimp4 +
   shine for the audio track), the song decode + analysis front-end
-  (minimp3 + stb_vorbis), and native MIDI output (RtMidi) — one shared
+  (minimp3 + stb_vorbis), native MIDI output (RtMidi), and DNS-SD service
+  advertising through the OS's own mDNS responder — one shared
   library so an exported build only ships a single GDExtension. Has one
   `build.py` and `BUILD.md`; ships disabled so
   an unbuilt checkout is quiet.
@@ -187,8 +189,9 @@ technical reference.
   TCP server that DJ software connects to — `beat` / `btn` / `cmd`
   events as signals, `feedback` back, and VirtualDJ's `subscribe`
   extension for live per-deck values (track, BPM, beat position, play
-  state, ...). No mDNS advertising yet, so VirtualDJ needs its
-  `os2lDirectIp` option pointed at it. Not yet wired into the UI;
+  state, ...). Advertised over mDNS (`_os2l._tcp`) when `addons/native`
+  is built, so VirtualDJ finds it on its own; otherwise VirtualDJ's
+  `os2lDirectIp` option has to point at it. Not yet wired into the UI;
   `tools/os2l_monitor.gd` runs one headless and prints what arrives.
 - `recent_dirs.gd` — the `RecentDirs` class: every file dialog (Load Song,
   Import fixture, Load glTF model, Import/Export MVR) reopens in the

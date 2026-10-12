@@ -14,10 +14,11 @@ extends Node
 ## back periodically; those arrive here as `value_changed` and are cached
 ## in `values`. `subscriptions` is sent to every client as it connects.
 ##
-## Discovery: VirtualDJ normally finds the server by mDNS/DNS-SD
-## (`_os2l._tcp`), which this class does NOT advertise. Until that
-## exists, point VirtualDJ at it directly with its `os2lDirectIp` option
-## (e.g. `127.0.0.1:9960`).
+## Discovery: VirtualDJ finds the server by mDNS/DNS-SD (`_os2l._tcp`).
+## With the `addons/native` extension built, start() advertises it
+## through the OS's own mDNS responder (MdnsAdvertiser); without it —
+## or where the OS has no DNS-SD API — point VirtualDJ at the server
+## directly with its `os2lDirectIp` option (e.g. `127.0.0.1:9960`).
 ##
 ##   var os2l := Os2lServer.new()
 ##   add_child(os2l)
@@ -37,8 +38,14 @@ signal value_changed(trigger: String, value: Variant)
 ## Every message received, after the typed signals above.
 signal message(msg: Dictionary, peer: String)
 signal state_changed(listening: bool, detail: String)
+## The mDNS advertisement came up, was renamed, failed or was withdrawn.
+signal advertising_changed(advertised: bool, detail: String)
 
 const DEFAULT_PORT := 9960
+const SERVICE_TYPE := "_os2l._tcp"
+# MdnsAdvertiser.State, usable when the extension isn't loaded.
+const _MDNS_REGISTERED := 2
+const _MDNS_FAILED := 3
 ## A client that sends this much without completing a JSON object is
 ## dropped rather than buffered forever.
 const MAX_BUFFER := 1 << 20
@@ -50,6 +57,12 @@ var deck_count := 2
 var subscriptions: PackedStringArray = default_subscriptions(2)
 ## How often VirtualDJ should report subscribed values, in milliseconds.
 var subscription_frequency_ms := 100
+## Advertise over mDNS on start() (needs the native extension; never for
+## a loopback-only bind, which nothing else could reach anyway).
+var advertise := true
+## The instance name DJ software shows. The responder may append a
+## number if it's already taken on the network (see advertising_status()).
+var service_name := "sLight"
 
 ## Last value reported for each subscribed query.
 var values: Dictionary = {}
@@ -59,6 +72,9 @@ var last_beat: Dictionary = {}
 var _server := TCPServer.new()
 var _port := 0
 var _clients: Array = []        # [{ peer: StreamPeerTCP, name: String, buf: PackedByteArray }]
+var _mdns = null                # a MdnsAdvertiser while advertising
+var _mdns_state := -1
+var _mdns_status := "not advertised"
 
 
 ## The VDJscript queries subscribed to by default, per deck: what's
@@ -93,10 +109,13 @@ func start(port: int = DEFAULT_PORT, bind_address: String = "*") -> Error:
 		return err
 	_port = _server.get_local_port()
 	state_changed.emit(true, "listening on :%d" % _port)
+	if advertise and not (bind_address.begins_with("127.") or bind_address in ["::1", "localhost"]):
+		_start_advertising()
 	return OK
 
 
 func stop() -> void:
+	_stop_advertising()
 	for c in _clients:
 		c["peer"].disconnect_from_host()
 		client_disconnected.emit(c["name"])
@@ -129,6 +148,7 @@ func deck_value(deck: int, query: String, default: Variant = null) -> Variant:
 func poll() -> void:
 	if not _server.is_listening():
 		return
+	_poll_advertising()
 	while _server.is_connection_available():
 		var peer := _server.take_connection()
 		if peer == null:
@@ -160,6 +180,65 @@ func poll() -> void:
 			push_warning("Os2lServer: %s sent %d bytes without a complete message; dropping" % [
 				c["name"], c["buf"].size()])
 			_drop(c)
+
+
+# --------------------------------------------------------- ADVERTISING --
+
+## Whether DJ software on the network can currently discover the server.
+func is_advertised() -> bool:
+	return _mdns_state == _MDNS_REGISTERED
+
+
+## Human-readable advertising state, e.g. "advertised as sLight" or why not.
+func advertising_status() -> String:
+	return _mdns_status
+
+
+func _start_advertising() -> void:
+	if not ClassDB.class_exists("MdnsAdvertiser"):
+		_set_mdns(-1, "not advertised: native extension not built — set VirtualDJ's os2lDirectIp")
+		return
+	_mdns = ClassDB.instantiate("MdnsAdvertiser")
+	if not _mdns.backend_available():
+		_mdns = null
+		_set_mdns(-1, "not advertised: no DNS-SD service on this system — set VirtualDJ's os2lDirectIp")
+		return
+	if not _mdns.start(service_name, SERVICE_TYPE, _port, {}):
+		var err: String = _mdns.get_error()
+		_mdns = null
+		_set_mdns(_MDNS_FAILED, "advertising failed: " + err)
+		return
+	_mdns_state = -1
+	_poll_advertising()
+
+
+func _poll_advertising() -> void:
+	if _mdns == null:
+		return
+	_mdns.poll()
+	var st: int = _mdns.get_state()
+	if st == _mdns_state:
+		return
+	if st == _MDNS_REGISTERED:
+		_set_mdns(st, "advertised as %s (%s)" % [_mdns.get_registered_name(), SERVICE_TYPE])
+	elif st == _MDNS_FAILED:
+		_set_mdns(st, "advertising failed: " + _mdns.get_error())
+	else:
+		_mdns_state = st
+
+
+func _stop_advertising() -> void:
+	if _mdns == null:
+		return
+	_mdns.stop()
+	_mdns = null
+	_set_mdns(-1, "not advertised")
+
+
+func _set_mdns(st: int, status: String) -> void:
+	_mdns_state = st
+	_mdns_status = status
+	advertising_changed.emit(st == _MDNS_REGISTERED, status)
 
 
 # ------------------------------------------------------------- SENDING --

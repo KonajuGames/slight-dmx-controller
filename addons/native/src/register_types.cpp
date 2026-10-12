@@ -1,6 +1,7 @@
 // One GDExtension bundling every optional native feature: USB DMX output
 // (usb_dmx/), MP4 video recording (video_rec/), fast song analysis
-// (song_dsp/), and native MIDI feedback output (midi_out/). Combined so the
+// (song_dsp/), native MIDI feedback output (midi_out/), and DNS-SD service
+// advertising (mdns/). Combined so the
 // exported package only ships one shared library, instead of one per
 // feature — see addons/native/BUILD.md.
 
@@ -10,6 +11,7 @@
 #include "video_rec/video_recorder.h"
 #include "song_dsp/song_features.h"
 #include "midi_out/midi_output.h"
+#include "mdns/mdns_advertiser.h"
 
 #include <gdextension_interface.h>
 #include <godot_cpp/core/defs.hpp>
@@ -25,6 +27,7 @@ void initialize_native_module(ModuleInitializationLevel p_level) {
 	GDREGISTER_CLASS(VideoRecorder);
 	GDREGISTER_CLASS(SongFeatures);
 	GDREGISTER_CLASS(MidiOutput);
+	GDREGISTER_CLASS(MdnsAdvertiser);
 }
 
 void uninitialize_native_module(ModuleInitializationLevel p_level) {
