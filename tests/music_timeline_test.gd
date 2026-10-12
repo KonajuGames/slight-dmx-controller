@@ -313,7 +313,9 @@ func _test_resize() -> void:
 	var g := tl.grip()
 	ok(tl.wave_height() == 90.0 and is_equal_approx(w.size.y, 90.0), "starts 90 px tall (half the old 180)")
 	var gr := g.get_global_rect()
-	ok(gr.end.y <= w.get_global_rect().position.y + 0.5 and gr.size.y >= 8.0, "grip bar sits just above it")
+	ok(gr.end.y <= w.get_global_rect().position.y + 0.5 and gr.size.y >= 8.0, "grip strip sits just above it")
+	var methods: Array = g.get_script().get_script_method_list().map(func(m): return m["name"])
+	ok(not "_draw" in methods, "and draws nothing (the resize cursor is the only cue)")
 	ok(g.mouse_default_cursor_shape == Control.CURSOR_VSIZE, "with a resize cursor")
 	var bottom := w.get_global_rect().end.y
 

@@ -522,7 +522,8 @@ func _box_follow(start: float, length: float) -> void:
 	_box.set_view(start, length)
 
 
-## The bar above the waveform: drag it up or down to resize the waveform.
+## The (invisible) strip above the waveform: drag it up or down to resize
+## the waveform.
 ## Reports how far the pointer has moved vertically since the press, so
 ## the size tracks the pointer even after hitting a limit.
 class SizeGrip:
@@ -533,32 +534,16 @@ class SizeGrip:
 
 	const HEIGHT := 10.0
 	var _dragging := false
-	var _hover := false
 	var _press_y := 0.0
 
 	func _ready() -> void:
+		# Nothing drawn: the resize cursor on hover is the only cue.
 		custom_minimum_size = Vector2(0, HEIGHT)
 		mouse_filter = Control.MOUSE_FILTER_STOP
 		mouse_default_cursor_shape = Control.CURSOR_VSIZE
-		mouse_entered.connect(func():
-			_hover = true
-			queue_redraw())
-		mouse_exited.connect(func():
-			_hover = false
-			queue_redraw())
 
 	func is_dragging() -> bool:
 		return _dragging
-
-	func _draw() -> void:
-		var lit := _hover or _dragging
-		var line := Color(1, 1, 1, 0.35 if lit else 0.18)
-		var mid := size.y * 0.5
-		draw_line(Vector2(0, mid), Vector2(size.x, mid), line, 1.0)
-		# A small handle in the middle.
-		var hw := 22.0
-		var handle := Rect2(size.x * 0.5 - hw, mid - 3.0, hw * 2.0, 6.0)
-		draw_rect(handle, Color(0.55, 0.55, 0.6) if lit else Color(0.38, 0.38, 0.42))
 
 	func _gui_input(event: InputEvent) -> void:
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
@@ -566,7 +551,6 @@ class SizeGrip:
 			if _dragging:
 				_press_y = event.global_position.y
 				drag_started.emit()
-			queue_redraw()
 			accept_event()
 		elif event is InputEventMouseMotion and _dragging:
 			dragged.emit(event.global_position.y - _press_y)
