@@ -8,6 +8,17 @@
 # godot_cpp=<path> points at a godot-cpp checkout (build.py fills this in).
 
 godot_cpp = ARGUMENTS.get("godot_cpp", "godot-cpp")
+
+# Build with C++ exceptions enabled. godot-cpp disables them by default, but
+# RtMidi (src/midi_out/) reports errors by throwing RtMidiError -- including
+# from its constructor, before an error callback could be installed -- and
+# midi_output.cpp catches them so a vanished port or a missing ALSA sequencer
+# can't take the app down. With exceptions disabled that code doesn't compile
+# on gcc/clang (-fno-exceptions) and on MSVC catches without unwinding.
+# Nothing lets an exception cross into Godot: every RtMidi call is caught in
+# midi_output.cpp. Override with disable_exceptions=yes only if RtMidi goes.
+ARGUMENTS.setdefault("disable_exceptions", "no")
+
 env = SConscript(godot_cpp + "/SConstruct")
 
 env.Append(CPPPATH=[

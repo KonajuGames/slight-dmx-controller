@@ -116,6 +116,13 @@ python -m SCons platform=windows target=template_release
 cp native.gdextension.disabled native.gdextension
 ```
 
+The build turns **C++ exceptions on** (godot-cpp's `disable_exceptions=no`,
+set as the default in `SConstruct`; godot-cpp's own default is off). RtMidi
+reports errors by throwing, and `midi_output.cpp` catches every one so none
+reaches Godot — with exceptions off that code doesn't compile on gcc/clang
+and catches without unwinding on MSVC. Switching this setting rebuilds all
+of godot-cpp.
+
 The extension ships **disabled** (`native.gdextension.disabled`) so an
 unbuilt checkout doesn't spew "GDExtension dynamic library not found".
 Every feature it provides is independently optional at run time too — see
