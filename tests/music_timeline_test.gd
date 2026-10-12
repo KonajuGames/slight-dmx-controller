@@ -37,6 +37,7 @@ func _run() -> void:
 	_test_wave_view()
 	_test_view_box()
 	_test_grid_lines()
+	await _test_resize()
 	await _test_timeline()
 	await _test_playback()
 	await _test_beat_grid_real()
@@ -286,6 +287,60 @@ func _test_grid_lines() -> void:
 	w.queue_free()
 
 
+func _grip_event(grip: Control, y: float, pressed = null) -> void:
+	var e: InputEvent
+	if pressed == null:
+		e = InputEventMouseMotion.new()
+		e.button_mask = MOUSE_BUTTON_MASK_LEFT
+	else:
+		e = InputEventMouseButton.new()
+		e.button_index = MOUSE_BUTTON_LEFT
+		e.pressed = pressed
+	e.global_position = Vector2(500, y)
+	e.position = e.global_position - grip.global_position
+	grip._gui_input(e)
+
+
+func _test_resize() -> void:
+	print("- resizing the waveform")
+	var tl := MusicTimeline.new()
+	root.add_child(tl)
+	tl.position = Vector2.ZERO
+	tl.size = Vector2(1100, 600)
+	await process_frame
+	await process_frame
+	var w := tl.wave()
+	var g := tl.grip()
+	ok(tl.wave_height() == 90.0 and is_equal_approx(w.size.y, 90.0), "starts 90 px tall (half the old 180)")
+	var gr := g.get_global_rect()
+	ok(gr.end.y <= w.get_global_rect().position.y + 0.5 and gr.size.y >= 8.0, "grip bar sits just above it")
+	ok(g.mouse_default_cursor_shape == Control.CURSOR_VSIZE, "with a resize cursor")
+	var bottom := w.get_global_rect().end.y
+
+	var y0 := gr.get_center().y
+	_grip_event(g, y0, true)
+	_grip_event(g, y0 - 60.0)
+	await process_frame
+	ok(is_equal_approx(tl.wave_height(), 150.0), "dragging up 60 px -> 150 px (%.0f)" % tl.wave_height())
+	ok(is_equal_approx(w.get_global_rect().end.y, bottom), "the waveform grows upward; its bottom stays put")
+	ok(is_equal_approx(tl.play_button().size.y + tl.reset_button().size.y + 6.0, w.size.y), "buttons follow its height")
+	_grip_event(g, y0 - 20.0)
+	ok(is_equal_approx(tl.wave_height(), 110.0), "...and back down while still dragging (%.0f)" % tl.wave_height())
+	_grip_event(g, y0 + 500.0)
+	ok(tl.wave_height() == MusicTimeline.WAVE_HEIGHT_MIN, "can't go below %d px" % MusicTimeline.WAVE_HEIGHT_MIN)
+	_grip_event(g, y0 - 2000.0)
+	await process_frame
+	var most := tl.wave_height()
+	ok(most > 400.0 and tl._spacer.size.y < 1.0, "can't go past the free space above it (%.0f px)" % most)
+	ok(tl.get_combined_minimum_size().y <= tl.size.y + 0.5, "everything still fits")
+	_grip_event(g, y0 - 30.0)
+	ok(is_equal_approx(tl.wave_height(), 120.0), "pulling back from the limit tracks the pointer (%.0f)" % tl.wave_height())
+	_grip_event(g, y0 - 30.0, false)
+	_grip_event(g, y0 - 200.0)
+	ok(is_equal_approx(tl.wave_height(), 120.0), "released: no more resizing")
+	tl.queue_free()
+
+
 func _key_space() -> InputEventKey:
 	var k := InputEventKey.new()
 	k.keycode = KEY_SPACE
@@ -341,24 +396,24 @@ func _test_playback() -> void:
 	play.pressed.emit()
 	ok(tl.is_playing() and play.glyph == MusicTimeline.TransportButton.Glyph.PAUSE, "Play -> playing, shows Pause")
 	await _wait(600)
-	var p1 := tl.position()
+	var p1 := tl.playback_position()
 	ok(p1 > 0.3 and p1 < 1.0 and absf(w.song_pos - p1) < 0.1,
 		"position advances, playhead follows (%.2f s)" % p1)
 	play.pressed.emit()
-	var held := tl.position()
+	var held := tl.playback_position()
 	await _wait(300)
-	ok(not tl.is_playing() and is_equal_approx(tl.position(), held) and play.glyph == MusicTimeline.TransportButton.Glyph.PLAY,
+	ok(not tl.is_playing() and is_equal_approx(tl.playback_position(), held) and play.glyph == MusicTimeline.TransportButton.Glyph.PLAY,
 		"Pause holds the position (%.2f s)" % held)
 	play.pressed.emit()
 	await _wait(200)
-	ok(tl.position() > held, "Play resumes from there")
+	ok(tl.playback_position() > held, "Play resumes from there")
 
 	w.set_view(10.0, 10.0)
 	reset.pressed.emit()
-	ok(tl.position() < 0.2 and tl.is_playing() and w.view_start == 0.0, "Back to start: position 0, still playing, view scrolled back")
+	ok(tl.playback_position() < 0.2 and tl.is_playing() and w.view_start == 0.0, "Back to start: position 0, still playing, view scrolled back")
 
 	w.seek_requested.emit(12.0)
-	ok(absf(tl.position() - 12.0) < 0.2, "clicking the waveform moves the playhead")
+	ok(absf(tl.playback_position() - 12.0) < 0.2, "clicking the waveform moves the playhead")
 
 	# Paging: playhead running off the right edge scrolls the view.
 	w.set_view(5.0, 8.0)
@@ -379,7 +434,7 @@ func _test_playback() -> void:
 	await _wait(1200)
 	ok(not tl.is_playing() and play.glyph == MusicTimeline.TransportButton.Glyph.PLAY, "stops at the end")
 	tl.play()
-	ok(tl.is_playing() and tl.position() < 0.5, "Play after the end starts over")
+	ok(tl.is_playing() and tl.playback_position() < 0.5, "Play after the end starts over")
 	tl.pause()
 
 	# Hiding the timeline pauses it.
@@ -421,7 +476,7 @@ func _test_beat_grid_real() -> void:
 	ok(absf((g[1] - g[0]) - 60.0 / song.best_bpm()) < 0.001, "at the deck's %.2f BPM" % song.best_bpm())
 	tl.play()
 	await _wait(500)
-	ok(tl.is_playing() and tl.position() > 0.2, "M4A plays in the timeline (%.2f s)" % tl.position())
+	ok(tl.is_playing() and tl.playback_position() > 0.2, "M4A plays in the timeline (%.2f s)" % tl.playback_position())
 	tl.pause()
 
 	var blah := db.find_song("D:/Music/Compilations/Blah Blah Blah (Remixes)/08 Blah Blah Blah.m4a")

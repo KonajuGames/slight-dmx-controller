@@ -126,6 +126,7 @@ technical reference.
   the waveform to move it; the view pages along as it plays). VirtualDJ's
   beat grid, when it knows the track, is drawn over the waveform — a line
   per beat, bolder at each bar of four, variable-tempo grids included.
+  The waveform starts 90 px tall; drag the bar above it to resize it.
 - `universe_panel.gd` — the `UniversePanel` class: one universe's tab —
   its connection settings, blackout/full, and fixture patch with
   purpose-built per-fixture controls.

@@ -33,9 +33,17 @@ const CACHE_SIZE := 6
 const BEATS_PER_BAR := 4
 const PLAYHEAD_COLOR := Color(1.0, 0.22, 0.22)
 const _BUTTON_WIDTH := 56.0
+## The zoomable waveform's height: what it starts at, and the smallest the
+## grip bar above it can drag it to. The largest is whatever room is free.
+const WAVE_HEIGHT_DEFAULT := 90.0
+const WAVE_HEIGHT_MIN := 40.0
 
 var _status: Label
 var _progress: ProgressBar
+var _spacer: Control
+var _grip: SizeGrip
+var _drag_start_height := 0.0
+var _drag_max_height := 0.0
 var _wave: WaveHeatmap
 var _overview: WaveHeatmap
 var _box: ViewBox
@@ -79,16 +87,25 @@ func _ready() -> void:
 	load_row.add_child(_progress)
 
 	# Everything above stays at the top; the waveforms sit at the bottom.
-	var spacer := Control.new()
-	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	add_child(spacer)
+	_spacer = Control.new()
+	_spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	add_child(_spacer)
+
+	# Drag up / down to make the waveform taller / shorter.
+	_grip = SizeGrip.new()
+	_grip.tooltip_text = "Drag to resize the waveform"
+	_grip.drag_started.connect(func():
+		_drag_start_height = wave_height()
+		_drag_max_height = maxf(wave_height() + _spacer.size.y, WAVE_HEIGHT_MIN))
+	_grip.dragged.connect(func(dy: float): set_wave_height(_drag_start_height - dy))
+	add_child(_grip)
 
 	# The zoomable waveform, with the transport buttons stacked to its right.
 	var wave_row := HBoxContainer.new()
 	wave_row.add_theme_constant_override("separation", 6)
 	add_child(wave_row)
 	_wave = WaveHeatmap.new()
-	_wave.custom_minimum_size = Vector2(0, 180)
+	_wave.custom_minimum_size = Vector2(0, WAVE_HEIGHT_DEFAULT)
 	_wave.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_wave.zoomable = true
 	_wave.cursor_color = PLAYHEAD_COLOR
@@ -206,6 +223,29 @@ func overview_box() -> ViewBox:
 	return _box
 
 
+func grip() -> SizeGrip:
+	return _grip
+
+
+## The zoomable waveform's height, pixels.
+func wave_height() -> float:
+	return _wave.custom_minimum_size.y
+
+
+## Resize the zoomable waveform (the grip bar does this): at least
+## WAVE_HEIGHT_MIN, at most what the free space above it allows.
+func set_wave_height(h: float) -> void:
+	_wave.custom_minimum_size.y = clampf(h, WAVE_HEIGHT_MIN, _max_wave_height())
+
+
+## The tallest the waveform can be: its height plus the free space above
+## it (measured at the start of a drag, since the layout lags the pointer).
+func _max_wave_height() -> float:
+	if _grip.is_dragging():
+		return _drag_max_height
+	return maxf(wave_height() + _spacer.size.y, WAVE_HEIGHT_MIN)
+
+
 func play_button() -> TransportButton:
 	return _play_btn
 
@@ -226,7 +266,7 @@ func is_playing() -> bool:
 
 
 ## The playback position, seconds.
-func position() -> float:
+func playback_position() -> float:
 	if _player.playing:
 		# Smooth between mixes, and line up with what's actually heard.
 		var t := _player.get_playback_position() + AudioServer.get_time_since_last_mix() \
@@ -255,7 +295,7 @@ func play() -> void:
 func pause() -> void:
 	if not _player.playing:
 		return
-	_pos = position()
+	_pos = playback_position()
 	_player.stop()
 	_was_playing = false
 	_update_transport()
@@ -342,7 +382,7 @@ func _update_transport() -> void:
 
 func _update_cursor() -> void:
 	var on := can_play() and _wave.analysis != null
-	var t := position()
+	var t := playback_position()
 	for w in [_wave, _overview]:
 		w.show_cursor = on
 		if not is_equal_approx(w.song_pos, t):
@@ -480,6 +520,57 @@ func _apply_beat_grid(duration: float) -> void:
 ## Keep the overview's rectangle on the zoomable waveform's window.
 func _box_follow(start: float, length: float) -> void:
 	_box.set_view(start, length)
+
+
+## The bar above the waveform: drag it up or down to resize the waveform.
+## Reports how far the pointer has moved vertically since the press, so
+## the size tracks the pointer even after hitting a limit.
+class SizeGrip:
+	extends Control
+
+	signal drag_started
+	signal dragged(dy: float)
+
+	const HEIGHT := 10.0
+	var _dragging := false
+	var _hover := false
+	var _press_y := 0.0
+
+	func _ready() -> void:
+		custom_minimum_size = Vector2(0, HEIGHT)
+		mouse_filter = Control.MOUSE_FILTER_STOP
+		mouse_default_cursor_shape = Control.CURSOR_VSIZE
+		mouse_entered.connect(func():
+			_hover = true
+			queue_redraw())
+		mouse_exited.connect(func():
+			_hover = false
+			queue_redraw())
+
+	func is_dragging() -> bool:
+		return _dragging
+
+	func _draw() -> void:
+		var lit := _hover or _dragging
+		var line := Color(1, 1, 1, 0.35 if lit else 0.18)
+		var mid := size.y * 0.5
+		draw_line(Vector2(0, mid), Vector2(size.x, mid), line, 1.0)
+		# A small handle in the middle.
+		var hw := 22.0
+		var handle := Rect2(size.x * 0.5 - hw, mid - 3.0, hw * 2.0, 6.0)
+		draw_rect(handle, Color(0.55, 0.55, 0.6) if lit else Color(0.38, 0.38, 0.42))
+
+	func _gui_input(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+			_dragging = event.pressed
+			if _dragging:
+				_press_y = event.global_position.y
+				drag_started.emit()
+			queue_redraw()
+			accept_event()
+		elif event is InputEventMouseMotion and _dragging:
+			dragged.emit(event.global_position.y - _press_y)
+			accept_event()
 
 
 ## A transport button whose icon is drawn rather than taken from the font
