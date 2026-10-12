@@ -179,6 +179,10 @@ technical reference.
   analysis (including the variable-tempo `BeatGrid` it stores for long
   mixes, expanded to per-beat times by `beat_times()`), hot cues,
   automix points and named remix sections. Not yet wired into the UI.
+- `virtualdj_list.gd` — the `VirtualDjList` class: reads VirtualDJ's
+  playlists — the `.vdjfolder` Virtual Folders in the `MyLists`
+  directory next to each `database.xml` — in VirtualDJ's display order,
+  with `resolve()` matching each track to its `VirtualDjDatabase` entry.
 - `recent_dirs.gd` — the `RecentDirs` class: every file dialog (Load Song,
   Import fixture, Load glTF model, Import/Export MVR) reopens in the
   folder it was last used in, remembered per dialog rather than as one
