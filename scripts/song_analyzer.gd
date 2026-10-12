@@ -63,9 +63,46 @@ func _exit_tree() -> void:
 		_fast_thread = null
 
 
+## Longest track decoded whole for playback (decode_os_stream()): its PCM
+## sits in memory, ~10 MB per minute at 44.1 kHz stereo.
+const PLAY_MAX_SECONDS := 3600.0
+
+
+## Whether `path` is a format Godot can't play and only the OS's decoder
+## (through the native extension) can: .m4a / .aac / .mp4.
+static func is_os_format(path: String) -> bool:
+	return path.get_extension().to_lower() in _OS_EXTS
+
+
+## Decode an OS-format file (see is_os_format()) into a playable
+## AudioStreamWAV through the native extension. Blocks for about a second
+## per few minutes of audio, so call it from a worker thread; pass the
+## SongFeatures to use if you want to watch its progress or cancel it.
+## Returns { stream: AudioStreamWAV or null, error: String }.
+static func decode_os_stream(path: String, sf = null) -> Dictionary:
+	if not os_decoding_available():
+		return {"stream": null, "error": "this system can't decode .%s (needs the native extension, on Windows with Media Foundation or macOS)" % path.get_extension().to_lower()}
+	if sf == null:
+		sf = ClassDB.instantiate("SongFeatures")
+	var d: Dictionary = sf.decode_pcm16(path, PLAY_MAX_SECONDS)
+	if not bool(d.get("ok", false)):
+		return {"stream": null, "error": String(d.get("error", "decode failed"))}
+	var s := AudioStreamWAV.new()
+	s.format = AudioStreamWAV.FORMAT_16_BITS
+	s.mix_rate = int(d["mix_rate"])
+	s.stereo = bool(d["stereo"])
+	s.data = d["data"]
+	return {"stream": s, "error": ""}
+
+
+## A playable stream for `path`: MP3 / OGG / WAV directly; .m4a / .aac /
+## .mp4 decoded through the native extension (blocking — prefer
+## decode_os_stream() on a worker thread for those). null if it can't.
 static func load_stream(path: String) -> AudioStream:
 	if not FileAccess.file_exists(path):
 		return null
+	if is_os_format(path):
+		return decode_os_stream(path)["stream"]
 	var bytes := FileAccess.get_file_as_bytes(path)
 	if bytes.is_empty():
 		return null

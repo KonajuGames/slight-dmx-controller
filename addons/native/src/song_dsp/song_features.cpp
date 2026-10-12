@@ -198,6 +198,59 @@ int collect_sink(void *ctx, const float *pcm, int64_t frames, int channels, int 
 	return 0;
 }
 
+// --- 16-bit playback PCM (decode_pcm16) --------------------------------
+struct Pcm16 {
+	std::vector<int16_t> data;
+	int channels_in = 0;
+	int channels_out = 0;     // 1 or 2
+	int rate = 0;
+	int64_t frames = 0;
+	double max_seconds = 0.0;
+	bool too_long = false;
+	std::atomic<bool> *cancel = nullptr;
+	std::atomic<float> *progress = nullptr;
+};
+
+inline int16_t to_s16(float v) {
+	float c = v < -1.0f ? -1.0f : (v > 1.0f ? 1.0f : v);
+	return static_cast<int16_t>(std::lrint(c * 32767.0f));
+}
+
+int pcm16_sink(void *ctx, const float *pcm, int64_t frames, int channels, int rate, int64_t total) {
+	Pcm16 *p = static_cast<Pcm16 *>(ctx);
+	if (p->cancel->load()) {
+		return 1;
+	}
+	if (p->channels_in == 0) {
+		p->channels_in = channels;
+		p->channels_out = channels >= 2 ? 2 : 1;
+		p->rate = rate;
+		if (total > 0) {
+			p->data.reserve(static_cast<size_t>(total) * p->channels_out);
+		}
+	}
+	if (channels != p->channels_in || rate != p->rate) {
+		return 0; // a mid-stream format change: drop it rather than garble
+	}
+	for (int64_t i = 0; i < frames; i++) {
+		const float *f = pcm + i * channels;
+		p->data.push_back(to_s16(f[0]));
+		if (p->channels_out == 2) {
+			p->data.push_back(to_s16(f[1]));
+		}
+	}
+	p->frames += frames;
+	if (total > 0) {
+		float pr = static_cast<float>(static_cast<double>(p->frames) / total);
+		p->progress->store(pr < 0.99f ? pr : 0.99f);
+	}
+	if (static_cast<double>(p->frames) / rate > p->max_seconds) {
+		p->too_long = true;
+		return 1;
+	}
+	return 0;
+}
+
 // --- streaming waveform envelope (waveform_file) ----------------------
 // Per column: RMS loudness, and RMS of three bands split with two one-pole
 // filters -- bass below ~250 Hz, air above ~2.5 kHz, mid between -- the
@@ -277,6 +330,7 @@ void SongFeatures::_bind_methods() {
 			&SongFeatures::analyze_file);
 	ClassDB::bind_method(D_METHOD("get_progress"), &SongFeatures::get_progress);
 	ClassDB::bind_method(D_METHOD("waveform_file", "path", "cols_per_sec"), &SongFeatures::waveform_file);
+	ClassDB::bind_method(D_METHOD("decode_pcm16", "path", "max_seconds"), &SongFeatures::decode_pcm16);
 	ClassDB::bind_method(D_METHOD("cancel"), &SongFeatures::cancel);
 	ClassDB::bind_static_method("SongFeatures", D_METHOD("os_decoder_available"),
 			&SongFeatures::os_decoder_available);
@@ -288,6 +342,47 @@ void SongFeatures::cancel() {
 
 bool SongFeatures::os_decoder_available() {
 	return sd_os_decoder_available() != 0;
+}
+
+Dictionary SongFeatures::decode_pcm16(const String &path, double max_seconds) {
+	_progress.store(0.0f);
+	_cancel.store(false);
+	Pcm16 p;
+	p.cancel = &_cancel;
+	p.progress = &_progress;
+	p.max_seconds = max_seconds > 0.0 ? max_seconds : 1e12;
+
+	String err;
+	int rc = stream_file(path, &pcm16_sink, &p, err);
+	if (p.too_long) {
+		return fail("track is too long");
+	}
+	if (rc == SD_STOPPED) {
+		return fail("cancelled");
+	}
+	if (rc < 0) {
+		return fail(err);
+	}
+	if (p.rate < 1 || p.frames < 1) {
+		return fail("no audio in the file");
+	}
+
+	PackedByteArray bytes;
+	bytes.resize(static_cast<int64_t>(p.data.size() * sizeof(int16_t)));
+	// int16 in host order; every platform Godot runs on is little-endian,
+	// which is what AudioStreamWAV expects.
+	std::memcpy(bytes.ptrw(), p.data.data(), p.data.size() * sizeof(int16_t));
+	p.data.clear();
+	p.data.shrink_to_fit();
+
+	Dictionary d;
+	d["ok"] = true;
+	d["mix_rate"] = p.rate;
+	d["stereo"] = p.channels_out == 2;
+	d["duration"] = static_cast<double>(p.frames) / p.rate;
+	d["data"] = bytes;
+	_progress.store(1.0f);
+	return d;
 }
 
 Dictionary SongFeatures::waveform_file(const String &path, int cols_per_sec) {

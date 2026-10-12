@@ -76,7 +76,8 @@ technical reference.
 - `auto_show.gd` — the `AutoShow` autoload: the Auto Show run mode — plays
   a music file and drives a crossfading section layer (plus the generated
   chases / effects) from a timeline locked to playback position;
-  `ArtNet.tick()` composites it over the operator's cues.
+  `ArtNet.tick()` composites it over the operator's cues. M4A / AAC songs
+  are decoded to PCM on a worker thread first (native extension).
 - `song_analyzer.gd` / `song_detect.gd` / `song_analysis.gd` / `fft.gd` —
   analyses a music file (STFT chroma + timbre, a dynamic-programming beat
   tracker, self-similarity segmentation with verse/chorus repetition
@@ -365,7 +366,11 @@ show file.
 
 Build a light show from a song's structure, then refine it.
 
-- **Load Song…** picks an MP3, OGG or WAV.
+- **Load Song…** picks an MP3, OGG or WAV — or an **M4A / AAC** file
+  when the `addons/native` extension is built (Windows with Media
+  Foundation, or macOS): Godot can't play AAC itself, so it's decoded to
+  PCM through the OS's decoder first, in the background (about a second
+  for a typical track; Play is available once it's done). Up to an hour.
 - **Analyse** runs a short-time Fourier transform for a beat-synchronous
   **chroma** (pitch) and timbre feature stream. From that it estimates the
   tempo, tracks the beat with dynamic programming (so beats lock to real

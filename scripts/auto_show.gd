@@ -11,6 +11,9 @@ signal state_changed
 signal analysis_progress(fraction: float)
 signal analysis_done
 signal analysis_failed(reason: String)
+## A song couldn't be loaded for playback (only reported for files that
+## decode in the background — see load_song()).
+signal song_load_failed(reason: String)
 signal section_changed(index: int)        ## -1 = none / blacked out
 signal chase_set(chase_name: String, on: bool)
 signal effect_set(effect_name: String, on: bool)
@@ -19,6 +22,9 @@ signal beat                                ## shell -> Fx._on_beat
 var active := false                        ## true while run mode == Auto Show
 var playing := false
 var song_path := ""
+## True while an M4A / AAC song is being decoded for playback in the
+## background (Play does nothing until it's done).
+var loading := false
 var analysis: SongAnalysis
 ## [{ t, kind: "section"|"blackout"|"chase"|"effect", arg, ... }], by t.
 var timeline: Array = []
@@ -27,6 +33,9 @@ var looks: Array = []
 
 var _player: AudioStreamPlayer
 var _analyzer: SongAnalyzer
+var _load_thread: Thread       # decoding an OS-format song (decode_os_stream)
+var _load_sf = null            # its SongFeatures, to cancel
+var _load_result: Dictionary = {}
 var _resume := 0.0
 var _next_ev := 0
 var _next_beat := 0
@@ -55,11 +64,28 @@ func _ready() -> void:
 
 # ------------------------------------------------------------------ SONG --
 
+## Load a song for playback. MP3 / OGG / WAV load at once. M4A / AAC /
+## MP4 are decoded in the background (about a second per few minutes of
+## audio): this returns true, `loading` stays set until the song can
+## play, then state_changed fires — or song_load_failed if it can't be
+## decoded after all.
 func load_song(path: String) -> bool:
 	stop()
+	_cancel_load()
+	if SongAnalyzer.is_os_format(path):
+		if not SongAnalyzer.os_decoding_available():
+			analysis_failed.emit("Can't play .%s here — it needs the native extension (addons/native), on Windows with Media Foundation or on macOS." % path.get_extension().to_lower())
+			return false
+		song_path = path
+		analysis = null
+		timeline.clear()
+		_player.stream = null
+		_start_load(path)
+		state_changed.emit()
+		return true
 	var s := SongAnalyzer.load_stream(path)
 	if s == null:
-		analysis_failed.emit("Can't load audio (try MP3 or OGG).")
+		analysis_failed.emit("Can't load audio (try MP3, OGG, WAV or M4A).")
 		return false
 	song_path = path
 	analysis = null
@@ -67,6 +93,51 @@ func load_song(path: String) -> bool:
 	_player.stream = s
 	state_changed.emit()
 	return true
+
+
+func _start_load(path: String) -> void:
+	loading = true
+	_load_result = {}
+	_load_sf = ClassDB.instantiate("SongFeatures")
+	_load_thread = Thread.new()
+	_load_thread.start(func(): _load_result = SongAnalyzer.decode_os_stream(path, _load_sf))
+
+
+## 0..1 progress of a background song load.
+func load_progress() -> float:
+	return _load_sf.get_progress() if loading and _load_sf != null else 0.0
+
+
+func _cancel_load() -> void:
+	if _load_thread == null:
+		return
+	if _load_sf != null:
+		_load_sf.cancel()
+	_load_thread.wait_to_finish()
+	_load_thread = null
+	_load_sf = null
+	loading = false
+
+
+## Pick up a finished background load (from _process).
+func _finish_load() -> void:
+	_load_thread.wait_to_finish()
+	_load_thread = null
+	_load_sf = null
+	loading = false
+	var s: AudioStream = _load_result.get("stream")
+	if s == null:
+		var why := String(_load_result.get("error", "decode failed"))
+		song_path = ""
+		song_load_failed.emit("Couldn't load the song: %s." % why)
+	else:
+		_player.stream = s
+	_load_result = {}
+	state_changed.emit()
+
+
+func _exit_tree() -> void:
+	_cancel_load()
 
 
 func song_name() -> String:
@@ -231,6 +302,8 @@ func _resync(t: float) -> void:
 # ------------------------------------------------------------- PLAYBACK --
 
 func _process(delta: float) -> void:
+	if _load_thread != null and not _load_thread.is_alive():
+		_finish_load()
 	_xf = minf(_xf + delta / maxf(_xf_dur, 0.02), 1.0)
 	if not active or not playing:
 		return
@@ -283,6 +356,7 @@ func to_dict() -> Dictionary:
 
 func from_dict(d: Dictionary) -> void:
 	stop()
+	_cancel_load()
 	song_path = String(d.get("song_path", ""))
 	var evs = d.get("timeline", null)
 	var lk = d.get("looks", null)
@@ -290,10 +364,15 @@ func from_dict(d: Dictionary) -> void:
 	var ad = d.get("analysis", {})
 	if ad is Dictionary and not ad.is_empty():
 		analysis = SongAnalysis.from_dict(ad)
+	_player.stream = null
 	if song_path != "" and FileAccess.file_exists(song_path):
-		var s := SongAnalyzer.load_stream(song_path)
-		if s != null:
-			_player.stream = s
+		if SongAnalyzer.is_os_format(song_path):
+			if SongAnalyzer.os_decoding_available():
+				_start_load(song_path)      # plays once state_changed says it's ready
+		else:
+			var s := SongAnalyzer.load_stream(song_path)
+			if s != null:
+				_player.stream = s
 	if evs is Array and lk is Array:
 		set_show(lk.duplicate(true), evs.duplicate(true))
 	else:

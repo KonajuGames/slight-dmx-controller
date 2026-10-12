@@ -13,6 +13,7 @@ var _song_lbl: Label
 var _analyse_btn: Button
 var _speed_option: OptionButton
 var _progress: ProgressBar
+var _was_loading := false
 var _summary: Label
 var _structure: StructureBar
 var _wave: WaveHeatmap
@@ -137,6 +138,9 @@ func _ready() -> void:
 	AutoShow.analysis_failed.connect(func(m: String):
 		_progress.visible = false
 		_status.text = "Analysis failed: " + m)
+	AutoShow.song_load_failed.connect(func(m: String):
+		_progress.visible = false
+		_status.text = m)
 	_refresh()
 
 
@@ -150,6 +154,16 @@ func reload() -> void:
 func _process(_delta: float) -> void:
 	if not is_visible_in_tree():
 		return
+	# An M4A song decoding in the background (AutoShow.load_song()).
+	if AutoShow.loading:
+		_progress.visible = true
+		_progress.value = AutoShow.load_progress()
+		_was_loading = true
+	elif _was_loading:
+		_was_loading = false
+		_progress.visible = false
+		if AutoShow.song_length() > 0.0:
+			_status.text = "Loaded %s — press Analyse." % AutoShow.song_name()
 	var len := AutoShow.song_length()
 	var pos := AutoShow.position()
 	_pos_lbl.text = "%s / %s" % [_mmss(pos), _mmss(len)]
@@ -177,12 +191,16 @@ func _pick_song() -> void:
 	fd.add_filter("*.mp3", "MP3 audio")
 	fd.add_filter("*.ogg,*.oga", "Ogg Vorbis audio")
 	fd.add_filter("*.wav", "WAV audio")
+	fd.add_filter("*.m4a,*.aac,*.mp4", "AAC audio (M4A)")
 	fd.use_native_dialog = true
 	RecentDirs.track(fd, "song")
 	add_child(fd)
 	fd.file_selected.connect(func(path: String):
 		if AutoShow.load_song(path):
-			_status.text = "Loaded %s — press Analyse." % path.get_file()
+			if AutoShow.loading:
+				_status.text = "Decoding %s…" % path.get_file()
+			else:
+				_status.text = "Loaded %s — press Analyse." % path.get_file()
 		fd.queue_free())
 	fd.canceled.connect(func(): fd.queue_free())
 	fd.popup_centered_ratio(0.6)

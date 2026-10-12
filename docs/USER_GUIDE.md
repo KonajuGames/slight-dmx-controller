@@ -159,7 +159,10 @@ from its structure automatically.
 
 ![The Auto Show tab after analysing and building a show](img/07-auto-show-tab.png)
 
-1. **Load Song…** picks an MP3, OGG, or WAV file.
+1. **Load Song…** picks an MP3, OGG, or WAV file — or an M4A / AAC file
+   (the usual iTunes / VirtualDJ format) if the optional native extension
+   is built. An M4A takes a moment to prepare; Play becomes available
+   when it's ready.
 2. **Analyse** works out the tempo, beat grid, and musical key, then
    segments the song into labelled sections (Intro / Verse / Chorus /
    Bridge / Build / Drop / Outro) by finding which parts repeat and how

@@ -50,7 +50,9 @@ feature:
   (`mfplat.dll` / `mfreadwrite.dll`, loaded at run time — Windows "N"
   editions lack them unless the Media Feature Pack is installed) or macOS
   AudioToolbox's ExtAudioFile. There's no AAC decoding on Linux.
-  (`SongFeatures.os_decoder_available()` reports which.)
+  (`SongFeatures.os_decoder_available()` reports which.) Godot can't
+  *play* AAC either, so `decode_pcm16()` also decodes a whole file to
+  16-bit PCM for an `AudioStreamWAV` — that's how Auto Show plays M4A.
 
 - **Native MIDI output** (`MidiOutput`) — MIDI **feedback** (lighting a
   controller's pad LEDs) goes straight to a real MIDI port instead of over
@@ -182,6 +184,12 @@ var w: Dictionary = sf.waveform_file("D:/Music/mix.m4a", 100)   # columns per se
 if w.ok:
     w.duration; w.cols_per_sec
     w.wave_lo; w.wave_mid; w.wave_hi; w.wave_peak   # normalised 0..1
+# Whole file -> 16-bit PCM for playback (worker thread; capped at max_seconds)
+var p: Dictionary = sf.decode_pcm16("D:/Music/track.m4a", 3600.0)
+if p.ok:
+    var wav := AudioStreamWAV.new()
+    wav.format = AudioStreamWAV.FORMAT_16_BITS
+    wav.mix_rate = p.mix_rate; wav.stereo = p.stereo; wav.data = p.data
 sf.get_progress()                  # 0..1, from the main thread while it runs
 sf.cancel()                        # from another thread: returns error "cancelled"
 SongFeatures.os_decoder_available()   # can .m4a / .aac / .mp4 be decoded here?

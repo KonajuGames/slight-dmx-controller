@@ -53,7 +53,18 @@ public:
 	// Safe to call from a worker thread; cancel() stops it early.
 	Dictionary waveform_file(const String &path, int cols_per_sec);
 
-	// Stop an in-flight waveform_file() -- or analyze_file() while it's
+	// Decode a whole file to 16-bit PCM for playback -- what Godot needs to
+	// play formats it has no decoder for (an AudioStreamWAV), M4A / AAC in
+	// particular. More than two channels keep the front left / right.
+	// Stops (ok = false, "track is too long") past `max_seconds`, while
+	// decoding, since the PCM is held whole (~10 MB per minute at 44.1 kHz
+	// stereo). Returns a Dictionary:
+	//   ok, error, mix_rate (Hz), stereo (bool), duration (s),
+	//   data : PackedByteArray  interleaved little-endian int16
+	// Safe to call from a worker thread; cancel() stops it.
+	Dictionary decode_pcm16(const String &path, double max_seconds);
+
+	// Stop an in-flight waveform_file() / decode_pcm16() -- or analyze_file() while it's
 	// decoding an OS-decoded format -- from another thread; it returns
 	// ok = false, error "cancelled".
 	void cancel();
