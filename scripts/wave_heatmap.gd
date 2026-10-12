@@ -21,6 +21,11 @@ var song_pos := 0.0
 ## Draw the `song_pos` playhead.
 var show_cursor := true
 var cursor_color := Color(1, 1, 1, 0.9)
+## Fill behind the wave; transparent (the panel shows through) by default.
+var background_color := Color(0, 0, 0, 0):
+	set(v):
+		background_color = v
+		queue_redraw()
 
 ## An optional beat grid drawn over the wave (set_beat_grid()): a thin
 ## line per beat and a bolder one at the start of each bar, thinned out
@@ -159,11 +164,14 @@ func _draw() -> void:
 	var h := size.y
 
 	if analysis == null or not analysis.has_wave():
-		draw_rect(Rect2(0, 0, w, h), Color(0.10, 0.10, 0.13))
+		draw_rect(Rect2(0, 0, w, h), background_color if background_color.a > 0.0 else Color(0.10, 0.10, 0.13))
 		draw_string(ThemeDB.fallback_font, Vector2(8, h * 0.5 + 4),
 			"analyse a song to see its waveform",
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.5, 0.5, 0.55))
 		return
+
+	if background_color.a > 0.0:
+		draw_rect(Rect2(0, 0, w, h), background_color)
 
 	var t0 := view_start
 	var t1 := view_start + visible_length()

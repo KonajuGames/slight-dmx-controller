@@ -92,6 +92,7 @@ func _ready() -> void:
 	_wave.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_wave.zoomable = true
 	_wave.cursor_color = PLAYHEAD_COLOR
+	_wave.background_color = Color.BLACK
 	_wave.tooltip_text = "Click: move the playhead · Mouse wheel: zoom · Shift+wheel: scroll"
 	_wave.view_changed.connect(_box_follow)
 	_wave.seek_requested.connect(seek)
@@ -123,6 +124,7 @@ func _ready() -> void:
 	_overview.custom_minimum_size = Vector2(0, 44)
 	_overview.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_overview.cursor_color = PLAYHEAD_COLOR
+	_overview.background_color = Color.BLACK
 	over_row.add_child(_overview)
 	var pad := Control.new()
 	pad.custom_minimum_size = Vector2(_BUTTON_WIDTH, 0)
