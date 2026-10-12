@@ -20,6 +20,19 @@ var analysis: SongAnalysis
 var song_pos := 0.0
 ## Draw the `song_pos` playhead.
 var show_cursor := true
+var cursor_color := Color(1, 1, 1, 0.9)
+
+## An optional beat grid drawn over the wave (set_beat_grid()): a thin
+## line per beat and a bolder one at the start of each bar, thinned out
+## when zoomed too far out to tell them apart.
+var grid_beats := PackedFloat32Array()
+var beats_per_bar := 4
+## Index into grid_beats of a bar's first beat (bars count from there).
+var bar_phase := 0
+const _BEAT_LINE := Color(1, 1, 1, 0.16)
+const _BAR_LINE := Color(1, 1, 1, 0.5)
+## Closest lines are drawn, in pixels.
+const _GRID_MIN_PX := 5.0
 ## Mouse wheel zooms (and pans) the view.
 var zoomable := false
 ## Narrowest view the wheel can zoom in to, seconds.
@@ -67,6 +80,15 @@ func duration() -> float:
 ## The visible window's length in seconds (the whole song when unzoomed).
 func visible_length() -> float:
 	return view_len if view_len > 0.0 else duration()
+
+
+## Draw a beat grid: `beats` in seconds, ascending; beat `phase` (and every
+## `per_bar`th one either side of it) starts a bar. Empty clears it.
+func set_beat_grid(beats: PackedFloat32Array, per_bar := 4, phase := 0) -> void:
+	grid_beats = beats
+	beats_per_bar = maxi(per_bar, 1)
+	bar_phase = phase
+	queue_redraw()
 
 
 ## Show `length` seconds from `start` (clamped to the song). length <= 0
@@ -159,6 +181,7 @@ func _draw() -> void:
 		draw_rect(Rect2(x0, 0, maxf(x1 - x0, 1.0), h), tint)
 
 	_draw_wave(w, h, t0, t1)
+	_draw_grid(h, t0, t1)
 
 	for db in analysis.downbeats:
 		if db < t0 or db > t1:
@@ -168,7 +191,42 @@ func _draw() -> void:
 
 	if show_cursor and song_pos >= t0 and song_pos <= t1:
 		var px := time_to_x(song_pos)
-		draw_line(Vector2(px, 0), Vector2(px, h), Color(1, 1, 1, 0.9), 2.0)
+		draw_line(Vector2(px, 0), Vector2(px, h), cursor_color, 2.0)
+
+
+func _draw_grid(h: float, t0: float, t1: float) -> void:
+	for line in grid_lines(t0, t1):
+		var x: float = line[0]
+		if line[1]:
+			draw_line(Vector2(x, 0), Vector2(x, h), _BAR_LINE, 2.0)
+		else:
+			draw_line(Vector2(x, 0), Vector2(x, h), _BEAT_LINE, 1.0)
+
+
+## The beat grid lines between t0 and t1 as [[x, is_bar], ...]. Beats are
+## left out once they'd be closer than _GRID_MIN_PX, then bars too.
+func grid_lines(t0: float, t1: float) -> Array:
+	var out: Array = []
+	var n := grid_beats.size()
+	if n == 0:
+		return out
+	var i0 := grid_beats.bsearch(t0)
+	var i1 := grid_beats.bsearch(t1, false)
+	if i1 <= i0:
+		return out
+	# Spacing from the local tempo, not the window average.
+	var gap := 0.0
+	if n > 1:
+		var j := clampi(i0, 0, n - 2)
+		gap = (grid_beats[j + 1] - grid_beats[j]) / visible_length() * size.x
+	var beats := gap >= _GRID_MIN_PX
+	if gap * beats_per_bar < _GRID_MIN_PX:
+		return out
+	for i in range(i0, i1):
+		var is_bar := posmod(i - bar_phase, beats_per_bar) == 0
+		if is_bar or beats:
+			out.append([time_to_x(grid_beats[i]), is_bar])
+	return out
 
 
 ## Bars for the visible window, as one triangle batch: each column is a

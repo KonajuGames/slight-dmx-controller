@@ -10,7 +10,9 @@ extends SceneTree
 ## it (or an OS AAC decoder) isn't there.
 
 const M4A := "D:/Music/Imagine Dragons/Evolve/04 Believer.m4a"
-const M4A_SECONDS := 204.41      # VirtualDJ's length for it
+## Its real length: the iTunSMPB tag's 9011622 samples at 44.1 kHz, i.e.
+## without the encoder's 2112 priming / 538 padding samples.
+const M4A_SECONDS := 9011622.0 / 44100.0
 
 var _p := 0
 var _f := 0
@@ -42,6 +44,7 @@ func _run() -> void:
 	else:
 		_test_decode_pcm16()
 		await _test_stream()
+		_test_beat_alignment()
 		await _test_auto_show()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
@@ -110,7 +113,7 @@ func _test_stream() -> void:
 	ok(s != null and r["error"] == "", "M4A -> AudioStreamWAV %s" % r["error"])
 	if s == null:
 		return
-	ok(absf(s.get_length() - M4A_SECONDS) < 0.1, "length %.2f s" % s.get_length())
+	ok(absf(s.get_length() - M4A_SECONDS) < 0.001, "length %.3f s, priming / padding trimmed" % s.get_length())
 	ok(s.format == AudioStreamWAV.FORMAT_16_BITS and s.stereo and s.mix_rate == 44100, "16-bit stereo 44.1 kHz")
 	ok(SongAnalyzer.load_stream(M4A) is AudioStreamWAV, "load_stream handles M4A too")
 
@@ -131,6 +134,39 @@ func _test_stream() -> void:
 	player.queue_free()
 
 
+## The decoded audio lines up with VirtualDJ's beat grid: the sharpest
+## loudness rise near each beat sits on it. Without the iTunSMPB trimming
+## every onset landed ~48 ms (2112 samples) late.
+func _test_beat_alignment() -> void:
+	print("- M4A timing vs VirtualDJ's beat grid")
+	var path := "D:/Music/Nicki Minaj/Pink Friday ... Roman Reloaded/10 Starships.m4a"
+	var db := VirtualDjDatabase.new()
+	db.load_all()
+	var song := db.find_song(path)
+	if song == null or not FileAccess.file_exists(path) or not SongAnalyzer.os_decoding_available():
+		skip("Starships / OS AAC decoder not on this machine")
+		return
+	var d: Dictionary = ClassDB.instantiate("SongFeatures").waveform_file(path, 1000)   # 1 ms columns
+	var pk: PackedFloat32Array = d.wave_peak
+	var offs := []
+	for b in song.beat_times(d.duration):
+		var c := int(b * 1000.0)
+		if c < 120 or c + 120 >= pk.size():
+			continue
+		var best := -1.0
+		var at := 0
+		for k in range(-100, 101):
+			var rise := pk[c + k + 5] - pk[c + k - 5]
+			if rise > best:
+				best = rise
+				at = k
+		offs.append(at)
+	offs.sort()
+	var median: int = offs[offs.size() / 2]
+	ok(absi(median) <= 10, "onsets on the beats: median %+d ms over %d beats" % [median, offs.size()])
+	ok(absf(d.duration - song.length) < 0.02, "length matches VirtualDJ's (%.3f vs %.3f s)" % [d.duration, song.length])
+
+
 func _test_auto_show() -> void:
 	print("- Auto Show")
 	var auto_show: Node = root.get_node("AutoShow")
@@ -147,7 +183,7 @@ func _test_auto_show() -> void:
 	var t := Time.get_ticks_msec()
 	while auto_show.loading and Time.get_ticks_msec() - t < 30000:
 		await process_frame
-	ok(not auto_show.loading and absf(auto_show.song_length() - M4A_SECONDS) < 0.1,
+	ok(not auto_show.loading and absf(auto_show.song_length() - M4A_SECONDS) < 0.001,
 		"loaded: %.2f s" % auto_show.song_length())
 	ok(failures.is_empty(), "no load errors %s" % str(failures))
 	auto_show.seek(30.0)
@@ -168,7 +204,7 @@ func _test_auto_show() -> void:
 	t = Time.get_ticks_msec()
 	while auto_show.loading and Time.get_ticks_msec() - t < 30000:
 		await process_frame
-	ok(absf(auto_show.song_length() - M4A_SECONDS) < 0.1, "...and it's playable")
+	ok(absf(auto_show.song_length() - M4A_SECONDS) < 0.001, "...and it's playable")
 
 	# Loading another song mid-decode cancels the first.
 	auto_show.load_song(M4A)

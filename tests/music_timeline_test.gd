@@ -36,7 +36,10 @@ func _run() -> void:
 	print("== Music timeline ==")
 	_test_wave_view()
 	_test_view_box()
+	_test_grid_lines()
 	await _test_timeline()
+	await _test_playback()
+	await _test_beat_grid_real()
 	await _test_browser_switch()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
@@ -215,10 +218,12 @@ func _test_timeline() -> void:
 	box.view_moved.emit(20.0)
 	ok(is_equal_approx(w.view_start, 20.0) and is_equal_approx(w.visible_length(), 10.0), "dragging the rectangle scrolls the waveform")
 	# Nothing above the waveforms but the (now empty) status line: no
-	# title, track info, back button or time range.
+	# title, track info, back button or time range — the only buttons are
+	# the two transport buttons.
 	var buttons := tl.find_children("*", "Button", true, false)
 	var shown := tl.find_children("*", "Label", true, false).filter(func(l): return l.visible and l.text != "")
-	ok(buttons.is_empty() and shown.is_empty(), "no header, buttons or time label (%d buttons, labels %s)" % [
+	ok(buttons.size() == 2 and tl.play_button() in buttons and tl.reset_button() in buttons and shown.is_empty(),
+		"no header or time label; only the transport buttons (%d buttons, labels %s)" % [
 		buttons.size(), str(shown.map(func(l): return l.text))])
 
 	tl.open(wav)
@@ -238,7 +243,7 @@ func _test_timeline() -> void:
 		ok(await _wait_loaded(tl), "M4A loads through the OS decoder")
 		var a := tl.wave().analysis
 		print("    Believer: %.2f s, %d columns, %d ms" % [a.duration if a else -1.0, a.wave_peak.size() if a else -1, Time.get_ticks_msec() - t0])
-		ok(a != null and absf(a.duration - 204.41) < 0.1, "M4A duration matches VirtualDJ's 204.41 s")
+		ok(a != null and absf(a.duration - 9011622.0 / 44100.0) < 0.001, "M4A duration: encoder priming / padding trimmed (%.3f s)" % (a.duration if a else -1.0))
 
 	# Leaving mid-decode cancels it.
 	var mix := "D:/Music/Compilations/Skitzmix 90's Anthems/01 Skitzmix 90's Anthems (Continuous Mix 1).m4a"
@@ -250,6 +255,186 @@ func _test_timeline() -> void:
 		ok(Time.get_ticks_msec() - t1 < 2000 and not tl.is_loading(), "switching track cancels a long decode (%d ms)" % (Time.get_ticks_msec() - t1))
 	else:
 		skip("long mix not on this machine")
+	tl.queue_free()
+
+
+func _test_grid_lines() -> void:
+	print("- beat grid lines")
+	var w := WaveHeatmap.new()
+	root.add_child(w)
+	w.size = Vector2(1000, 180)
+	w.set_analysis(_analysis(100.0, 10000))
+	var beats := PackedFloat32Array()
+	for i in range(200):
+		beats.append(0.25 + i * 0.5)              # 120 BPM from 0.25 s
+	w.set_beat_grid(beats, 4, 2)                  # bars start at beats 2, 6, 10, ...
+	w.set_view(0.0, 10.0)                         # 100 px per second: beats 50 px apart
+	var lines := w.grid_lines(0.0, 10.0)
+	ok(lines.size() == 20, "every beat drawn when far apart (%d)" % lines.size())
+	var bars := lines.filter(func(l): return l[1]).map(func(l): return roundi(l[0]))
+	ok(bars == [125, 325, 525, 725, 925], "bars every 4 beats from the phase beat %s" % str(bars))
+	w.set_view(0.0, 100.0)                        # 10 px per s: beats 5 px apart -> still drawn
+	ok(w.grid_lines(0.0, 100.0).size() == 200, "beats kept down to 5 px apart")
+	w.set_view(0.0, 0.0)
+	w.size = Vector2(500, 180)                    # 5 px per s: beats 2.5 px, bars 10 px
+	var far := w.grid_lines(0.0, 100.0)
+	ok(far.size() == 50 and far.all(func(l): return l[1]), "zoomed out: bars only (%d)" % far.size())
+	w.size = Vector2(100, 180)                    # bars 2 px apart
+	ok(w.grid_lines(0.0, 100.0).is_empty(), "zoomed right out: no grid")
+	w.set_beat_grid(PackedFloat32Array())
+	ok(w.grid_lines(0.0, 100.0).is_empty(), "cleared")
+	w.queue_free()
+
+
+func _key_space() -> InputEventKey:
+	var k := InputEventKey.new()
+	k.keycode = KEY_SPACE
+	k.pressed = true
+	return k
+
+
+func _wait(ms: int) -> void:
+	var t := Time.get_ticks_msec()
+	while Time.get_ticks_msec() - t < ms:
+		await process_frame
+
+
+func _test_playback() -> void:
+	print("- playback")
+	if not ClassDB.class_exists("SongFeatures"):
+		skip("playback (native extension not built)")
+		return
+	var tl := MusicTimeline.new()
+	root.add_child(tl)
+	tl.size = Vector2(1100, 600)
+	var wav := _synth_wav("user://_timeline_play.wav")
+	var song := VirtualDjDatabase.Song.new()
+	song.scan_bpm = 120.0
+	song.phase = 0.25
+	song.length = 40.0
+	tl.open(wav, song)
+	await _wait_loaded(tl)
+	await process_frame
+	var w := tl.wave()
+	var play := tl.play_button()
+	var reset := tl.reset_button()
+
+	# Layout: the buttons stacked to the right of the waveform.
+	var wr := w.get_global_rect()
+	var pr := play.get_global_rect()
+	var rr := reset.get_global_rect()
+	ok(rr.position.x >= wr.end.x and pr.position.x >= wr.end.x, "buttons to the right of the waveform")
+	ok(rr.end.y <= pr.position.y + 0.5 and is_equal_approx(rr.position.x, pr.position.x), "reset above play, stacked")
+	ok(rr.position.y >= wr.position.y - 0.5 and pr.end.y <= wr.end.y + 0.5, "...within the waveform's height")
+	ok(is_equal_approx(tl.overview().get_global_rect().size.x, wr.size.x), "overview lined up under the waveform")
+
+	ok(tl.can_play() and not play.disabled and not reset.disabled, "a WAV is playable at once")
+	ok(play.glyph == MusicTimeline.TransportButton.Glyph.PLAY, "shows Play")
+	ok(w.show_cursor and w.cursor_color == MusicTimeline.PLAYHEAD_COLOR and tl.overview().show_cursor,
+		"red playhead on both waveforms")
+	ok(w.song_pos == 0.0, "playhead at the start")
+
+	# Beat grid from the VirtualDJ entry: 120 BPM from 0.25 s.
+	ok(w.grid_beats.size() == 80 and is_equal_approx(w.grid_beats[0], 0.25) and w.bar_phase == 0,
+		"beat grid from VirtualDJ (%d beats)" % w.grid_beats.size())
+
+	play.pressed.emit()
+	ok(tl.is_playing() and play.glyph == MusicTimeline.TransportButton.Glyph.PAUSE, "Play -> playing, shows Pause")
+	await _wait(600)
+	var p1 := tl.position()
+	ok(p1 > 0.3 and p1 < 1.0 and absf(w.song_pos - p1) < 0.1,
+		"position advances, playhead follows (%.2f s)" % p1)
+	play.pressed.emit()
+	var held := tl.position()
+	await _wait(300)
+	ok(not tl.is_playing() and is_equal_approx(tl.position(), held) and play.glyph == MusicTimeline.TransportButton.Glyph.PLAY,
+		"Pause holds the position (%.2f s)" % held)
+	play.pressed.emit()
+	await _wait(200)
+	ok(tl.position() > held, "Play resumes from there")
+
+	w.set_view(10.0, 10.0)
+	reset.pressed.emit()
+	ok(tl.position() < 0.2 and tl.is_playing() and w.view_start == 0.0, "Back to start: position 0, still playing, view scrolled back")
+
+	w.seek_requested.emit(12.0)
+	ok(absf(tl.position() - 12.0) < 0.2, "clicking the waveform moves the playhead")
+
+	# Paging: playhead running off the right edge scrolls the view.
+	w.set_view(5.0, 8.0)
+	tl.seek(12.8)
+	await _wait(500)
+	ok(w.view_start > 12.5 and w.view_start < 13.5, "view pages along with the playhead (now %.2f s)" % w.view_start)
+
+	tl.pause()
+	root.push_input(_key_space())   # not handled by anything else here
+	await process_frame
+	ok(tl.is_playing(), "Space plays")
+	tl._unhandled_key_input(_key_space())
+	ok(not tl.is_playing(), "Space pauses")
+
+	# Playing to the end.
+	tl.seek(39.6)
+	tl.play()
+	await _wait(1200)
+	ok(not tl.is_playing() and play.glyph == MusicTimeline.TransportButton.Glyph.PLAY, "stops at the end")
+	tl.play()
+	ok(tl.is_playing() and tl.position() < 0.5, "Play after the end starts over")
+	tl.pause()
+
+	# Hiding the timeline pauses it.
+	tl.play()
+	tl.visible = false
+	ok(not tl.is_playing(), "hiding the view pauses")
+	tl.visible = true
+
+	# A track VirtualDJ doesn't know has no grid; a missing file can't play.
+	tl.open(wav, null)
+	ok(w.grid_beats.is_empty(), "no VirtualDJ entry -> no grid")
+	tl.open(ProjectSettings.globalize_path("user://_no_such_track.mp3"))
+	ok(not tl.can_play() and play.disabled and reset.disabled and not w.show_cursor, "missing file: transport disabled")
+	tl.queue_free()
+
+
+func _test_beat_grid_real() -> void:
+	print("- real tracks")
+	var db := VirtualDjDatabase.new()
+	db.load_all()
+	var believer := "D:/Music/Imagine Dragons/Evolve/04 Believer.m4a"
+	var song := db.find_song(believer)
+	if song == null or not SongAnalyzer.os_decoding_available():
+		skip("Believer / OS AAC decoder not on this machine")
+		return
+	var tl := MusicTimeline.new()
+	root.add_child(tl)
+	tl.size = Vector2(1100, 600)
+	tl.open(believer, song)
+	ok(tl.is_loading_playback() and tl.play_button().disabled, "M4A: Play disabled while the audio is prepared")
+	var t := Time.get_ticks_msec()
+	while (tl.is_loading() or tl.is_loading_playback()) and Time.get_ticks_msec() - t < 30000:
+		await process_frame
+	await process_frame
+	ok(tl.can_play() and not tl.play_button().disabled, "...then enabled")
+	var w := tl.wave()
+	var g := w.grid_beats
+	ok(g.size() > 400 and absf(g[0] - song.first_beat()) < 0.001, "VirtualDJ grid: %d beats from %.3f s" % [g.size(), g[0] if g.size() else -1.0])
+	ok(absf((g[1] - g[0]) - 60.0 / song.best_bpm()) < 0.001, "at the deck's %.2f BPM" % song.best_bpm())
+	tl.play()
+	await _wait(500)
+	ok(tl.is_playing() and tl.position() > 0.2, "M4A plays in the timeline (%.2f s)" % tl.position())
+	tl.pause()
+
+	var blah := db.find_song("D:/Music/Compilations/Blah Blah Blah (Remixes)/08 Blah Blah Blah.m4a")
+	if blah == null or not blah.has_beat_grid():
+		skip("variable-tempo track not on this machine")
+	else:
+		tl.open(blah.path, blah)
+		t = Time.get_ticks_msec()
+		while tl.is_loading() and Time.get_ticks_msec() - t < 30000:
+			await process_frame
+		var bg := tl.wave().grid_beats
+		ok(bg.size() == blah.beat_times(tl.wave().duration()).size() and absf(bg[0] - 0.030459) < 0.001,
+			"variable-tempo grid: %d beats from VirtualDJ's first beat" % bg.size())
 	tl.queue_free()
 
 

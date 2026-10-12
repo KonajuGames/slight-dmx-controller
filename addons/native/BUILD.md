@@ -50,6 +50,11 @@ feature:
   (`mfplat.dll` / `mfreadwrite.dll`, loaded at run time — Windows "N"
   editions lack them unless the Media Feature Pack is installed) or macOS
   AudioToolbox's ExtAudioFile. There's no AAC decoding on Linux.
+  AAC files start with ~2112 samples of encoder "priming" (and end with
+  padding); Media Foundation doesn't remove them, so on Windows the
+  decoder reads the file's iTunes `iTunSMPB` gapless tag and trims both —
+  otherwise everything would run ~48 ms late against VirtualDJ's beat
+  grid. (Files without that tag aren't trimmed.)
   (`SongFeatures.os_decoder_available()` reports which.) Godot can't
   *play* AAC either, so `decode_pcm16()` also decodes a whole file to
   16-bit PCM for an `AudioStreamWAV` — that's how Auto Show plays M4A.

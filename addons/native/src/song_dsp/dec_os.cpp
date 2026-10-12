@@ -26,6 +26,7 @@
 #include <mfidl.h>
 #include <mfreadwrite.h>
 
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -95,6 +96,102 @@ std::wstring widen_path(const char *utf8) {
 	return w;
 }
 
+// --- gapless trimming --------------------------------------------------
+// AAC encoders put ~2112 samples of "priming" before the audio (and pad
+// the end); iTunes-style files say how much in an `iTunSMPB` tag. Media
+// Foundation doesn't apply it, so decoded audio would run ~48 ms late
+// against anything that does -- VirtualDJ's beat grid, for one. The tag
+// lives in the `moov` box, at the start or the end of the file.
+struct Gapless {
+	int64_t priming = 0;
+	int64_t frames = -1;   // valid frames after the priming; -1 = unknown
+};
+
+bool parse_itunsmpb(const std::vector<unsigned char> &buf, Gapless *g) {
+	static const char kTag[] = "iTunSMPB";
+	const size_t tag_n = sizeof(kTag) - 1;
+	for (size_t i = 0; i + tag_n < buf.size(); i++) {
+		if (memcmp(&buf[i], kTag, tag_n) != 0) {
+			continue;
+		}
+		// ...followed by a `data` box: "data", 4-byte type, 4-byte locale,
+		// then " 00000000 00000840 0000021A 00000000008981A6 ...".
+		for (size_t j = i + tag_n; j + 12 < buf.size() && j < i + tag_n + 64; j++) {
+			if (memcmp(&buf[j], "data", 4) != 0) {
+				continue;
+			}
+			size_t s = j + 12;
+			size_t e = s;
+			while (e < buf.size() && e < s + 160 && buf[e] >= 0x20 && buf[e] < 0x7f) {
+				e++;
+			}
+			std::string text(buf.begin() + s, buf.begin() + e);
+			unsigned int zero = 0, priming = 0, padding = 0;
+			unsigned long long total = 0;
+			if (sscanf(text.c_str(), " %x %x %x %llx", &zero, &priming, &padding, &total) == 4) {
+				g->priming = priming;
+				g->frames = total > 0 ? (int64_t)total : -1;
+				return true;
+			}
+			return false;
+		}
+	}
+	return false;
+}
+
+Gapless read_gapless(const std::wstring &wpath) {
+	Gapless g;
+	FILE *f = _wfopen(wpath.c_str(), L"rb");
+	if (!f) {
+		return g;
+	}
+	const long kSpan = 4 * 1024 * 1024; // moov is near one end or the other
+	_fseeki64(f, 0, SEEK_END);
+	long long size = _ftelli64(f);
+	std::vector<unsigned char> buf;
+	auto read_at = [&](long long off, long long n) {
+		buf.resize((size_t)n);
+		_fseeki64(f, off, SEEK_SET);
+		buf.resize(fread(buf.data(), 1, (size_t)n, f));
+	};
+	read_at(0, size < kSpan ? size : kSpan);
+	if (!parse_itunsmpb(buf, &g) && size > kSpan) {
+		long long off = size - kSpan > kSpan ? size - kSpan : kSpan;
+		read_at(off, size - off);
+		parse_itunsmpb(buf, &g);
+	}
+	fclose(f);
+	return g;
+}
+
+// Drops the priming / padding on the way to the real sink.
+struct TrimSink {
+	sd_sink sink;
+	void *ctx;
+	int64_t skip;        // frames still to drop at the start
+	int64_t remaining;   // frames still to pass on; -1 = no limit
+};
+
+int trim_sink(void *c, const float *pcm, int64_t frames, int channels, int rate, int64_t total) {
+	TrimSink *t = static_cast<TrimSink *>(c);
+	if (t->skip > 0) {
+		int64_t d = t->skip < frames ? t->skip : frames;
+		t->skip -= d;
+		pcm += d * channels;
+		frames -= d;
+	}
+	if (t->remaining >= 0) {
+		if (frames > t->remaining) {
+			frames = t->remaining;
+		}
+		t->remaining -= frames;
+	}
+	if (frames <= 0) {
+		return 0;
+	}
+	return t->sink(t->ctx, pcm, frames, channels, rate, total);
+}
+
 // Ask the reader for float PCM and read back what it settled on.
 bool configure(IMFSourceReader *reader, int *channels, int *rate) {
 	IMFMediaType *want = nullptr;
@@ -138,6 +235,10 @@ int decode_mf(const char *path_utf8, sd_sink sink, void *ctx) {
 	int rc = 0;
 	IMFSourceReader *reader = nullptr;
 	std::wstring wpath = widen_path(path_utf8);
+	Gapless gap = read_gapless(wpath);
+	TrimSink trim = {sink, ctx, gap.priming, gap.frames};
+	sink = &trim_sink;
+	ctx = &trim;
 	if (FAILED(g_mf.create_reader(wpath.c_str(), nullptr, &reader))) {
 		rc = -11; // missing file, or no decoder for it
 	} else {
@@ -156,6 +257,9 @@ int decode_mf(const char *path_utf8, sd_sink sink, void *ctx) {
 				total = (int64_t)((double)dur.uhVal.QuadPart * 1e-7 * rate);
 			}
 			PropVariantClear(&dur);
+			if (gap.frames > 0) {
+				total = gap.frames;
+			}
 
 			for (;;) {
 				DWORD flags = 0;

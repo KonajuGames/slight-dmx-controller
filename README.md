@@ -121,6 +121,11 @@ technical reference.
   marks the visible part: drag it, or click elsewhere to jump. Decoded on
   a worker thread by the native extension (`SongFeatures.waveform_file`,
   100 columns per second), including M4A through the OS's decoder.
+  Back-to-start and Play / Pause buttons (or Space) to the right of the
+  waveform play the track; a red line marks the playback position (click
+  the waveform to move it; the view pages along as it plays). VirtualDJ's
+  beat grid, when it knows the track, is drawn over the waveform — a line
+  per beat, bolder at each bar of four, variable-tempo grids included.
 - `universe_panel.gd` — the `UniversePanel` class: one universe's tab —
   its connection settings, blackout/full, and fixture patch with
   purpose-built per-fixture controls.

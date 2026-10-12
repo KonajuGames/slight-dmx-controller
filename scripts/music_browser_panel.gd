@@ -256,7 +256,7 @@ func _on_track_activated() -> void:
 func open_track(row: Dictionary) -> void:
 	_list_view.visible = false
 	_timeline.visible = true
-	_timeline.open(row["path"])
+	_timeline.open(row["path"], _db.find_song(row["path"]) if _db != null else null)
 
 
 ## Back from a track's timeline to the track list.
