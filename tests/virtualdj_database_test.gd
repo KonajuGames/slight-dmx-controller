@@ -275,6 +275,21 @@ func _test_tempo() -> void:
 	ok(absf(g.bpm_at(10.0) - 140.72) < 0.01, "bpm_at() before the grid -> first segment")
 	ok(absf(g.bpm_at(500.0) - 137.38) < 0.01, "bpm_at() after the grid -> last segment")
 
+	# first_beat_index(): where bars count from in a beat_times() list.
+	var c := VirtualDjDatabase.Song.new()
+	c.scan_bpm = 60.0 / 0.483878           # Wake Me Up: first beat just before 0 s
+	c.phase = -0.042766
+	c.length = 10.0
+	var cb := c.beat_times()
+	ok(absf(cb[0] - 0.441112) < 0.001, "beats start at the first one after 0 s (%.3f)" % cb[0])
+	ok(c.first_beat_index(cb) == -1, "first beat before 0 s -> index -1 (%d)" % c.first_beat_index(cb))
+	c.phase = 2.0 * 0.483878 + 0.1         # first beat = the 3rd one listed
+	ok(c.first_beat_index(c.beat_times()) == 2, "first beat later on -> its index (%d)" % c.first_beat_index(c.beat_times()))
+	c.phase = -4.0 * 0.483878 - 0.042766   # a whole bar before 0 s
+	ok(c.first_beat_index(c.beat_times()) == -5, "several beats before 0 s (%d)" % c.first_beat_index(c.beat_times()))
+	ok(g.first_beat_index(g.beat_times(40.0)) == 0, "variable grid: its first beat is listed first")
+	ok(c.first_beat_index(PackedFloat32Array()) == 0, "no beats -> 0")
+
 
 func _test_real_databases() -> void:
 	print("- databases on this machine")

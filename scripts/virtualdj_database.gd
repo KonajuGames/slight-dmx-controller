@@ -100,6 +100,21 @@ class Song:
 	func has_beat_grid() -> bool:
 		return not grid_segments.is_empty()
 
+	## Where first_beat() falls in `beats` (a beat_times() list): the
+	## index of the nearest beat — negative when it's before the first one
+	## listed, since VirtualDJ can put the first beat just before 0 s,
+	## where beat_times() doesn't go. Bars count from this beat.
+	func first_beat_index(beats: PackedFloat32Array) -> int:
+		if beats.is_empty():
+			return 0
+		var fb := first_beat()
+		if fb < beats[0] and beats.size() > 1:
+			return -roundi((beats[0] - fb) / (beats[1] - beats[0]))
+		var i := clampi(beats.bsearch(fb), 0, beats.size() - 1)
+		if i > 0 and absf(beats[i - 1] - fb) < absf(beats[i] - fb):
+			i -= 1
+		return i
+
 	## The tempo at `t` seconds into the song. With a variable-tempo grid,
 	## that's the declared tempo of the grid segment playing at `t` — what
 	## VirtualDJ reports for the deck (unpitched) — not one derived from

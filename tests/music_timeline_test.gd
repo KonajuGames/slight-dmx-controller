@@ -492,6 +492,25 @@ func _test_beat_grid_real() -> void:
 		var bg := tl.wave().grid_beats
 		ok(bg.size() == blah.beat_times(tl.wave().duration()).size() and absf(bg[0] - 0.030459) < 0.001,
 			"variable-tempo grid: %d beats from VirtualDJ's first beat" % bg.size())
+
+	# Wake Me Up: VirtualDJ's first beat is at -0.043 s, so the first beat
+	# drawn (0.441 s) is the bar's second, and bars fall on -0.043 + 4n beats.
+	var wake := db.find_song("D:/Music/Avicii/True/01 Wake Me Up.m4a")
+	if wake == null:
+		skip("Wake Me Up not on this machine")
+	else:
+		tl.open(wake.path, wake)
+		t = Time.get_ticks_msec()
+		while tl.is_loading() and Time.get_ticks_msec() - t < 30000:
+			await process_frame
+		var ww := tl.wave()
+		ok(ww.bar_phase == -1, "first beat before 0 s: bars counted from it (phase %d)" % ww.bar_phase)
+		ww.set_view(0.0, 4.0)
+		var bars := ww.grid_lines(0.0, 4.0).filter(func(l): return l[1]).map(func(l): return snappedf(ww.x_to_time(l[0]), 0.001))
+		var spb := 60.0 / wake.best_bpm()
+		ok(bars.size() == 2 and absf(bars[0] - (wake.first_beat() + 4 * spb)) < 0.002
+			and absf(bars[1] - (wake.first_beat() + 8 * spb)) < 0.002,
+			"bar lines at %s (first beat %.3f + 4 / 8 beats)" % [str(bars), wake.first_beat()])
 	tl.queue_free()
 
 

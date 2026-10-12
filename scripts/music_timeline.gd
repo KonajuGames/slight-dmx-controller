@@ -510,11 +510,8 @@ func _apply_beat_grid(duration: float) -> void:
 		_wave.set_beat_grid(PackedFloat32Array())
 		return
 	var beats := _song.beat_times(duration)
-	var first := _song.first_beat()
-	var phase := 0
-	if not beats.is_empty():
-		phase = clampi(beats.bsearch(first - 0.01), 0, beats.size() - 1)
-	_wave.set_beat_grid(beats, BEATS_PER_BAR, phase)
+	# May be negative: VirtualDJ's first beat can sit just before 0 s.
+	_wave.set_beat_grid(beats, BEATS_PER_BAR, _song.first_beat_index(beats))
 
 
 ## Keep the overview's rectangle on the zoomable waveform's window.
