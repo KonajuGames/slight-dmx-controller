@@ -24,6 +24,9 @@ extends VBoxContainer
 ## Above the waveforms there's only a status line with a progress bar,
 ## for loading and errors; it's empty once a track is shown.
 
+## At the top, the master lighting timeline (TimelineTrack: position,
+## strobe, cue and colour rows and a dimmer node line), which affects
+## every fixture.
 ## Above the bar ruler, the song's structure (Intro / Verse / Chorus / ...,
 ## from SongAnalyzer, run in the background when a track opens; with
 ## VirtualDJ's beat grid swapped in and the section borders snapped to its
@@ -59,6 +62,8 @@ var _spacer: Control
 var _wave: WaveHeatmap
 var _ruler: BarRuler
 var _structure: StructureBar
+var _master: TimelineTrack
+var _master_plate: TimelineTrack.NamePlate
 var _lock_btn: TransportButton
 var _gen_btn: TransportButton
 var _structure_locked := true
@@ -130,7 +135,13 @@ func _ready() -> void:
 	_wave.seek_requested.connect(begin_scrub)
 	_wave.seek_dragged.connect(scrub_to)
 	_wave.seek_released.connect(end_scrub)
-	# The bar-number strip along its top, carrying the playhead's marker.
+	# The master lighting timeline (all fixtures), at the top.
+	_master = TimelineTrack.new()
+	_master.target = TimelineTrack.Target.MASTER
+	_master.title = "Master"
+	_master.wave = _wave
+	wave_col.add_child(_master)
+	_master.item_rect_changed.connect(_place_buttons)
 	# The song's structure, above the bar ruler and as tall.
 	_structure = StructureBar.new()
 	_structure.custom_minimum_size = Vector2(0, BarRuler.HEIGHT)
@@ -139,6 +150,9 @@ func _ready() -> void:
 	_structure.seek_requested.connect(seek)
 	_structure.tooltip_text = "Song structure: unlock to drag a border or right-click a section"
 	wave_col.add_child(_structure)
+	# The lock / generate buttons stay level with it.
+	_structure.item_rect_changed.connect(_place_buttons)
+	# The bar-number strip along its top, carrying the playhead's marker.
 	_ruler = BarRuler.new()
 	_ruler.wave = _wave
 	_ruler.tooltip_text = "Click or drag: move the playhead"
@@ -180,6 +194,10 @@ func _ready() -> void:
 	buttons.add_child(_gen_btn)
 	for b in [_reset_btn, _play_btn, _lock_btn, _gen_btn]:
 		b.focus_mode = Control.FOCUS_NONE
+	# Beside the master timeline: its name, vertically, on a filled plate.
+	_master_plate = TimelineTrack.NamePlate.new()
+	_master_plate.track = _master
+	buttons.add_child(_master_plate)
 	_place_buttons()
 	_update_structure_buttons()
 
@@ -602,6 +620,15 @@ func _apply_beat_grid(duration: float) -> void:
 # ------------------------------------------------------- SONG STRUCTURE --
 
 ## The structure bar (for tests / later features).
+## The master lighting timeline (all fixtures).
+func master_track() -> TimelineTrack:
+	return _master
+
+
+func master_plate() -> TimelineTrack.NamePlate:
+	return _master_plate
+
+
 func structure_bar() -> StructureBar:
 	return _structure
 
@@ -747,15 +774,20 @@ func _place_buttons() -> void:
 	_reset_btn.position = Vector2(0, h - 2.0 * _BUTTON_WIDTH - _BUTTON_GAP)
 	for b in [_reset_btn, _play_btn]:
 		b.size = Vector2(_BUTTON_WIDTH, _BUTTON_WIDTH)
-	# The small pair, level with the structure bar at the top: squares as
-	# tall as it, side by side.
-	if _lock_btn != null and _gen_btn != null:
+	# The small pair, level with the structure bar (below the master
+	# timeline): squares as tall as it, side by side.
+	if _lock_btn != null and _gen_btn != null and _structure != null:
 		var sq := BarRuler.HEIGHT
 		var x0 := (_BUTTON_WIDTH - 2.0 * sq - _BUTTON_GAP) * 0.5
-		_lock_btn.position = Vector2(x0, 0)
-		_gen_btn.position = Vector2(x0 + sq + _BUTTON_GAP, 0)
+		var y := _structure.position.y
+		_lock_btn.position = Vector2(x0, y)
+		_gen_btn.position = Vector2(x0 + sq + _BUTTON_GAP, y)
 		for b in [_lock_btn, _gen_btn]:
 			b.size = Vector2(sq, sq)
+	# The master timeline's name plate fills the column beside it.
+	if _master_plate != null and _master != null:
+		_master_plate.position = Vector2(0, _master.position.y)
+		_master_plate.size = Vector2(_BUTTON_WIDTH, _master.size.y)
 
 
 ## Keep the overview's rectangle on the zoomable waveform's window.
@@ -763,6 +795,7 @@ func _box_follow(start: float, length: float) -> void:
 	_box.set_view(start, length)
 	_ruler.queue_redraw()
 	_structure.set_view(start, length)
+	_master.queue_redraw()
 
 
 ## The strip along the top of the zoomable waveform: bar numbers (from 1,

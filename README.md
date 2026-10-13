@@ -141,6 +141,17 @@ technical reference.
   show from the (edited) structure, like the Auto Show tab's Build Light
   Show; run it with the Auto Show run mode.
   The waveform is 90 px tall.
+- `timeline_track.gd` — the `TimelineTrack` class: a lighting timeline
+  in the track timeline, for the master (all fixtures), a fixture, or one
+  head — a stack of rows for what its target supports, bottom up:
+  Position (moving heads), Strobe, Cues, Colour (10 px each) and an 80 px
+  Dimmer row with a node line, filled white underneath fading from
+  transparent at the bottom to 50 % at the top. The master track (every
+  row) sits above the song structure and follows the waveform's zoom;
+  beside each track, a name plate shows its target's name vertically.
+  So far it's display only: the rows other than the dimmer are empty,
+  the dimmer is a flat 100 % unless given nodes, and nothing drives the
+  fixtures yet.
 - `universe_panel.gd` — the `UniversePanel` class: one universe's tab —
   its connection settings, blackout/full, and fixture patch with
   purpose-built per-fixture controls.
