@@ -193,8 +193,9 @@ func _draw() -> void:
 		tint.a = 0.16
 		draw_rect(Rect2(x0, 0, maxf(x1 - x0, 1.0), h), tint)
 
-	_draw_wave(w, h, t0, t1)
+	# Grid first, so the wave sits in front of it.
 	_draw_grid(h, t0, t1)
+	_draw_wave(w, h, t0, t1)
 
 	for db in analysis.downbeats:
 		if db < t0 or db > t1:
