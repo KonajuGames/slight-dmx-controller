@@ -32,7 +32,11 @@ const INITIAL_VIEW := 30.0
 const CACHE_SIZE := 6
 const BEATS_PER_BAR := 4
 const PLAYHEAD_COLOR := Color(1.0, 0.22, 0.22)
-const _BUTTON_WIDTH := 56.0
+## The transport buttons: squares this size, stacked this far apart,
+## pinned to the bottom of the waveform (two fit beside the default
+## waveform + bar ruler).
+const _BUTTON_WIDTH := 48.0
+const _BUTTON_GAP := 6.0
 ## The zoomable waveform's height: what it starts at, and the smallest the
 ## grip bar above it can drag it to. The largest is whatever room is free.
 const WAVE_HEIGHT_DEFAULT := 90.0
@@ -48,6 +52,7 @@ var _drag_start_height := 0.0
 var _drag_max_height := 0.0
 var _wave: WaveHeatmap
 var _ruler: BarRuler
+var _button_col: Control
 var _overview: WaveHeatmap
 var _box: ViewBox
 var _reset_btn: TransportButton
@@ -133,8 +138,15 @@ func _ready() -> void:
 	wave_col.add_child(_ruler)
 	wave_col.add_child(_wave)
 
-	var buttons := VBoxContainer.new()
-	buttons.add_theme_constant_override("separation", 6)
+	# A plain holder, not a box: the buttons keep their square size and sit
+	# at its bottom whatever the waveform's height, without ever making
+	# the row taller (on a very short waveform the top one just rises
+	# above it).
+	var buttons := Control.new()
+	buttons.custom_minimum_size = Vector2(_BUTTON_WIDTH, 0)
+	buttons.size_flags_vertical = Control.SIZE_FILL
+	_button_col = buttons
+	buttons.resized.connect(_place_buttons)
 	wave_row.add_child(buttons)
 	_reset_btn = TransportButton.new()
 	_reset_btn.glyph = TransportButton.Glyph.TO_START
@@ -147,9 +159,8 @@ func _ready() -> void:
 	_play_btn.tooltip_text = "Play / pause (Space)"
 	buttons.add_child(_play_btn)
 	for b in [_reset_btn, _play_btn]:
-		b.custom_minimum_size = Vector2(_BUTTON_WIDTH, 0)
-		b.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		b.focus_mode = Control.FOCUS_NONE
+	_place_buttons()
 
 	# The whole-track overview, lined up under the waveform.
 	var over_row := HBoxContainer.new()
@@ -587,6 +598,18 @@ func _apply_beat_grid(duration: float) -> void:
 	var beats := _song.beat_times(duration)
 	# May be negative: VirtualDJ's first beat can sit just before 0 s.
 	_wave.set_beat_grid(beats, BEATS_PER_BAR, _song.first_beat_index(beats))
+
+
+## Square transport buttons stacked at the bottom of their column (the
+## waveform's bottom edge): Play / Pause lowest, Back to start above it.
+func _place_buttons() -> void:
+	if _button_col == null or _play_btn == null or _reset_btn == null:
+		return   # still being built
+	var h := _button_col.size.y
+	_play_btn.position = Vector2(0, h - _BUTTON_WIDTH)
+	_reset_btn.position = Vector2(0, h - 2.0 * _BUTTON_WIDTH - _BUTTON_GAP)
+	for b in [_reset_btn, _play_btn]:
+		b.size = Vector2(_BUTTON_WIDTH, _BUTTON_WIDTH)
 
 
 ## Keep the overview's rectangle on the zoomable waveform's window.

@@ -430,7 +430,9 @@ func _test_resize() -> void:
 	await process_frame
 	ok(is_equal_approx(tl.wave_height(), 150.0), "dragging up 60 px -> 150 px (%.0f)" % tl.wave_height())
 	ok(is_equal_approx(w.get_global_rect().end.y, bottom), "the waveform grows upward; its bottom stays put")
-	ok(is_equal_approx(tl.play_button().size.y + tl.reset_button().size.y + 6.0, w.size.y + tl.ruler().size.y), "buttons follow its height (with the bar ruler)")
+	ok(tl.play_button().size == Vector2(48, 48) and tl.reset_button().size == Vector2(48, 48)
+		and is_equal_approx(tl.play_button().get_global_rect().end.y, w.get_global_rect().end.y),
+		"buttons stay 48 px squares at the waveform's bottom (%s)" % tl.play_button().size)
 	_grip_event(g, y0 - 20.0)
 	ok(is_equal_approx(tl.wave_height(), 110.0), "...and back down while still dragging (%.0f)" % tl.wave_height())
 	_grip_event(g, y0 + 500.0)
@@ -487,8 +489,10 @@ func _test_playback() -> void:
 	var rr := reset.get_global_rect()
 	ok(rr.position.x >= wr.end.x and pr.position.x >= wr.end.x, "buttons to the right of the waveform")
 	ok(rr.end.y <= pr.position.y + 0.5 and is_equal_approx(rr.position.x, pr.position.x), "reset above play, stacked")
-	var ruler_r := tl.ruler().get_global_rect()
-	ok(is_equal_approx(rr.position.y, ruler_r.position.y) and is_equal_approx(pr.end.y, wr.end.y), "...spanning the bar ruler and the waveform")
+	ok(pr.size == Vector2(48, 48) and rr.size == Vector2(48, 48), "both square (%s, %s)" % [pr.size, rr.size])
+	ok(is_equal_approx(pr.end.y, wr.end.y) and is_equal_approx(pr.position.y - rr.end.y, 6.0),
+		"aligned to the waveform's bottom, Play / Pause lowest, 6 px apart")
+	ok(rr.position.y >= tl.ruler().get_global_rect().position.y - 0.5, "...fitting beside the default waveform + bar ruler")
 	ok(is_equal_approx(tl.overview().get_global_rect().size.x, wr.size.x), "overview lined up under the waveform")
 
 	# Subwindows (tooltips, dialogs) must stay embedded: as native windows
