@@ -15,12 +15,32 @@ extends Control
 ##   segment expands to fill the gap.
 ## Edits mutate `analysis.sections` in place (shared with AutoShow/
 ## ShowGenerator) and emit `structure_edited` so listeners can refresh.
+##
+## `editable` = false locks that editing (clicks just seek). It can also
+## show only part of the song — `view_start` / `view_len` seconds, set by
+## whoever owns the zoom (the Music Library timeline follows its
+## waveform); by default it shows the whole song.
 
 signal seek_requested(seconds: float)
 signal structure_edited()
 
 var analysis: SongAnalysis
 var song_pos := 0.0
+var show_cursor := true
+var cursor_color := Color(1, 1, 1, 0.9)
+## Border dragging and the right-click menu; off = locked (clicks seek).
+var editable := true:
+	set(v):
+		editable = v
+		_drag_border = -1
+		_hover_border = -1
+		queue_redraw()
+## Visible window, seconds; view_len <= 0 = the whole song.
+var view_start := 0.0
+var view_len := 0.0
+## Shown in place of the sections when there are none (e.g. while
+## analysing).
+var placeholder := "analyse a song to see its structure"
 
 ## Section label -> base hue. Shared with WaveHeatmap.
 const LABEL_HUE := {
@@ -44,7 +64,8 @@ var _popup_click_time := 0.0
 
 
 func _ready() -> void:
-	custom_minimum_size = Vector2(0, 46)
+	if custom_minimum_size.y <= 0.0:
+		custom_minimum_size = Vector2(0, 46)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	_popup = PopupMenu.new()
 	add_child(_popup)
@@ -62,6 +83,24 @@ func _dur() -> float:
 	return maxf(analysis.duration, 0.001) if analysis != null else 1.0
 
 
+func set_view(start: float, length: float) -> void:
+	view_start = start
+	view_len = length
+	queue_redraw()
+
+
+func _vis_len() -> float:
+	return view_len if view_len > 0.0 else _dur()
+
+
+func _t2x(t: float) -> float:
+	return (t - view_start) / _vis_len() * size.x
+
+
+func _x2t(x: float) -> float:
+	return clampf(view_start + x / maxf(size.x, 1.0) * _vis_len(), 0.0, _dur())
+
+
 func _draw() -> void:
 	var w := size.x
 	var h := size.y
@@ -69,38 +108,52 @@ func _draw() -> void:
 
 	if analysis == null or analysis.sections.is_empty():
 		draw_rect(Rect2(0, 0, w, h), Color(0.12, 0.12, 0.14))
-		draw_string(f, Vector2(8, h * 0.5 + 4), "analyse a song to see its structure",
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.5, 0.5, 0.55))
+		draw_string(f, Vector2(8, h * 0.5 + 4), placeholder,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, mini(12, int(h) - 6), Color(0.5, 0.5, 0.55))
 		return
 
-	var dur := _dur()
 	for i in range(analysis.sections.size()):
 		var sec: Dictionary = analysis.sections[i]
-		var x0: float = float(sec["start"]) / dur * w
-		var x1: float = float(sec["end"]) / dur * w
+		var x0: float = _t2x(float(sec["start"]))
+		var x1: float = _t2x(float(sec["end"]))
+		if x1 < 0.0 or x0 > w:
+			continue
 		var base: Color = LABEL_HUE.get(String(sec["label"]), Color(0.3, 0.3, 0.35))
 		var col := base.lerp(base.lightened(0.35), clampf(float(sec["energy"]), 0.0, 1.0))
-		draw_rect(Rect2(x0, 0, maxf(x1 - x0, 1.0), h), col)
+		# Clipped to the bar: zoomed in, a section can run far past either
+		# edge (and would paint over its neighbours).
+		var lx := maxf(x0, 0.0)
+		var rx := minf(x1, w)
+		draw_rect(Rect2(lx, 0, maxf(rx - lx, 1.0), h), col)
 		var border_col := Color(0, 0, 0, 0.35)
 		var border_w := 1.0
 		if i > 0 and (i - 1 == _drag_border or i - 1 == _hover_border):
 			border_col = Color(1, 1, 1, 0.9)
 			border_w = 2.0
-		draw_line(Vector2(x0, 0), Vector2(x0, h), border_col, border_w)
-		if x1 - x0 > 34.0:
-			draw_string(f, Vector2(x0 + 4, h * 0.5 + 4), String(sec["label"]),
-				HORIZONTAL_ALIGNMENT_LEFT, x1 - x0 - 6, 11, Color(1, 1, 1, 0.9))
+		if x0 >= 0.0:
+			draw_line(Vector2(x0, 0), Vector2(x0, h), border_col, border_w)
+		if rx - lx > 34.0:
+			draw_string(f, Vector2(lx + 4, h * 0.5 + 4), String(sec["label"]),
+				HORIZONTAL_ALIGNMENT_LEFT, rx - lx - 6, 11, Color(1, 1, 1, 0.9))
 
-	for db in analysis.downbeats:
-		var x: float = float(db) / dur * w
-		draw_line(Vector2(x, h - 5), Vector2(x, h), Color(1, 1, 1, 0.25), 1.0)
+	# Bar ticks along the bottom, unless they'd crowd together.
+	var bar_px := 0.0
+	if analysis.downbeats.size() > 1:
+		bar_px = (analysis.downbeats[1] - analysis.downbeats[0]) / _vis_len() * w
+	if bar_px >= 4.0:
+		for db in analysis.downbeats:
+			var x := _t2x(float(db))
+			if x >= 0.0 and x <= w:
+				draw_line(Vector2(x, h - 5), Vector2(x, h), Color(1, 1, 1, 0.25), 1.0)
 
-	var px: float = clampf(song_pos / dur, 0.0, 1.0) * w
-	draw_line(Vector2(px, 0), Vector2(px, h), Color(1, 1, 1, 0.9), 2.0)
+	if show_cursor:
+		var px := _t2x(song_pos)
+		if px >= 0.0 and px <= w:
+			draw_line(Vector2(px, 0), Vector2(px, h), cursor_color, 2.0)
 
 
 func _get_cursor_shape(pos: Vector2 = Vector2()) -> Control.CursorShape:
-	if analysis != null and (_drag_border != -1 or _border_at(pos) != -1):
+	if analysis != null and editable and (_drag_border != -1 or _border_at(pos) != -1):
 		return Control.CURSOR_HSIZE
 	return Control.CURSOR_ARROW
 
@@ -110,6 +163,8 @@ func _gui_input(event: InputEvent) -> void:
 		return
 
 	if event is InputEventMouseMotion:
+		if not editable:
+			return
 		if _drag_border != -1:
 			_update_drag(event.position.x)
 		else:
@@ -121,13 +176,13 @@ func _gui_input(event: InputEvent) -> void:
 
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_LEFT:
-			var b := _border_at(event.position)
+			var b := _border_at(event.position) if editable else -1
 			if b != -1:
 				_drag_border = b
 			else:
-				seek_requested.emit(clampf(event.position.x / size.x, 0.0, 1.0) * _dur())
-		elif event.button_index == MOUSE_BUTTON_RIGHT:
-			var idx := analysis.section_at(clampf(event.position.x / size.x, 0.0, 1.0) * _dur())
+				seek_requested.emit(_x2t(event.position.x))
+		elif event.button_index == MOUSE_BUTTON_RIGHT and editable:
+			var idx := analysis.section_at(_x2t(event.position.x))
 			if idx != -1:
 				_open_context_menu(idx, event.position)
 	elif event is InputEventMouseButton and not event.pressed:
@@ -142,10 +197,8 @@ func _gui_input(event: InputEvent) -> void:
 func _border_at(pos: Vector2) -> int:
 	if analysis == null or size.x <= 0.0:
 		return -1
-	var dur := _dur()
-	var w := size.x
 	for i in range(analysis.sections.size() - 1):
-		var x: float = float(analysis.sections[i]["end"]) / dur * w
+		var x := _t2x(float(analysis.sections[i]["end"]))
 		if absf(pos.x - x) <= _BORDER_HIT_PX:
 			return i
 	return -1
@@ -154,13 +207,11 @@ func _border_at(pos: Vector2) -> int:
 func _update_drag(mouse_x: float) -> void:
 	var secs := analysis.sections
 	var i := _drag_border
-	var dur := _dur()
-	var w := size.x
-	if w <= 0.0:
+	if size.x <= 0.0:
 		return
 	var lo: float = float(secs[i]["start"])
 	var hi: float = float(secs[i + 1]["end"])
-	var raw_t: float = clampf(mouse_x / w, 0.0, 1.0) * dur
+	var raw_t: float = _x2t(mouse_x)
 	var t: float = clampf(_snap_to_bar(clampf(raw_t, lo, hi)), lo, hi)
 	secs[i]["end"] = t
 	secs[i + 1]["start"] = t
@@ -189,7 +240,7 @@ func _snap_to_bar(t: float) -> float:
 func _open_context_menu(idx: int, at_pos: Vector2) -> void:
 	var secs := analysis.sections
 	_popup_section_idx = idx
-	_popup_click_time = clampf(at_pos.x / size.x, 0.0, 1.0) * _dur()
+	_popup_click_time = _x2t(at_pos.x)
 
 	_popup.clear()
 	var cur := String(secs[idx]["label"])

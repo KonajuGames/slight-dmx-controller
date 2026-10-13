@@ -56,7 +56,8 @@ technical reference.
   uses that). The structure strip is editable:
   drag a section border (snapped to the beat grid) to fix a boundary the
   analyser placed slightly wrong, or right-click a section to relabel,
-  split, or delete it.
+  split, or delete it. It can be locked against editing and can follow
+  a zoomed view too (both used by the Music Library's timeline).
 - `triggers_engine.gd` — the `Triggers` autoload: listens for MIDI
   (Godot's `InputEventMIDI`) and OSC (a UDP listener), fires console
   actions, and sends feedback (LED updates) when a binding's target is
@@ -130,7 +131,14 @@ technical reference.
   per beat, bolder at each bar of four, variable-tempo grids included —
   and the strip along its top numbers the bars from 1 (thinned to every
   2nd / 4th / ... bar when zoomed out), with a tick per beat while the
-  beats are far enough apart to read.
+  beats are far enough apart to read. Above that, the song's structure
+  (Intro / Verse / Chorus / ..., analysed in the background when the
+  track opens, on VirtualDJ's beat grid with section borders snapped to
+  its bars), with two small buttons beside it: a padlock to unlock
+  editing it (drag a border, right-click a section — locked by default),
+  and generate, which makes the track Auto Show's song and builds a light
+  show from the (edited) structure, like the Auto Show tab's Build Light
+  Show; run it with the Auto Show run mode.
   The waveform starts 90 px tall; drag just above its top edge (the
   pointer turns into a resize arrow there) to resize it.
 - `universe_panel.gd` — the `UniversePanel` class: one universe's tab —

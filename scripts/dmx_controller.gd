@@ -93,6 +93,7 @@ func _ready() -> void:
 	music_panel = MusicBrowserPanel.new()
 	music_panel.visible = false
 	main_vbox.add_child(music_panel)
+	music_panel.timeline().generate_show_requested.connect(_generate_show_from_library)
 
 	var playback_tabs := TabContainer.new()
 	playback_tabs.custom_minimum_size = Vector2(336, 0)
@@ -742,6 +743,21 @@ func _apply_auto_show(res: Dictionary) -> void:
 	AutoShow.set_show(res["looks"], res["timeline"])
 	status_label.text = "Auto Show built: %d section looks, %d chases, %d effects — plays over your cues." % [
 		res["looks"].size(), res["chases"].size(), res["effects"].size()]
+
+
+## The Music Library timeline's "generate light show": make `path` Auto
+## Show's song, with `a` (the timeline's analysed, possibly edited,
+## structure) as its analysis, and build + install a show from it — what
+## the Auto Show tab's Build Light Show does. Run it with the Auto Show
+## run mode. Editing the structure afterwards changes the analysis Auto
+## Show holds too; generate again to rebuild the show from it.
+func _generate_show_from_library(path: String, a: SongAnalysis) -> void:
+	if AutoShow.song_path != path and not AutoShow.load_song(path):
+		return   # load_song reported why (analysis_failed)
+	AutoShow.analysis = a
+	_apply_auto_show(ShowGenerator.build(a, _panels))
+	auto_show_panel.reload()
+	status_label.text += "  Song: %s — set the run mode to Auto Show to play it." % path.get_file()
 
 
 ## "Load to Patch" — write a cue's or chase step's per-universe look into

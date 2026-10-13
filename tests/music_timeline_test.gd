@@ -38,6 +38,9 @@ func _run() -> void:
 	_test_view_box()
 	_test_grid_lines()
 	await _test_ruler()
+	_test_apply_vdj_grid()
+	await _test_structure()
+	await _test_generate_show()
 	await _test_resize()
 	await _test_timeline()
 	await _test_playback()
@@ -224,8 +227,9 @@ func _test_timeline() -> void:
 	# the two transport buttons.
 	var buttons := tl.find_children("*", "Button", true, false)
 	var shown := tl.find_children("*", "Label", true, false).filter(func(l): return l.visible and l.text != "")
-	ok(buttons.size() == 2 and tl.play_button() in buttons and tl.reset_button() in buttons and shown.is_empty(),
-		"no header or time label; only the transport buttons (%d buttons, labels %s)" % [
+	ok(buttons.size() == 4 and tl.play_button() in buttons and tl.reset_button() in buttons
+		and tl.lock_button() in buttons and tl.generate_button() in buttons and shown.is_empty(),
+		"no header or time label; only the transport and structure buttons (%d buttons, labels %s)" % [
 		buttons.size(), str(shown.map(func(l): return l.text))])
 
 	tl.open(wav)
@@ -390,6 +394,161 @@ func _test_ruler() -> void:
 	w.seek_released.emit(4.5)
 	ok(absf(tl.playback_position() - 4.5) < 0.01, "...and sets it on release")
 	tl.queue_free()
+
+
+func _test_apply_vdj_grid() -> void:
+	print("- VirtualDJ grid on an analysed structure")
+	var a := SongAnalysis.new()
+	a.duration = 40.0
+	a.bpm = 117.0
+	a.sections = [
+		{"start": 0.0, "end": 8.3, "label": "Intro", "energy": 0.2, "cluster": 0},
+		{"start": 8.3, "end": 8.6, "label": "Build", "energy": 0.5, "cluster": 1},
+		{"start": 8.6, "end": 24.9, "label": "Chorus", "energy": 0.9, "cluster": 2},
+		{"start": 24.9, "end": 40.0, "label": "Outro", "energy": 0.3, "cluster": 3},
+	]
+	var song := VirtualDjDatabase.Song.new()
+	song.scan_bpm = 120.0           # 0.5 s beats, 2 s bars from 0.25 s
+	song.phase = 0.25
+	song.length = 40.0
+	MusicTimeline.apply_vdj_grid(a, song)
+	ok(a.bpm == 120.0, "tempo from VirtualDJ (%.1f)" % a.bpm)
+	ok(a.beat_times.size() == 80 and is_equal_approx(a.beat_times[0], 0.25), "VirtualDJ's beats")
+	ok(a.downbeats.size() == 20 and is_equal_approx(a.downbeats[1], 2.25), "bars every 4 beats from its first beat")
+	var starts: Array = a.sections.map(func(sec): return snappedf(sec["start"], 0.01))
+	ok(starts == [0.0, 8.25, 24.25], "borders snapped to its bars; a section squeezed to nothing dropped %s" % str(starts))
+	var contiguous := true
+	for i in range(1, a.sections.size()):
+		contiguous = contiguous and a.sections[i]["start"] == a.sections[i - 1]["end"]
+	ok(contiguous and a.sections[-1]["end"] == 40.0, "still contiguous to the end")
+
+
+func _test_structure() -> void:
+	print("- song structure bar")
+	if not ClassDB.class_exists("SongFeatures"):
+		skip("song structure (native extension not built)")
+		return
+	var tl := MusicTimeline.new()
+	root.add_child(tl)
+	tl.size = Vector2(1100, 600)
+	var song := VirtualDjDatabase.Song.new()
+	song.scan_bpm = 120.0
+	song.phase = 0.25
+	song.length = 40.0
+	var wav := _synth_wav("user://_structure.wav")
+	tl.open(wav, song)
+	var lock := tl.lock_button()
+	var gen := tl.generate_button()
+	ok(tl.structure() == null and lock.disabled and gen.disabled, "while analysing: no structure, buttons disabled")
+	ok("analysing" in tl.structure_bar().placeholder, "...and it says so")
+	var t := Time.get_ticks_msec()
+	while tl.structure() == null and Time.get_ticks_msec() - t < 20000:
+		await process_frame
+	await process_frame
+	var a := tl.structure()
+	ok(a != null and not a.sections.is_empty(), "analysed: %d sections" % (a.sections.size() if a else 0))
+	if a == null:
+		tl.queue_free()
+		return
+	ok(not lock.disabled and not gen.disabled, "buttons enabled")
+	ok(a.bpm == 120.0 and a.downbeats.size() > 0 and is_equal_approx(a.downbeats[1], 2.25), "VirtualDJ's grid swapped in")
+	var on_bars := a.sections.slice(1).all(func(sec): return a.downbeats.has(sec["start"]))
+	ok(on_bars, "section borders on VirtualDJ's bars")
+
+	# Layout: above the ruler, as tall; the small squares beside it.
+	var sb := tl.structure_bar()
+	var sr := sb.get_global_rect()
+	var rr := tl.ruler().get_global_rect()
+	ok(is_equal_approx(sr.end.y, rr.position.y) and is_equal_approx(sr.size.y, rr.size.y)
+		and is_equal_approx(sr.position.x, rr.position.x) and is_equal_approx(sr.size.x, rr.size.x),
+		"structure bar right above the ruler, same height and width")
+	var lr := lock.get_global_rect()
+	var gr := gen.get_global_rect()
+	ok(lr.size == Vector2(sr.size.y, sr.size.y) and gr.size == lr.size, "two squares as tall as the bar (%s)" % lr.size)
+	ok(is_equal_approx(lr.position.y, sr.position.y) and is_equal_approx(gr.position.y, sr.position.y)
+		and lr.position.x >= sr.end.x and gr.position.x > lr.end.x, "side by side to its right, level with it")
+	ok(gr.end.x <= tl.play_button().get_global_rect().end.x + 0.5, "...within the transport column")
+
+	# Zoom follows the waveform.
+	tl.wave().set_view(10.0, 8.0)
+	ok(sb.view_start == 10.0 and sb.view_len == 8.0, "follows the waveform's zoom")
+
+	# Lock.
+	ok(tl.is_structure_locked() and not sb.editable and lock.glyph == MusicTimeline.TransportButton.Glyph.LOCKED,
+		"starts locked")
+	lock.pressed.emit()
+	ok(not tl.is_structure_locked() and sb.editable and lock.glyph == MusicTimeline.TransportButton.Glyph.UNLOCKED,
+		"lock button unlocks editing")
+	lock.pressed.emit()
+	ok(tl.is_structure_locked() and not sb.editable, "...and locks it again")
+
+	# Locked: clicking the bar seeks; it can't drag a border.
+	var e := InputEventMouseButton.new()
+	e.button_index = MOUSE_BUTTON_LEFT
+	e.pressed = true
+	e.position = Vector2(sb._t2x(13.0), 9)
+	sb._gui_input(e)
+	ok(absf(tl.playback_position() - 13.0) < 0.05, "clicking it sets the playhead (%.2f)" % tl.playback_position())
+	ok(sb._drag_border == -1, "locked: no border dragging")
+
+	# Unlocked: drag a border on the zoomed bar; it snaps to a bar.
+	lock.pressed.emit()
+	var b_end: float = a.sections[0]["end"]
+	tl.wave().set_view(maxf(b_end - 6.0, 0.0), 12.0)
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	press.position = Vector2(sb._t2x(b_end), 9)
+	sb._gui_input(press)
+	var move := InputEventMouseMotion.new()
+	move.position = Vector2(sb._t2x(b_end + 2.1), 9)
+	sb._gui_input(move)
+	var up := InputEventMouseButton.new()
+	up.button_index = MOUSE_BUTTON_LEFT
+	up.pressed = false
+	up.position = move.position
+	sb._gui_input(up)
+	var new_end: float = a.sections[0]["end"]
+	ok(absf(new_end - (b_end + 2.0)) < 0.01 and a.downbeats.has(new_end) and a.sections[1]["start"] == new_end,
+		"unlocked: dragging a border on the zoomed bar moves it a bar along (%.2f -> %.2f)" % [b_end, new_end])
+	lock.pressed.emit()
+
+	# Generate.
+	var asked := []
+	tl.generate_show_requested.connect(func(pth, an): asked.append([pth, an]))
+	gen.pressed.emit()
+	ok(asked.size() == 1 and asked[0][0] == wav and asked[0][1] == a, "generate asks for a show from this structure")
+
+	# Cached per track, edits included.
+	a.sections[0]["label"] = "Bridge"
+	tl.open(wav, song)
+	ok(tl.structure() == a and a.sections[0]["label"] == "Bridge", "reopening keeps the (edited) structure")
+	tl.queue_free()
+
+
+func _test_generate_show() -> void:
+	print("- generating a light show (main scene)")
+	if not ClassDB.class_exists("SongFeatures"):
+		skip("generating a show (native extension not built)")
+		return
+	var main: Control = load("res://main.tscn").instantiate()
+	root.add_child(main)
+	await process_frame
+	var auto_show: Node = root.get_node("AutoShow")
+	var a := SongAnalysis.new()
+	a.duration = 40.0
+	a.bpm = 120.0
+	a.sections = [
+		{"start": 0.0, "end": 16.25, "label": "Verse", "energy": 0.4, "cluster": 0},
+		{"start": 16.25, "end": 40.0, "label": "Chorus", "energy": 0.9, "cluster": 1},
+	]
+	var wav := _synth_wav("user://_generate.wav")
+	main.music_panel.timeline().generate_show_requested.emit(wav, a)
+	ok(auto_show.song_path == wav, "the song becomes Auto Show's")
+	ok(auto_show.analysis == a, "with the timeline's structure as its analysis")
+	ok(auto_show.timeline.size() > 0 and auto_show.looks.size() == 2, "a show built from it (%d events, %d looks)" % [auto_show.timeline.size(), auto_show.looks.size()])
+	ok("Auto Show built" in main.status_label.text, "status says so: %s" % main.status_label.text)
+	main.queue_free()
 
 
 func _grip_event(grip: Control, y: float, pressed = null) -> void:

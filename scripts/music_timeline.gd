@@ -24,6 +24,17 @@ extends VBoxContainer
 ## Above the waveforms there's only a status line with a progress bar,
 ## for loading and errors; it's empty once a track is shown.
 
+## Above the bar ruler, the song's structure (Intro / Verse / Chorus / ...,
+## from SongAnalyzer, run in the background when a track opens; with
+## VirtualDJ's beat grid swapped in and the section borders snapped to its
+## bars when it knows the track). Beside it, two small buttons: lock /
+## unlock editing the structure (drag a border, right-click a section),
+## and generate an Auto Show light show from it (generate_show_requested).
+
+## Ask the shell to build an Auto Show light show for `path` from
+## `analysis` (its possibly-edited structure).
+signal generate_show_requested(path: String, analysis: SongAnalysis)
+
 ## Waveform columns per second of audio: ~10 ms each.
 const WAVE_COLS_PER_SEC := 100
 ## How much of the track the zoomable waveform shows at first, seconds.
@@ -52,6 +63,11 @@ var _drag_start_height := 0.0
 var _drag_max_height := 0.0
 var _wave: WaveHeatmap
 var _ruler: BarRuler
+var _structure: StructureBar
+var _lock_btn: TransportButton
+var _gen_btn: TransportButton
+var _structure_locked := true
+var _struct_cache: Dictionary = {}   # path -> SongAnalysis (with any edits)
 var _button_col: Control
 var _overview: WaveHeatmap
 var _box: ViewBox
@@ -129,6 +145,14 @@ func _ready() -> void:
 	_wave.seek_dragged.connect(scrub_to)
 	_wave.seek_released.connect(end_scrub)
 	# The bar-number strip along its top, carrying the playhead's marker.
+	# The song's structure, above the bar ruler and as tall.
+	_structure = StructureBar.new()
+	_structure.custom_minimum_size = Vector2(0, BarRuler.HEIGHT)
+	_structure.show_cursor = false
+	_structure.editable = false
+	_structure.seek_requested.connect(seek)
+	_structure.tooltip_text = "Song structure: unlock to drag a border or right-click a section"
+	wave_col.add_child(_structure)
 	_ruler = BarRuler.new()
 	_ruler.wave = _wave
 	_ruler.tooltip_text = "Click or drag: move the playhead"
@@ -158,9 +182,21 @@ func _ready() -> void:
 	_play_btn.pressed.connect(toggle_play)
 	_play_btn.tooltip_text = "Play / pause (Space)"
 	buttons.add_child(_play_btn)
-	for b in [_reset_btn, _play_btn]:
+	# Beside the structure bar: lock / unlock editing it, and generate a
+	# light show from it.
+	_lock_btn = TransportButton.new()
+	_lock_btn.glyph = TransportButton.Glyph.LOCKED
+	_lock_btn.pressed.connect(toggle_structure_lock)
+	buttons.add_child(_lock_btn)
+	_gen_btn = TransportButton.new()
+	_gen_btn.glyph = TransportButton.Glyph.GENERATE
+	_gen_btn.tooltip_text = "Generate an Auto Show light show from this structure"
+	_gen_btn.pressed.connect(generate_show)
+	buttons.add_child(_gen_btn)
+	for b in [_reset_btn, _play_btn, _lock_btn, _gen_btn]:
 		b.focus_mode = Control.FOCUS_NONE
 	_place_buttons()
+	_update_structure_buttons()
 
 	# The whole-track overview, lined up under the waveform.
 	var over_row := HBoxContainer.new()
@@ -223,6 +259,7 @@ func open(path: String, song: VirtualDjDatabase.Song = null) -> void:
 		_thread = Thread.new()
 		_thread.start(_decode.bind(_sf, path))
 	_load_playback(path)
+	_load_structure(path)
 
 
 ## The track currently shown.
@@ -600,6 +637,144 @@ func _apply_beat_grid(duration: float) -> void:
 	_wave.set_beat_grid(beats, BEATS_PER_BAR, _song.first_beat_index(beats))
 
 
+# ------------------------------------------------------- SONG STRUCTURE --
+
+## The structure bar (for tests / later features).
+func structure_bar() -> StructureBar:
+	return _structure
+
+
+func lock_button() -> TransportButton:
+	return _lock_btn
+
+
+func generate_button() -> TransportButton:
+	return _gen_btn
+
+
+## The current track's analysed structure, or null while it's analysing
+## (or when it can't be).
+func structure() -> SongAnalysis:
+	return _structure.analysis
+
+
+func is_structure_locked() -> bool:
+	return _structure_locked
+
+
+func toggle_structure_lock() -> void:
+	set_structure_locked(not _structure_locked)
+
+
+## Locked: the structure bar only seeks. Unlocked: drag a section border
+## (snapped to a bar) or right-click a section to relabel / split / delete.
+func set_structure_locked(locked: bool) -> void:
+	_structure_locked = locked
+	_structure.editable = not locked
+	_update_structure_buttons()
+
+
+## Ask for an Auto Show light show built from the current structure.
+func generate_show() -> void:
+	if _structure.analysis != null:
+		generate_show_requested.emit(_path, _structure.analysis)
+
+
+func _update_structure_buttons() -> void:
+	var ready := _structure.analysis != null
+	_lock_btn.glyph = TransportButton.Glyph.LOCKED if _structure_locked else TransportButton.Glyph.UNLOCKED
+	if _structure_locked:
+		_lock_btn.tooltip_text = "Song structure locked: click to edit it"
+	else:
+		_lock_btn.tooltip_text = "Song structure editable: click to lock it"
+	_lock_btn.disabled = not ready
+	_gen_btn.disabled = not ready
+
+
+## Analyse `path`'s structure in the background (cached per track, edits
+## included). Needs the native extension (seconds; no muted playback).
+func _load_structure(path: String) -> void:
+	if _struct_cache.has(path):
+		_set_structure(_struct_cache[path])
+		return
+	_set_structure(null)
+	if not SongAnalyzer.fast_available():
+		_structure.placeholder = "song structure needs the native extension"
+		return
+	if SongAnalyzer.is_os_format(path) and not SongAnalyzer.os_decoding_available():
+		_structure.placeholder = "can't decode this format here"
+		return
+	if not FileAccess.file_exists(path):
+		_structure.placeholder = ""
+		return
+	_structure.placeholder = "analysing the song structure..."
+	# One analyser per track: a result for a track that's since been left
+	# is still cached, just not shown.
+	var an := SongAnalyzer.new()
+	add_child(an)
+	var song := _song
+	an.finished.connect(func(a: SongAnalysis):
+		an.queue_free()
+		_structure_ready(path, a, song))
+	an.failed.connect(func(m: String):
+		an.queue_free()
+		if path == _path:
+			_structure.placeholder = "couldn't analyse the structure: " + m.trim_suffix(".")
+			_structure.queue_redraw())
+	an.analyse(path)
+
+
+func _structure_ready(path: String, a: SongAnalysis, song: VirtualDjDatabase.Song) -> void:
+	if song != null:
+		apply_vdj_grid(a, song)
+	_struct_cache[path] = a
+	if path == _path:
+		_set_structure(a)
+
+
+func _set_structure(a: SongAnalysis) -> void:
+	_structure.set_analysis(a)
+	_structure.set_view(_wave.view_start, _wave.visible_length() if _wave.analysis != null else 0.0)
+	_update_structure_buttons()
+
+
+## Use VirtualDJ's beat grid (what the decks play to) in place of the
+## analyser's own: its beats, its bars (four beats from its first beat),
+## its tempo; and move each section border to the nearest of its bars,
+## so the structure lines up with the bar ruler.
+static func apply_vdj_grid(a: SongAnalysis, song: VirtualDjDatabase.Song) -> void:
+	var beats := song.beat_times(a.duration)
+	if beats.size() < 2:
+		return
+	var phase := song.first_beat_index(beats)
+	var bars := PackedFloat32Array()
+	for i in range(beats.size()):
+		if posmod(i - phase, BEATS_PER_BAR) == 0:
+			bars.append(beats[i])
+	a.beat_times = beats
+	a.downbeats = bars
+	if song.best_bpm() > 0.0:
+		a.bpm = song.best_bpm()
+	if bars.is_empty():
+		return
+	var secs: Array = a.sections
+	for i in range(1, secs.size()):
+		var t: float = secs[i]["start"]
+		var j := clampi(bars.bsearch(t), 0, bars.size() - 1)
+		if j > 0 and absf(bars[j - 1] - t) < absf(bars[j] - t):
+			j -= 1
+		secs[i]["start"] = bars[j]
+		secs[i - 1]["end"] = bars[j]
+	# Snapping can collapse a very short section to nothing: drop it.
+	for i in range(secs.size() - 1, -1, -1):
+		if float(secs[i]["end"]) - float(secs[i]["start"]) < 0.01 and secs.size() > 1:
+			if i > 0:
+				secs[i - 1]["end"] = secs[i]["end"]
+			else:
+				secs[i + 1]["start"] = secs[i]["start"]
+			secs.remove_at(i)
+
+
 ## Square transport buttons stacked at the bottom of their column (the
 ## waveform's bottom edge): Play / Pause lowest, Back to start above it.
 func _place_buttons() -> void:
@@ -610,12 +785,22 @@ func _place_buttons() -> void:
 	_reset_btn.position = Vector2(0, h - 2.0 * _BUTTON_WIDTH - _BUTTON_GAP)
 	for b in [_reset_btn, _play_btn]:
 		b.size = Vector2(_BUTTON_WIDTH, _BUTTON_WIDTH)
+	# The small pair, level with the structure bar at the top: squares as
+	# tall as it, side by side.
+	if _lock_btn != null and _gen_btn != null:
+		var sq := BarRuler.HEIGHT
+		var x0 := (_BUTTON_WIDTH - 2.0 * sq - _BUTTON_GAP) * 0.5
+		_lock_btn.position = Vector2(x0, 0)
+		_gen_btn.position = Vector2(x0 + sq + _BUTTON_GAP, 0)
+		for b in [_lock_btn, _gen_btn]:
+			b.size = Vector2(sq, sq)
 
 
 ## Keep the overview's rectangle on the zoomable waveform's window.
 func _box_follow(start: float, length: float) -> void:
 	_box.set_view(start, length)
 	_ruler.queue_redraw()
+	_structure.set_view(start, length)
 
 
 ## The (invisible) strip above the waveform: drag it up or down to resize
@@ -775,7 +960,7 @@ class BarRuler:
 class TransportButton:
 	extends Button
 
-	enum Glyph { TO_START, PLAY, PAUSE }
+	enum Glyph { TO_START, PLAY, PAUSE, LOCKED, UNLOCKED, GENERATE }
 
 	var glyph := Glyph.PLAY:
 		set(v):
@@ -797,6 +982,29 @@ class TransportButton:
 				draw_rect(Rect2(o + Vector2(-s, -s), Vector2(s * 0.3, s * 2)), c)
 				draw_colored_polygon(PackedVector2Array([
 					o + Vector2(s * 0.8, -s), o + Vector2(-s * 0.55, 0), o + Vector2(s * 0.8, s)]), c)
+			Glyph.LOCKED, Glyph.UNLOCKED:
+				# A padlock: body below, shackle above. Unlocked, the shackle
+				# is raised with its left leg out of the body.
+				var w := s * 1.5
+				var lw := maxf(s * 0.22, 1.5)
+				var body_top := o.y - s * 0.1
+				draw_rect(Rect2(Vector2(o.x - w * 0.5, body_top), Vector2(w, s * 1.1)), c)
+				var unlocked := glyph == Glyph.UNLOCKED
+				var r := w * 0.32
+				var arc_y := o.y - s * 0.45 - (s * 0.4 if unlocked else 0.0)
+				draw_arc(Vector2(o.x, arc_y), r, PI, TAU, 10, c, lw)
+				draw_line(Vector2(o.x + r, arc_y), Vector2(o.x + r, body_top), c, lw)
+				var left_end := arc_y + s * 0.2 if unlocked else body_top
+				draw_line(Vector2(o.x - r, arc_y), Vector2(o.x - r, left_end), c, lw)
+			Glyph.GENERATE:
+				# A circular "rebuild" arrow.
+				var rr := s * 0.85
+				var wd := maxf(s * 0.22, 1.5)
+				draw_arc(o, rr, -PI * 0.35, PI * 1.35, 16, c, wd)
+				var tip := o + Vector2(cos(-PI * 0.35), sin(-PI * 0.35)) * rr
+				draw_colored_polygon(PackedVector2Array([
+					tip + Vector2(-s * 0.55, -s * 0.15), tip + Vector2(s * 0.25, -s * 0.5),
+					tip + Vector2(s * 0.2, s * 0.35)]), c)
 
 
 ## The overview's "you are here" rectangle: the zoomable waveform's
