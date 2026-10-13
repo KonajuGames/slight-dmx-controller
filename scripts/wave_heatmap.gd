@@ -13,6 +13,10 @@ extends Control
 ## pixel even for an hours-long track.
 
 signal seek_requested(seconds: float)
+## The left button, pressed by seek_requested, was dragged / released
+## (for dragging a playhead).
+signal seek_dragged(seconds: float)
+signal seek_released(seconds: float)
 ## The visible window changed (zoom, pan or set_view()).
 signal view_changed(start: float, length: float)
 
@@ -52,6 +56,7 @@ var view_len := 0.0
 const _LO := Color(1.00, 0.62, 0.20)     # bass
 const _MID := Color(0.35, 0.80, 0.42)    # mid
 const _HI := Color(0.40, 0.72, 1.00)     # air
+var _seek_dragging := false   # left button held since a seek_requested
 ## One bar's six vertices (top, centre and bottom, left and right) as
 ## four triangles.
 const _BAR_TRIS := [0, 1, 2, 1, 3, 2, 2, 3, 4, 3, 5, 4]
@@ -304,10 +309,20 @@ func _draw_wave(w: float, h: float, t0: float, t1: float) -> void:
 func _gui_input(event: InputEvent) -> void:
 	if analysis == null:
 		return
+	if event is InputEventMouseMotion and _seek_dragging:
+		seek_dragged.emit(clampf(x_to_time(event.position.x), 0.0, duration()))
+		accept_event()
+		return
+	if event is InputEventMouseButton and not event.pressed 			and event.button_index == MOUSE_BUTTON_LEFT and _seek_dragging:
+		_seek_dragging = false
+		seek_released.emit(clampf(x_to_time(event.position.x), 0.0, duration()))
+		accept_event()
+		return
 	if event is InputEventMouseButton and event.pressed:
 		var mb := event as InputEventMouseButton
 		match mb.button_index:
 			MOUSE_BUTTON_LEFT:
+				_seek_dragging = true
 				seek_requested.emit(clampf(x_to_time(mb.position.x), 0.0, duration()))
 			MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN:
 				if not zoomable:

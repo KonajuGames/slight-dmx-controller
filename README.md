@@ -122,10 +122,15 @@ technical reference.
   a worker thread by the native extension (`SongFeatures.waveform_file`,
   100 columns per second), including M4A through the OS's decoder.
   Back-to-start and Play / Pause buttons (or Space) to the right of the
-  waveform play the track; a red line marks the playback position (click
-  the waveform to move it; the view pages along as it plays). VirtualDJ's
+  waveform play the track; a red line, topped by an inverted triangle,
+  marks the playback position — click the waveform or the bar strip
+  above it to set it, drag to move it (during playback the audio jumps
+  there on release); the view pages along as it plays. VirtualDJ's
   beat grid, when it knows the track, is drawn over the waveform — a line
-  per beat, bolder at each bar of four, variable-tempo grids included.
+  per beat, bolder at each bar of four, variable-tempo grids included —
+  and the strip along its top numbers the bars from 1 (thinned to every
+  2nd / 4th / ... bar when zoomed out), with a tick per beat while the
+  beats are far enough apart to read.
   The waveform starts 90 px tall; drag just above its top edge (the
   pointer turns into a resize arrow there) to resize it.
 - `universe_panel.gd` — the `UniversePanel` class: one universe's tab —

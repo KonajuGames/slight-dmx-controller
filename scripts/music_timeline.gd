@@ -47,6 +47,7 @@ var _grip: SizeGrip
 var _drag_start_height := 0.0
 var _drag_max_height := 0.0
 var _wave: WaveHeatmap
+var _ruler: BarRuler
 var _overview: WaveHeatmap
 var _box: ViewBox
 var _reset_btn: TransportButton
@@ -68,6 +69,7 @@ var _play_sf = null
 var _play_result: Dictionary = {}
 var _pos := 0.0                 # playback position while stopped / paused
 var _was_playing := false
+var _scrubbing := false         # dragging the playhead with the mouse
 
 
 func _ready() -> void:
@@ -106,16 +108,30 @@ func _ready() -> void:
 	var wave_row := HBoxContainer.new()
 	wave_row.add_theme_constant_override("separation", 6)
 	add_child(wave_row)
+	var wave_col := VBoxContainer.new()
+	wave_col.add_theme_constant_override("separation", 0)
+	wave_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	wave_row.add_child(wave_col)
 	_wave = WaveHeatmap.new()
 	_wave.custom_minimum_size = Vector2(0, WAVE_HEIGHT_DEFAULT)
 	_wave.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_wave.zoomable = true
 	_wave.cursor_color = PLAYHEAD_COLOR
-	_wave.tooltip_text = "Click: move the playhead · Mouse wheel: zoom · Shift+wheel: scroll"
+	_wave.tooltip_text = "Click or drag: move the playhead · Mouse wheel: zoom · Shift+wheel: scroll"
 	_wave.background_color = Color.BLACK
 	_wave.view_changed.connect(_box_follow)
-	_wave.seek_requested.connect(seek)
-	wave_row.add_child(_wave)
+	_wave.seek_requested.connect(begin_scrub)
+	_wave.seek_dragged.connect(scrub_to)
+	_wave.seek_released.connect(end_scrub)
+	# The bar-number strip along its top, carrying the playhead's marker.
+	_ruler = BarRuler.new()
+	_ruler.wave = _wave
+	_ruler.tooltip_text = "Click or drag: move the playhead"
+	_ruler.pressed.connect(begin_scrub)
+	_ruler.dragged.connect(scrub_to)
+	_ruler.released.connect(end_scrub)
+	wave_col.add_child(_ruler)
+	wave_col.add_child(_wave)
 
 	var buttons := VBoxContainer.new()
 	buttons.add_theme_constant_override("separation", 6)
@@ -221,6 +237,10 @@ func overview() -> WaveHeatmap:
 	return _overview
 
 
+func ruler() -> BarRuler:
+	return _ruler
+
+
 func overview_box() -> ViewBox:
 	return _box
 
@@ -312,6 +332,33 @@ func pause() -> void:
 func rewind() -> void:
 	seek(0.0)
 	_wave.set_view(0.0, _wave.visible_length())
+
+
+## Start moving the playhead with the mouse (ruler or waveform press).
+## While the button's held the line follows the pointer; if the track is
+## playing it keeps playing where it was, and jumps there on release —
+## no stuttering scrub.
+func begin_scrub(t: float) -> void:
+	_scrubbing = true
+	scrub_to(t)
+
+
+func scrub_to(t: float) -> void:
+	if not _scrubbing:
+		return
+	_pos = clampf(t, 0.0, _length())
+	_update_cursor()
+
+
+func end_scrub(t: float) -> void:
+	if not _scrubbing:
+		return
+	_scrubbing = false
+	seek(t)
+
+
+func is_scrubbing() -> bool:
+	return _scrubbing
 
 
 ## Move the playback position to `t` seconds.
@@ -406,12 +453,13 @@ func _show_status() -> void:
 
 func _update_cursor() -> void:
 	var on := can_play() and _wave.analysis != null
-	var t := playback_position()
+	var t := _pos if _scrubbing else playback_position()
 	for w in [_wave, _overview]:
 		w.show_cursor = on
 		if not is_equal_approx(w.song_pos, t):
 			w.song_pos = t
 		w.queue_redraw()
+	_ruler.queue_redraw()
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -434,9 +482,12 @@ func _process(_delta: float) -> void:
 		_finish_stream_load()
 
 	if _player.playing:
-		var before := _wave.song_pos
-		_update_cursor()
-		_follow_playhead(before, _wave.song_pos)
+		# While the playhead's being dragged it follows the mouse, not the
+		# audio (which jumps there on release).
+		if not _scrubbing:
+			var before := _wave.song_pos
+			_update_cursor()
+			_follow_playhead(before, _wave.song_pos)
 	elif _was_playing:
 		# Played to the end.
 		_was_playing = false
@@ -541,6 +592,7 @@ func _apply_beat_grid(duration: float) -> void:
 ## Keep the overview's rectangle on the zoomable waveform's window.
 func _box_follow(start: float, length: float) -> void:
 	_box.set_view(start, length)
+	_ruler.queue_redraw()
 
 
 ## The (invisible) strip above the waveform: drag it up or down to resize
@@ -575,6 +627,123 @@ class SizeGrip:
 			accept_event()
 		elif event is InputEventMouseMotion and _dragging:
 			dragged.emit(event.global_position.y - _press_y)
+			accept_event()
+
+
+## The strip along the top of the zoomable waveform: bar numbers (from 1,
+## counted from VirtualDJ's first beat, like the waveform's bold bar
+## lines) and the playhead's marker — an inverted triangle on top of its
+## line. Press / drag / release with the left button to move the
+## playhead. Draws from `wave`'s view, beat grid and playhead.
+class BarRuler:
+	extends Control
+
+	signal pressed(seconds: float)
+	signal dragged(seconds: float)
+	signal released(seconds: float)
+
+	const HEIGHT := 18.0
+	## Closest two drawn bar numbers may be, pixels (wider gaps when
+	## zoomed out: every 2nd, 4th, 8th... bar).
+	const LABEL_GAP := 34.0
+	const BG := Color(0.13, 0.13, 0.15)
+	const TICK := Color(1, 1, 1, 0.35)
+	const BEAT_TICK := Color(1, 1, 1, 0.22)
+	const TEXT := Color(0.78, 0.78, 0.82)
+	const FONT_SIZE := 11
+	const MARKER_W := 12.0
+	const MARKER_H := 9.0
+
+	var wave: WaveHeatmap
+	var _dragging := false
+
+	func _ready() -> void:
+		custom_minimum_size = Vector2(0, HEIGHT)
+		mouse_filter = Control.MOUSE_FILTER_STOP
+
+	## The ticks drawn for the current view: [[x, is_bar], ...] — the
+	## waveform's own grid lines, so beats appear (and drop out) with it.
+	func ticks() -> Array:
+		if wave == null or wave.analysis == null:
+			return []
+		return wave.grid_lines(wave.view_start, wave.view_start + wave.visible_length())
+
+	## The bar numbers drawn for the current view: [[x, number], ...].
+	func bar_labels() -> Array:
+		var out: Array = []
+		if wave == null or wave.analysis == null:
+			return out
+		var beats := wave.grid_beats
+		var per := wave.beats_per_bar
+		if beats.size() < 2:
+			return out
+		var t0 := wave.view_start
+		var t1 := t0 + wave.visible_length()
+		var i0 := beats.bsearch(t0)
+		var i1 := beats.bsearch(t1, false)
+		if i1 <= i0:
+			return out
+		# Thin to every 2nd / 4th / ... bar so numbers don't collide.
+		var j := clampi(i0, 0, beats.size() - 2)
+		var bar_px := (beats[j + 1] - beats[j]) * per / wave.visible_length() * size.x
+		var every := 1
+		while bar_px * every < LABEL_GAP and every < 1 << 20:
+			every *= 2
+		# First bar start at or after i0.
+		var i := i0 + posmod(wave.bar_phase - i0, per)
+		while i < i1:
+			var n := floori(float(i - wave.bar_phase) / per) + 1
+			if n >= 1 and (n - 1) % every == 0:
+				out.append([wave.time_to_x(beats[i]), n])
+			i += per
+		return out
+
+	func _draw() -> void:
+		draw_rect(Rect2(Vector2.ZERO, size), BG)
+		if wave == null or wave.analysis == null:
+			return
+		# Bar and beat ticks, exactly where the waveform draws its grid lines
+		# (and thinned the same way: beats only once they're far enough
+		# apart to read). Short for beats, longer for bars; numbered bars
+		# get the longest, with their number beside it.
+		for tick in ticks():
+			var tx: float = tick[0]
+			if tick[1]:
+				draw_line(Vector2(tx, size.y * 0.6), Vector2(tx, size.y), TICK, 1.0)
+			else:
+				draw_line(Vector2(tx, size.y * 0.75), Vector2(tx, size.y), BEAT_TICK, 1.0)
+		var font := get_theme_default_font()
+		for lab in bar_labels():
+			var x: float = lab[0]
+			draw_line(Vector2(x, size.y * 0.45), Vector2(x, size.y), TICK, 1.0)
+			draw_string(font, Vector2(x + 3.0, size.y - 5.0), str(lab[1]),
+				HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE, TEXT)
+		if wave.show_cursor:
+			var t := wave.song_pos
+			if t >= wave.view_start and t <= wave.view_start + wave.visible_length():
+				var px := wave.time_to_x(t)
+				# The line runs on into the waveform's own playhead line.
+				draw_line(Vector2(px, MARKER_H), Vector2(px, size.y), wave.cursor_color, 2.0)
+				draw_colored_polygon(PackedVector2Array([
+					Vector2(px - MARKER_W * 0.5, 0.0), Vector2(px + MARKER_W * 0.5, 0.0),
+					Vector2(px, MARKER_H)]), wave.cursor_color)
+
+	func _x_to_time(x: float) -> float:
+		return clampf(wave.x_to_time(x), 0.0, wave.duration())
+
+	func _gui_input(event: InputEvent) -> void:
+		if wave == null or wave.analysis == null:
+			return
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+			if event.pressed:
+				_dragging = true
+				pressed.emit(_x_to_time(event.position.x))
+			elif _dragging:
+				_dragging = false
+				released.emit(_x_to_time(event.position.x))
+			accept_event()
+		elif event is InputEventMouseMotion and _dragging:
+			dragged.emit(_x_to_time(event.position.x))
 			accept_event()
 
 

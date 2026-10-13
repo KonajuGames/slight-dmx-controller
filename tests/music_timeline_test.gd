@@ -37,6 +37,7 @@ func _run() -> void:
 	_test_wave_view()
 	_test_view_box()
 	_test_grid_lines()
+	await _test_ruler()
 	await _test_resize()
 	await _test_timeline()
 	await _test_playback()
@@ -287,6 +288,110 @@ func _test_grid_lines() -> void:
 	w.queue_free()
 
 
+func _ruler_event(r: Control, x: float, pressed = null) -> void:
+	var e: InputEvent
+	if pressed == null:
+		e = InputEventMouseMotion.new()
+		e.button_mask = MOUSE_BUTTON_MASK_LEFT
+	else:
+		e = InputEventMouseButton.new()
+		e.button_index = MOUSE_BUTTON_LEFT
+		e.pressed = pressed
+	e.position = Vector2(x, 9)
+	r._gui_input(e)
+
+
+func _test_ruler() -> void:
+	print("- bar ruler")
+	var tl := MusicTimeline.new()
+	root.add_child(tl)
+	tl.size = Vector2(1100, 600)
+	var song := VirtualDjDatabase.Song.new()
+	song.scan_bpm = 120.0           # 0.5 s beats, 2 s bars
+	song.phase = 0.25               # bar 1 starts at 0.25 s
+	song.length = 40.0
+	var wav := _synth_wav("user://_ruler.wav")
+	# The WAV plays without the native extension; give it a synthetic
+	# waveform when the extension isn't there to decode one.
+	tl.open(wav, song)
+	await _wait_loaded(tl)
+	if tl.wave().analysis == null:
+		tl._set_analysis(_analysis(40.0, 4000))
+	await process_frame
+	var r := tl.ruler()
+	var w := tl.wave()
+	var rr := r.get_global_rect()
+	var wr := w.get_global_rect()
+	ok(is_equal_approx(rr.end.y, wr.position.y) and is_equal_approx(rr.position.x, wr.position.x)
+		and is_equal_approx(rr.size.x, wr.size.x), "a strip right on top of the waveform, as wide")
+	ok(rr.size.y >= 14.0 and rr.size.y <= 24.0, "small (%.0f px tall)" % rr.size.y)
+
+	w.set_view(0.0, 10.0)
+	var labels := r.bar_labels()
+	var nums := labels.map(func(l): return l[1])
+	ok(nums == [1, 2, 3, 4, 5], "bars numbered from 1 %s" % str(nums))
+	ok(labels.all(func(l): return absf(l[0] - w.time_to_x(0.25 + (l[1] - 1) * 2.0)) < 0.5), "each at its bar's start")
+	var ticks := r.ticks()
+	ok(ticks.size() == 20 and ticks.filter(func(t): return t[1]).size() == 5, "a tick per beat, bars marked (%d ticks)" % ticks.size())
+	ok(ticks == w.grid_lines(0.0, 10.0), "ticks are exactly the waveform's grid lines")
+	w.set_view(20.0, 10.0)
+	ok(r.bar_labels().map(func(l): return l[1]) == [11, 12, 13, 14, 15], "numbering carries on through the track")
+	w.set_view(0.0, 0.0)            # whole 40 s: beats ~13 px apart, still marked
+	ok(r.ticks().any(func(t): return not t[1]), "beats still marked while they're readable")
+	# Zoomed right out (a 400 s view): 2 s bars ~5 px apart, so only every
+	# Nth bar is numbered — N a power of two, numbers >= LABEL_GAP apart.
+	w.min_view = 2.0
+	tl._set_analysis(_analysis(400.0, 40000))
+	w.set_view(0.0, 0.0)
+	var far := r.bar_labels()
+	var step: int = far[1][1] - far[0][1] if far.size() > 1 else 0
+	var pow2 := step > 1 and (step & (step - 1)) == 0
+	var spaced := true
+	for i in range(1, far.size()):
+		spaced = spaced and far[i][1] - far[i - 1][1] == step and far[i][0] - far[i - 1][0] >= MusicTimeline.BarRuler.LABEL_GAP - 0.5
+	ok(far[0][1] == 1 and pow2 and spaced, "zoomed out: every %dth bar numbered, %d labels" % [step, far.size()])
+	var far_ticks := r.ticks()
+	ok(not far_ticks.is_empty() and far_ticks.all(func(t): return t[1]), "...beats too close to read: bar ticks only")
+	tl._set_analysis(_analysis(40.0, 4000))
+
+	# Bars before VirtualDJ's first beat aren't numbered.
+	song.phase = 4.25               # first beat later: beats from 0.25 s, bar 1 at 4.25 s
+	tl._song = song
+	tl._apply_beat_grid(40.0)
+	w.set_view(0.0, 10.0)
+	nums = r.bar_labels().map(func(l): return l[1])
+	ok(nums == [1, 2, 3], "nothing before the first beat %s" % str(nums))
+
+	# Click sets the playhead; drag moves it; the audio follows on release.
+	w.set_view(0.0, 10.0)
+	_ruler_event(r, w.time_to_x(3.0), true)
+	_ruler_event(r, w.time_to_x(3.0), false)
+	ok(absf(tl.playback_position() - 3.0) < 0.01 and absf(w.song_pos - 3.0) < 0.01, "click on the ruler sets the playhead (%.2f)" % tl.playback_position())
+	tl.play()
+	await _wait(300)
+	var playing_at := tl.playback_position()
+	_ruler_event(r, w.time_to_x(5.0), true)
+	_ruler_event(r, w.time_to_x(6.5))
+	_ruler_event(r, w.time_to_x(7.0))
+	await process_frame
+	ok(tl.is_scrubbing() and absf(w.song_pos - 7.0) < 0.01, "dragging moves the playhead line (%.2f)" % w.song_pos)
+	ok(tl.is_playing() and absf(tl._player.get_playback_position() - playing_at) < 0.3,
+		"...while the audio plays on where it was")
+	_ruler_event(r, w.time_to_x(7.0), false)
+	ok(not tl.is_scrubbing() and absf(tl.playback_position() - 7.0) < 0.1, "release: playback jumps there (%.2f)" % tl.playback_position())
+	await _wait(300)
+	ok(tl.playback_position() > 7.1, "and carries on playing from there (%.2f)" % tl.playback_position())
+	tl.pause()
+
+	# The same on the waveform itself.
+	w.seek_requested.emit(2.0)
+	w.seek_dragged.emit(4.5)
+	ok(absf(w.song_pos - 4.5) < 0.01, "dragging on the waveform moves it too")
+	w.seek_released.emit(4.5)
+	ok(absf(tl.playback_position() - 4.5) < 0.01, "...and sets it on release")
+	tl.queue_free()
+
+
 func _grip_event(grip: Control, y: float, pressed = null) -> void:
 	var e: InputEvent
 	if pressed == null:
@@ -325,7 +430,7 @@ func _test_resize() -> void:
 	await process_frame
 	ok(is_equal_approx(tl.wave_height(), 150.0), "dragging up 60 px -> 150 px (%.0f)" % tl.wave_height())
 	ok(is_equal_approx(w.get_global_rect().end.y, bottom), "the waveform grows upward; its bottom stays put")
-	ok(is_equal_approx(tl.play_button().size.y + tl.reset_button().size.y + 6.0, w.size.y), "buttons follow its height")
+	ok(is_equal_approx(tl.play_button().size.y + tl.reset_button().size.y + 6.0, w.size.y + tl.ruler().size.y), "buttons follow its height (with the bar ruler)")
 	_grip_event(g, y0 - 20.0)
 	ok(is_equal_approx(tl.wave_height(), 110.0), "...and back down while still dragging (%.0f)" % tl.wave_height())
 	_grip_event(g, y0 + 500.0)
@@ -382,7 +487,8 @@ func _test_playback() -> void:
 	var rr := reset.get_global_rect()
 	ok(rr.position.x >= wr.end.x and pr.position.x >= wr.end.x, "buttons to the right of the waveform")
 	ok(rr.end.y <= pr.position.y + 0.5 and is_equal_approx(rr.position.x, pr.position.x), "reset above play, stacked")
-	ok(rr.position.y >= wr.position.y - 0.5 and pr.end.y <= wr.end.y + 0.5, "...within the waveform's height")
+	var ruler_r := tl.ruler().get_global_rect()
+	ok(is_equal_approx(rr.position.y, ruler_r.position.y) and is_equal_approx(pr.end.y, wr.end.y), "...spanning the bar ruler and the waveform")
 	ok(is_equal_approx(tl.overview().get_global_rect().size.x, wr.size.x), "overview lined up under the waveform")
 
 	# Subwindows (tooltips, dialogs) must stay embedded: as native windows
@@ -426,6 +532,7 @@ func _test_playback() -> void:
 	ok(tl.playback_position() < 0.2 and tl.is_playing() and w.view_start == 0.0, "Back to start: position 0, still playing, view scrolled back")
 
 	w.seek_requested.emit(12.0)
+	w.seek_released.emit(12.0)
 	ok(absf(tl.playback_position() - 12.0) < 0.2, "clicking the waveform moves the playhead")
 
 	# Paging: playhead running off the right edge scrolls the view.
