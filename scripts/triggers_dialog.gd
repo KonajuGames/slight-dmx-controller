@@ -89,6 +89,12 @@ func _ready() -> void:
 	_refresh_list()
 	_sync_editor()
 
+	# Never narrower than the controls need (the feedback row's on / off
+	# fields were cut off at a fixed 740 px).
+	var need := Vector2i(margin.get_combined_minimum_size().ceil())
+	min_size = Vector2i(maxi(min_size.x, need.x), maxi(min_size.y, need.y))
+	size = Vector2i(maxi(size.x, min_size.x), maxi(size.y, min_size.y))
+
 
 # ------------------------------------------------------------ IO SECTION --
 
