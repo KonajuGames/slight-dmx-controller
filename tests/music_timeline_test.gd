@@ -385,6 +385,11 @@ func _test_playback() -> void:
 	ok(rr.position.y >= wr.position.y - 0.5 and pr.end.y <= wr.end.y + 0.5, "...within the waveform's height")
 	ok(is_equal_approx(tl.overview().get_global_rect().size.x, wr.size.x), "overview lined up under the waveform")
 
+	# Subwindows (tooltips, dialogs) must stay embedded: as native windows
+	# each tooltip stalled the app ~140 ms on opening — during playback the
+	# playhead visibly jumped (and DMX output hiccuped).
+	ok(ProjectSettings.get_setting("display/window/subwindows/embed_subwindows") == true,
+		"project embeds subwindows (native tooltips stall the app)")
 	ok(tl.can_play() and not play.disabled and not reset.disabled, "a WAV is playable at once")
 	ok(play.glyph == MusicTimeline.TransportButton.Glyph.PLAY, "shows Play")
 	ok(w.show_cursor and w.cursor_color == MusicTimeline.PLAYHEAD_COLOR and tl.overview().show_cursor,
@@ -401,7 +406,13 @@ func _test_playback() -> void:
 	var p1 := tl.playback_position()
 	ok(p1 > 0.3 and p1 < 1.0 and absf(w.song_pos - p1) < 0.1,
 		"position advances, playhead follows (%.2f s)" % p1)
+	# Pause between frames: the line must stay exactly where the last frame
+	# drew it (a fresh read of the audio clock would land later).
+	OS.delay_msec(12)
+	var drawn := w.song_pos
 	play.pressed.emit()
+	ok(w.song_pos == drawn and tl.overview().song_pos == drawn,
+		"pausing leaves the playhead exactly where it was drawn (%.4f -> %.4f)" % [drawn, w.song_pos])
 	var held := tl.playback_position()
 	await _wait(300)
 	ok(not tl.is_playing() and is_equal_approx(tl.playback_position(), held) and play.glyph == MusicTimeline.TransportButton.Glyph.PLAY,
@@ -467,11 +478,13 @@ func _test_beat_grid_real() -> void:
 	tl.size = Vector2(1100, 600)
 	tl.open(believer, song)
 	ok(tl.is_loading_playback() and tl.play_button().disabled, "M4A: Play disabled while the audio is prepared")
+	ok("Preparing the audio" in tl._status.text, "...and the status line says so (%s)" % tl._status.text)
 	var t := Time.get_ticks_msec()
 	while (tl.is_loading() or tl.is_loading_playback()) and Time.get_ticks_msec() - t < 30000:
 		await process_frame
 	await process_frame
 	ok(tl.can_play() and not tl.play_button().disabled, "...then enabled")
+	ok(tl._status.text == "", "status line clear once it's ready")
 	var w := tl.wave()
 	var g := w.grid_beats
 	ok(g.size() > 400 and absf(g[0] - song.first_beat()) < 0.001, "VirtualDJ grid: %d beats from %.3f s" % [g.size(), g[0] if g.size() else -1.0])

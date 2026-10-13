@@ -252,6 +252,14 @@ func _pop_out_viz(rect := Rect2i()) -> void:
 	if _viz_window != null:
 		return
 	var w := Window.new()
+	# A real OS window, so it can go on another screen. Everything else
+	# (dialogs, tooltips, menus) is embedded in the main window
+	# (display/window/subwindows/embed_subwindows): a native tooltip window
+	# stalls the whole app ~140 ms each time it opens — a playhead jump in
+	# the Music Library, a hiccup in DMX output. (Only settable while the
+	# window is hidden, so it's shown once it's in the tree.)
+	w.visible = false
+	w.force_native = true
 	w.title = "sLight — 3D Visualizer"
 	w.min_size = Vector2i(480, 320)
 	var scr := DisplayServer.screen_get_usable_rect(get_window().current_screen)
@@ -267,6 +275,7 @@ func _pop_out_viz(rect := Rect2i()) -> void:
 		clampi(w.position.y, scr.position.y + 36, scr.position.y + scr.size.y - 80))
 	w.close_requested.connect(_dock_viz)
 	add_child(w)
+	w.show()
 
 	_right_tabs.remove_child(viz_panel)
 	w.add_child(viz_panel)

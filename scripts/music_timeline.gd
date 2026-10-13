@@ -39,6 +39,8 @@ const WAVE_HEIGHT_DEFAULT := 90.0
 const WAVE_HEIGHT_MIN := 40.0
 
 var _status: Label
+var _wave_note := ""            # status line: waveform loading / errors
+var _play_note := ""            # status line: preparing / can't play the audio
 var _progress: ProgressBar
 var _spacer: Control
 var _grip: SizeGrip
@@ -93,11 +95,11 @@ func _ready() -> void:
 
 	# Drag up / down to make the waveform taller / shorter.
 	_grip = SizeGrip.new()
-	_grip.tooltip_text = "Drag to resize the waveform"
 	_grip.drag_started.connect(func():
 		_drag_start_height = wave_height()
 		_drag_max_height = maxf(wave_height() + _spacer.size.y, WAVE_HEIGHT_MIN))
 	_grip.dragged.connect(func(dy: float): set_wave_height(_drag_start_height - dy))
+	_grip.tooltip_text = "Drag to resize the waveform"
 	add_child(_grip)
 
 	# The zoomable waveform, with the transport buttons stacked to its right.
@@ -109,8 +111,8 @@ func _ready() -> void:
 	_wave.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_wave.zoomable = true
 	_wave.cursor_color = PLAYHEAD_COLOR
-	_wave.background_color = Color.BLACK
 	_wave.tooltip_text = "Click: move the playhead · Mouse wheel: zoom · Shift+wheel: scroll"
+	_wave.background_color = Color.BLACK
 	_wave.view_changed.connect(_box_follow)
 	_wave.seek_requested.connect(seek)
 	wave_row.add_child(_wave)
@@ -120,13 +122,13 @@ func _ready() -> void:
 	wave_row.add_child(buttons)
 	_reset_btn = TransportButton.new()
 	_reset_btn.glyph = TransportButton.Glyph.TO_START
-	_reset_btn.tooltip_text = "Back to the start"
 	_reset_btn.pressed.connect(rewind)
+	_reset_btn.tooltip_text = "Back to the start"
 	buttons.add_child(_reset_btn)
 	_play_btn = TransportButton.new()
 	_play_btn.glyph = TransportButton.Glyph.PLAY
-	_play_btn.tooltip_text = "Play / pause (Space)"
 	_play_btn.pressed.connect(toggle_play)
+	_play_btn.tooltip_text = "Play / pause (Space)"
 	buttons.add_child(_play_btn)
 	for b in [_reset_btn, _play_btn]:
 		b.custom_minimum_size = Vector2(_BUTTON_WIDTH, 0)
@@ -180,13 +182,13 @@ func open(path: String, song: VirtualDjDatabase.Song = null) -> void:
 		_touch_cache(path)
 		_set_analysis(_cache[path])
 	elif not ClassDB.class_exists("SongFeatures"):
-		_status.text = "Waveforms need the native extension — build it with addons/native/build.py (see addons/native/BUILD.md)."
+		_set_wave_note("Waveforms need the native extension — build it with addons/native/build.py (see addons/native/BUILD.md).")
 	elif SongAnalyzer.is_os_format(path) and not SongAnalyzer.os_decoding_available():
-		_status.text = "This system has no decoder for .%s files (needs Windows with Media Foundation, or macOS)." % path.get_extension().to_lower()
+		_set_wave_note("This system has no decoder for .%s files (needs Windows with Media Foundation, or macOS)." % path.get_extension().to_lower())
 	elif not FileAccess.file_exists(path):
-		_status.text = "File not found."
+		_set_wave_note("File not found.")
 	else:
-		_status.text = "Reading waveform…"
+		_set_wave_note("Reading waveform…")
 		_progress.value = 0.0
 		_progress.visible = true
 		_result = {}
@@ -295,7 +297,12 @@ func play() -> void:
 func pause() -> void:
 	if not _player.playing:
 		return
-	_pos = playback_position()
+	# Freeze exactly where the playhead was last drawn (it's redrawn every
+	# frame while playing) rather than re-reading the audio clock here,
+	# between frames, which comes out a little later than what's on
+	# screen and would nudge the line forward. Resuming plays from this
+	# same spot.
+	_pos = _wave.song_pos if _wave.show_cursor else playback_position()
 	_player.stop()
 	_was_playing = false
 	_update_transport()
@@ -369,15 +376,32 @@ func _update_transport() -> void:
 	_play_btn.glyph = TransportButton.Glyph.PAUSE if _player.playing else TransportButton.Glyph.PLAY
 	_play_btn.disabled = not can_play()
 	_reset_btn.disabled = not can_play()
+	# On the status line, where they're seen without hovering.
 	if _play_thread != null:
-		_play_btn.tooltip_text = "Preparing the audio…"
-	elif not can_play() and _path != "":
-		_play_btn.tooltip_text = "Can't play this track: %s" % String(_play_result.get("error", "unsupported audio")) \
-				if not _play_result.is_empty() else "Can't play this track"
+		_play_note = "Preparing the audio…"
+	elif not can_play() and _path != "" and _wave.analysis != null:
+		_play_note = "Can't play this track: %s." % String(_play_result.get("error", "unsupported audio")) \
+				if not _play_result.is_empty() else "Can't play this track."
 	else:
-		_play_btn.tooltip_text = "Play / pause (Space)"
+		_play_note = ""
+	_show_status()
 	_play_btn.queue_redraw()
 	_update_cursor()
+
+
+func _set_wave_note(text: String) -> void:
+	_wave_note = text
+	_show_status()
+
+
+## The status line: the waveform's loading / error note and the
+## playback one, whichever are set.
+func _show_status() -> void:
+	var parts := PackedStringArray()
+	for n in [_wave_note, _play_note]:
+		if n != "":
+			parts.append(n)
+	_status.text = "  ·  ".join(parts)
 
 
 func _update_cursor() -> void:
@@ -434,7 +458,7 @@ func _finish_wave_load() -> void:
 	_sf = null
 	_progress.visible = false
 	if not bool(_result.get("ok", false)):
-		_status.text = "Couldn't read the waveform: %s." % String(_result.get("error", "unknown error"))
+		_set_wave_note("Couldn't read the waveform: %s." % String(_result.get("error", "unknown error")))
 		return
 	var a := SongAnalysis.new()
 	a.path = _path
@@ -491,7 +515,7 @@ func _set_analysis(a: SongAnalysis) -> void:
 	_wave.set_analysis(a)
 	_overview.set_analysis(a)
 	_box.duration = a.duration if a != null else 0.0
-	_status.text = ""
+	_set_wave_note("")
 	if a == null:
 		_wave.set_beat_grid(PackedFloat32Array())
 		_box.set_view(0.0, 0.0)
