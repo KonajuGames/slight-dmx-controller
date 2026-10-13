@@ -54,9 +54,10 @@ technical reference.
   hue), stacked on the Auto Show tab. The waveform can also show part of
   a song and zoom with the mouse wheel (the Music Library's timeline
   uses that). The structure strip is editable:
-  drag a section border (snapped to the beat grid) to fix a boundary the
-  analyser placed slightly wrong, or right-click a section to relabel,
-  split, or delete it. It can be locked against editing and can follow
+  drag a section border (snapped to the nearest bar — or beat, or not at
+  all: right-click > Snapping) to fix a boundary the analyser placed
+  slightly wrong, or right-click a section to relabel, split, or delete
+  it. It can be locked against editing and can follow
   a zoomed view too (both used by the Music Library's timeline).
 - `triggers_engine.gd` — the `Triggers` autoload: listens for MIDI
   (Godot's `InputEventMIDI`) and OSC (a UDP listener), fires console

@@ -39,6 +39,7 @@ func _run() -> void:
 	_test_grid_lines()
 	await _test_ruler()
 	_test_apply_vdj_grid()
+	_test_structure_snapping()
 	await _test_structure()
 	await _test_generate_show()
 	await _test_resize()
@@ -421,6 +422,77 @@ func _test_apply_vdj_grid() -> void:
 	for i in range(1, a.sections.size()):
 		contiguous = contiguous and a.sections[i]["start"] == a.sections[i - 1]["end"]
 	ok(contiguous and a.sections[-1]["end"] == 40.0, "still contiguous to the end")
+
+
+func _drag_border(sb: StructureBar, from_t: float, to_t: float) -> void:
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	press.position = Vector2(sb._t2x(from_t), 9)
+	sb._gui_input(press)
+	var move := InputEventMouseMotion.new()
+	move.position = Vector2(sb._t2x(to_t), 9)
+	sb._gui_input(move)
+	var up := InputEventMouseButton.new()
+	up.button_index = MOUSE_BUTTON_LEFT
+	up.pressed = false
+	up.position = move.position
+	sb._gui_input(up)
+
+
+func _test_structure_snapping() -> void:
+	print("- structure snapping (right-click > Snapping)")
+	var sb := StructureBar.new()
+	root.add_child(sb)
+	sb.size = Vector2(1000, 18)
+	var a := SongAnalysis.new()
+	a.duration = 20.0
+	for i in range(40):
+		a.beat_times.append(0.25 + i * 0.5)          # beats every 0.5 s
+		if i % 4 == 0:
+			a.downbeats.append(0.25 + i * 0.5)       # bars every 2 s
+	a.sections = [
+		{"start": 0.0, "end": 8.25, "label": "Verse", "energy": 0.4, "cluster": 0},
+		{"start": 8.25, "end": 20.0, "label": "Chorus", "energy": 0.9, "cluster": 1},
+	]
+	sb.set_analysis(a)
+	ok(sb.snap == StructureBar.Snap.BAR, "snaps to bars by default")
+
+	_drag_border(sb, 8.25, 9.1)
+	ok(is_equal_approx(a.sections[0]["end"], 8.25), "bar: 9.1 s -> nearest bar 8.25 (%.2f)" % a.sections[0]["end"])
+	sb.snap = StructureBar.Snap.BEAT
+	_drag_border(sb, 8.25, 9.1)
+	ok(is_equal_approx(a.sections[0]["end"], 9.25), "beat: 9.1 s -> nearest beat 9.25 (%.2f)" % a.sections[0]["end"])
+	sb.snap = StructureBar.Snap.NONE
+	_drag_border(sb, 9.25, 9.1)
+	ok(absf(a.sections[0]["end"] - 9.1) < 0.03, "no snapping: stays at 9.1 (%.3f)" % a.sections[0]["end"])
+	ok(a.sections[1]["start"] == a.sections[0]["end"], "neighbour follows")
+
+	# Split Here obeys it too.
+	sb.snap = StructureBar.Snap.BEAT
+	sb._split_segment(1, 13.4)
+	ok(a.sections.size() == 3 and is_equal_approx(a.sections[1]["end"], 13.25), "split snaps to the beat (%.2f)" % a.sections[1]["end"])
+
+	# The menu: a Snapping submenu with the three choices, current one ticked.
+	sb._open_context_menu(0, Vector2(100, 9))
+	var p: PopupMenu = sb._popup
+	var sub_idx := -1
+	for i in range(p.item_count):
+		if p.get_item_text(i) == "Snapping":
+			sub_idx = i
+	ok(sub_idx != -1 and p.get_item_submenu_node(sub_idx) == sb._snap_menu, "right-click menu has a Snapping submenu")
+	var m: PopupMenu = sb._snap_menu
+	var texts := []
+	for i in range(m.item_count):
+		texts.append(m.get_item_text(i))
+	ok(texts == ["Bar", "Beat", "No Snapping"], "with Bar / Beat / No Snapping %s" % str(texts))
+	ok(m.is_item_checked(1) and not m.is_item_checked(0) and not m.is_item_checked(2), "the current one (Beat) ticked")
+	p.hide()
+	m.id_pressed.emit(2)
+	ok(sb.snap == StructureBar.Snap.NONE, "choosing one switches to it")
+	m.id_pressed.emit(0)
+	ok(sb.snap == StructureBar.Snap.BAR, "...and back to Bar")
+	sb.queue_free()
 
 
 func _test_structure() -> void:

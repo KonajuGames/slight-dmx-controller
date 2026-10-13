@@ -7,7 +7,8 @@ extends Control
 ## The structure is also editable in place, so the user can correct a
 ## boundary the analyser got slightly wrong:
 ## - Hover the border between two sections and drag with the left mouse
-##   button to move it, snapped to the nearest bar. A border can't be
+##   button to move it, snapped to the nearest bar (or beat, or not at all:
+##   right-click > Snapping, which also covers Split Here). A border can't be
 ##   dragged past the start of its left segment or the end of its right
 ##   segment.
 ## - Right-click a segment for a menu to change its type, split it at the
@@ -56,6 +57,12 @@ const _BORDER_HIT_PX := 6.0
 const _ID_SPLIT := 1000
 const _ID_DELETE := 1001
 
+## What a dragged border / a split snaps to (right-click > Snapping).
+enum Snap { BAR, BEAT, NONE }
+const SNAP_LABELS := ["Bar", "Beat", "No Snapping"]
+var snap := Snap.BAR
+var _snap_menu: PopupMenu
+
 var _drag_border := -1          # index i => dragging the border between sections[i]/[i+1]
 var _hover_border := -1
 var _popup: PopupMenu
@@ -70,6 +77,13 @@ func _ready() -> void:
 	_popup = PopupMenu.new()
 	add_child(_popup)
 	_popup.id_pressed.connect(_on_popup_id)
+	# Right-click > Snapping > Bar / Beat / No Snapping.
+	_snap_menu = PopupMenu.new()
+	for i in range(SNAP_LABELS.size()):
+		_snap_menu.add_radio_check_item(SNAP_LABELS[i], i)
+	_snap_menu.id_pressed.connect(func(id: int):
+		snap = id as Snap)
+	_popup.add_child(_snap_menu)
 
 
 func set_analysis(a: SongAnalysis) -> void:
@@ -212,27 +226,35 @@ func _update_drag(mouse_x: float) -> void:
 	var lo: float = float(secs[i]["start"])
 	var hi: float = float(secs[i + 1]["end"])
 	var raw_t: float = _x2t(mouse_x)
-	var t: float = clampf(_snap_to_bar(clampf(raw_t, lo, hi)), lo, hi)
+	var t: float = clampf(_snap_time(clampf(raw_t, lo, hi)), lo, hi)
 	secs[i]["end"] = t
 	secs[i + 1]["start"] = t
 	queue_redraw()
 
 
-## Nearest bar line (`analysis.downbeats`), not the finer beat grid — a
-## section boundary almost always falls on a bar, and snapping to bars
-## keeps a stray beat-level nudge from landing one beat off. Falls back to
-## unsnapped when downbeats aren't available (e.g. a very short song).
-func _snap_to_bar(t: float) -> float:
-	if analysis == null or analysis.downbeats.is_empty():
+## Where a dragged border or a split lands, per `snap`: the nearest bar
+## line (`analysis.downbeats` — the default, since a section boundary
+## almost always falls on a bar and that keeps a stray nudge from landing
+## a beat off), the nearest beat (`analysis.beat_times`), or exactly where
+## the pointer is. Falls back to unsnapped when the grid isn't available.
+func _snap_time(t: float) -> float:
+	if analysis == null:
 		return t
-	var best: float = analysis.downbeats[0]
-	var best_d := absf(t - best)
-	for bt in analysis.downbeats:
-		var d := absf(t - bt)
-		if d < best_d:
-			best_d = d
-			best = bt
-	return best
+	match snap:
+		Snap.BAR:
+			return _nearest(analysis.downbeats, t)
+		Snap.BEAT:
+			return _nearest(analysis.beat_times, t)
+	return t
+
+
+static func _nearest(grid: PackedFloat32Array, t: float) -> float:
+	if grid.is_empty():
+		return t
+	var i := clampi(grid.bsearch(t), 0, grid.size() - 1)
+	if i > 0 and absf(grid[i - 1] - t) < absf(grid[i] - t):
+		i -= 1
+	return grid[i]
 
 
 # ---------------------------------------------------------- CONTEXT MENU --
@@ -250,6 +272,10 @@ func _open_context_menu(idx: int, at_pos: Vector2) -> void:
 	_popup.add_separator()
 	_popup.add_item("Split Here", _ID_SPLIT)
 	_popup.add_item("Delete Segment", _ID_DELETE)
+	_popup.add_separator()
+	for i in range(SNAP_LABELS.size()):
+		_snap_menu.set_item_checked(i, i == snap)
+	_popup.add_submenu_node_item("Snapping", _snap_menu)
 
 	var screen_pos: Vector2 = get_screen_transform() * at_pos
 	_popup.popup(Rect2i(Vector2i(screen_pos), Vector2i.ZERO))
@@ -271,7 +297,7 @@ func _on_popup_id(id: int) -> void:
 func _split_segment(idx: int, at_time: float) -> void:
 	var secs := analysis.sections
 	var seg: Dictionary = secs[idx]
-	var t := _snap_to_bar(clampf(at_time, float(seg["start"]), float(seg["end"])))
+	var t := _snap_time(clampf(at_time, float(seg["start"]), float(seg["end"])))
 	if t - float(seg["start"]) < 0.02 or float(seg["end"]) - t < 0.02:
 		return  # too close to an existing edge to make two real segments
 	var new_seg: Dictionary = seg.duplicate(true)
