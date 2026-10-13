@@ -48,19 +48,14 @@ const PLAYHEAD_COLOR := Color(1.0, 0.22, 0.22)
 ## waveform + bar ruler).
 const _BUTTON_WIDTH := 48.0
 const _BUTTON_GAP := 6.0
-## The zoomable waveform's height: what it starts at, and the smallest the
-## grip bar above it can drag it to. The largest is whatever room is free.
+## The zoomable waveform's height.
 const WAVE_HEIGHT_DEFAULT := 90.0
-const WAVE_HEIGHT_MIN := 40.0
 
 var _status: Label
 var _wave_note := ""            # status line: waveform loading / errors
 var _play_note := ""            # status line: preparing / can't play the audio
 var _progress: ProgressBar
 var _spacer: Control
-var _grip: SizeGrip
-var _drag_start_height := 0.0
-var _drag_max_height := 0.0
 var _wave: WaveHeatmap
 var _ruler: BarRuler
 var _structure: StructureBar
@@ -116,15 +111,6 @@ func _ready() -> void:
 	_spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	add_child(_spacer)
 
-	# Drag up / down to make the waveform taller / shorter.
-	_grip = SizeGrip.new()
-	_grip.drag_started.connect(func():
-		_drag_start_height = wave_height()
-		_drag_max_height = maxf(wave_height() + _spacer.size.y, WAVE_HEIGHT_MIN))
-	_grip.dragged.connect(func(dy: float): set_wave_height(_drag_start_height - dy))
-	_grip.tooltip_text = "Drag to resize the waveform"
-	add_child(_grip)
-
 	# The zoomable waveform, with the transport buttons stacked to its right.
 	var wave_row := HBoxContainer.new()
 	wave_row.add_theme_constant_override("separation", 6)
@@ -162,10 +148,9 @@ func _ready() -> void:
 	wave_col.add_child(_ruler)
 	wave_col.add_child(_wave)
 
-	# A plain holder, not a box: the buttons keep their square size and sit
-	# at its bottom whatever the waveform's height, without ever making
-	# the row taller (on a very short waveform the top one just rises
-	# above it).
+	# A plain holder, not a box: the buttons keep their square size, placed
+	# by _place_buttons() (transport at the bottom, the small pair at the
+	# top), without making the row taller.
 	var buttons := Control.new()
 	buttons.custom_minimum_size = Vector2(_BUTTON_WIDTH, 0)
 	buttons.size_flags_vertical = Control.SIZE_FILL
@@ -291,29 +276,6 @@ func ruler() -> BarRuler:
 
 func overview_box() -> ViewBox:
 	return _box
-
-
-func grip() -> SizeGrip:
-	return _grip
-
-
-## The zoomable waveform's height, pixels.
-func wave_height() -> float:
-	return _wave.custom_minimum_size.y
-
-
-## Resize the zoomable waveform (the grip bar does this): at least
-## WAVE_HEIGHT_MIN, at most what the free space above it allows.
-func set_wave_height(h: float) -> void:
-	_wave.custom_minimum_size.y = clampf(h, WAVE_HEIGHT_MIN, _max_wave_height())
-
-
-## The tallest the waveform can be: its height plus the free space above
-## it (measured at the start of a drag, since the layout lags the pointer).
-func _max_wave_height() -> float:
-	if _grip.is_dragging():
-		return _drag_max_height
-	return maxf(wave_height() + _spacer.size.y, WAVE_HEIGHT_MIN)
 
 
 func play_button() -> TransportButton:
@@ -801,41 +763,6 @@ func _box_follow(start: float, length: float) -> void:
 	_box.set_view(start, length)
 	_ruler.queue_redraw()
 	_structure.set_view(start, length)
-
-
-## The (invisible) strip above the waveform: drag it up or down to resize
-## the waveform.
-## Reports how far the pointer has moved vertically since the press, so
-## the size tracks the pointer even after hitting a limit.
-class SizeGrip:
-	extends Control
-
-	signal drag_started
-	signal dragged(dy: float)
-
-	const HEIGHT := 10.0
-	var _dragging := false
-	var _press_y := 0.0
-
-	func _ready() -> void:
-		# Nothing drawn: the resize cursor on hover is the only cue.
-		custom_minimum_size = Vector2(0, HEIGHT)
-		mouse_filter = Control.MOUSE_FILTER_STOP
-		mouse_default_cursor_shape = Control.CURSOR_VSIZE
-
-	func is_dragging() -> bool:
-		return _dragging
-
-	func _gui_input(event: InputEvent) -> void:
-		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-			_dragging = event.pressed
-			if _dragging:
-				_press_y = event.global_position.y
-				drag_started.emit()
-			accept_event()
-		elif event is InputEventMouseMotion and _dragging:
-			dragged.emit(event.global_position.y - _press_y)
-			accept_event()
 
 
 ## The strip along the top of the zoomable waveform: bar numbers (from 1,

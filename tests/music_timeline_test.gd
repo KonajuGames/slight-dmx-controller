@@ -42,7 +42,7 @@ func _run() -> void:
 	_test_structure_snapping()
 	await _test_structure()
 	await _test_generate_show()
-	await _test_resize()
+	await _test_layout()
 	await _test_timeline()
 	await _test_playback()
 	await _test_beat_grid_real()
@@ -623,22 +623,8 @@ func _test_generate_show() -> void:
 	main.queue_free()
 
 
-func _grip_event(grip: Control, y: float, pressed = null) -> void:
-	var e: InputEvent
-	if pressed == null:
-		e = InputEventMouseMotion.new()
-		e.button_mask = MOUSE_BUTTON_MASK_LEFT
-	else:
-		e = InputEventMouseButton.new()
-		e.button_index = MOUSE_BUTTON_LEFT
-		e.pressed = pressed
-	e.global_position = Vector2(500, y)
-	e.position = e.global_position - grip.global_position
-	grip._gui_input(e)
-
-
-func _test_resize() -> void:
-	print("- resizing the waveform")
+func _test_layout() -> void:
+	print("- waveform layout")
 	var tl := MusicTimeline.new()
 	root.add_child(tl)
 	tl.position = Vector2.ZERO
@@ -646,38 +632,18 @@ func _test_resize() -> void:
 	await process_frame
 	await process_frame
 	var w := tl.wave()
-	var g := tl.grip()
-	ok(tl.wave_height() == 90.0 and is_equal_approx(w.size.y, 90.0), "starts 90 px tall (half the old 180)")
-	var gr := g.get_global_rect()
-	ok(gr.end.y <= w.get_global_rect().position.y + 0.5 and gr.size.y >= 8.0, "grip strip sits just above it")
-	var methods: Array = g.get_script().get_script_method_list().map(func(m): return m["name"])
-	ok(not "_draw" in methods, "and draws nothing (the resize cursor is the only cue)")
-	ok(g.mouse_default_cursor_shape == Control.CURSOR_VSIZE, "with a resize cursor")
-	var bottom := w.get_global_rect().end.y
-
-	var y0 := gr.get_center().y
-	_grip_event(g, y0, true)
-	_grip_event(g, y0 - 60.0)
-	await process_frame
-	ok(is_equal_approx(tl.wave_height(), 150.0), "dragging up 60 px -> 150 px (%.0f)" % tl.wave_height())
-	ok(is_equal_approx(w.get_global_rect().end.y, bottom), "the waveform grows upward; its bottom stays put")
+	var wr := w.get_global_rect()
+	ok(is_equal_approx(wr.size.y, 90.0), "waveform 90 px tall")
+	ok(is_equal_approx(wr.end.y, tl.overview().get_global_rect().position.y - 6.0), "sitting on the overview at the bottom")
+	# No resize strip any more: nothing with a vertical-resize cursor.
+	var resizers := tl.find_children("*", "Control", true, false).filter(
+		func(c): return c.mouse_default_cursor_shape == Control.CURSOR_VSIZE)
+	ok(resizers.is_empty(), "no resize strip above it")
+	ok(is_equal_approx(tl.structure_bar().get_global_rect().position.y + 36.0, wr.position.y),
+		"structure bar and ruler directly above it")
 	ok(tl.play_button().size == Vector2(48, 48) and tl.reset_button().size == Vector2(48, 48)
-		and is_equal_approx(tl.play_button().get_global_rect().end.y, w.get_global_rect().end.y),
-		"buttons stay 48 px squares at the waveform's bottom (%s)" % tl.play_button().size)
-	_grip_event(g, y0 - 20.0)
-	ok(is_equal_approx(tl.wave_height(), 110.0), "...and back down while still dragging (%.0f)" % tl.wave_height())
-	_grip_event(g, y0 + 500.0)
-	ok(tl.wave_height() == MusicTimeline.WAVE_HEIGHT_MIN, "can't go below %d px" % MusicTimeline.WAVE_HEIGHT_MIN)
-	_grip_event(g, y0 - 2000.0)
-	await process_frame
-	var most := tl.wave_height()
-	ok(most > 400.0 and tl._spacer.size.y < 1.0, "can't go past the free space above it (%.0f px)" % most)
-	ok(tl.get_combined_minimum_size().y <= tl.size.y + 0.5, "everything still fits")
-	_grip_event(g, y0 - 30.0)
-	ok(is_equal_approx(tl.wave_height(), 120.0), "pulling back from the limit tracks the pointer (%.0f)" % tl.wave_height())
-	_grip_event(g, y0 - 30.0, false)
-	_grip_event(g, y0 - 200.0)
-	ok(is_equal_approx(tl.wave_height(), 120.0), "released: no more resizing")
+		and is_equal_approx(tl.play_button().get_global_rect().end.y, wr.end.y),
+		"transport buttons 48 px squares at its bottom")
 	tl.queue_free()
 
 

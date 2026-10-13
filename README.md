@@ -140,8 +140,7 @@ technical reference.
   and generate, which makes the track Auto Show's song and builds a light
   show from the (edited) structure, like the Auto Show tab's Build Light
   Show; run it with the Auto Show run mode.
-  The waveform starts 90 px tall; drag just above its top edge (the
-  pointer turns into a resize arrow there) to resize it.
+  The waveform is 90 px tall.
 - `universe_panel.gd` — the `UniversePanel` class: one universe's tab —
   its connection settings, blackout/full, and fixture patch with
   purpose-built per-fixture controls.
