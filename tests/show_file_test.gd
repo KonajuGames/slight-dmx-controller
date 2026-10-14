@@ -32,6 +32,7 @@ func _run() -> void:
 	await _test_reopen_at_start()
 	await _test_timelines_with_show()
 	await _test_groups_by_uid()
+	await _test_new_show()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
 
@@ -146,6 +147,40 @@ func _test_round_trip() -> void:
 		"an older show file loads (no live levels)")
 
 	ok(main.remembered_show() == bad, "the last loaded file is remembered")
+	# Ctrl+S saves to the current show file, in either view.
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(bad))
+	main.set_view(1)
+	var ks := InputEventKey.new()
+	ks.keycode = KEY_S
+	ks.ctrl_pressed = true
+	ks.pressed = true
+	root.push_input(ks)
+	ok(FileAccess.file_exists(bad) and "Show saved" in main.status_label.text,
+		"Ctrl+S saves the show (from the Music Library view): %s" % main.status_label.text)
+	var dialogs_before: int = main.find_children("*", "FileDialog", false, false).size()
+	var saved_text: String = main.status_label.text
+	ks = InputEventKey.new()
+	ks.keycode = KEY_S
+	ks.ctrl_pressed = true
+	ks.shift_pressed = true
+	ks.pressed = true
+	root.push_input(ks)
+	var dialogs: Array = main.find_children("*", "FileDialog", false, false)
+	ok(dialogs.size() == dialogs_before + 1 and dialogs[-1].title == "Save Show As"
+		and dialogs[-1].file_mode == FileDialog.FILE_MODE_SAVE_FILE and main.status_label.text == saved_text,
+		"Shift+Ctrl+S opens Save Show As (not a plain save)")
+	dialogs[-1].canceled.emit()
+	await process_frame
+	ks = InputEventKey.new()
+	ks.keycode = KEY_O
+	ks.ctrl_pressed = true
+	ks.pressed = true
+	root.push_input(ks)
+	dialogs = main.find_children("*", "FileDialog", false, false)
+	ok(dialogs.size() == dialogs_before + 1 and dialogs[-1].title == "Load Show"
+		and dialogs[-1].file_mode == FileDialog.FILE_MODE_OPEN_FILE, "Ctrl+O opens Load Show")
+	dialogs[-1].canceled.emit()
+	main.set_view(0)
 	main.save_show_to(PATH)                 # leave PATH remembered for the next test
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(bad))
 	fx.effects.clear()
@@ -328,3 +363,62 @@ func _test_groups_by_uid() -> void:
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(STORE))
 	if DirAccess.dir_exists_absolute("user://_groups_test.timelines"):
 		DirAccess.remove_absolute("user://_groups_test.timelines")
+
+
+func _test_new_show() -> void:
+	print("- New Show")
+	var path := "user://_new_show_test.slight"
+	var main: Control = load("res://main.tscn").instantiate()
+	main.last_show_store = STORE
+	root.add_child(main)
+	await process_frame
+	var fx: Node = root.get_node("Fx")
+	var panel = main._panels[0]
+	panel.ip_edit.text = "10.1.2.3"
+	panel.add_patched(_rgb(), 0, 0, "Par", Vector3.ZERO, Vector3.ZERO)
+	panel.load_look(PackedByteArray([200, 100, 50]))
+	main._on_add_universe()
+	main.cue_panel.record_cue()
+	main.groups.append({"name": "G", "members": [String(panel.patched_fixtures[0]["uid"])]})
+	var e = load("res://scripts/wave_effect.gd").new()
+	fx.effects.append(e)
+	main.save_show_to(path)
+	ok(main.remembered_show() == path, "(a saved show)")
+
+	# Ctrl+N asks first.
+	var kn := InputEventKey.new()
+	kn.keycode = KEY_N
+	kn.ctrl_pressed = true
+	kn.pressed = true
+	root.push_input(kn)
+	var dlgs: Array = main.find_children("*", "ConfirmationDialog", false, false)
+	ok(dlgs.size() == 1 and dlgs[0].title == "New Show" and main._panels[0].patched_fixtures.size() == 1,
+		"Ctrl+N asks before starting a new show")
+	dlgs[0].canceled.emit()
+	await process_frame
+	ok(main._panels[0].patched_fixtures.size() == 1, "cancelled: the show's untouched")
+	root.push_input(kn)
+	dlgs = main.find_children("*", "ConfirmationDialog", false, false)
+	dlgs[-1].confirmed.emit()
+	await process_frame
+	panel = main._panels[0]
+	ok(main._panels.size() == 1 and panel.patched_fixtures.is_empty(), "confirmed: one universe, no fixtures")
+	ok(panel.sender.get_channel(0) == 0 and panel.sender.get_channel(1) == 0, "everything dark")
+	ok(main.cue_panel.cues.is_empty() and main.groups.is_empty() and fx.effects.is_empty(), "no cues, groups or effects")
+	ok(panel.ip_edit.text == "10.1.2.3", "universe 1's output settings kept")
+	ok(main.show_path == "" and "New show" in main.status_label.text, "untitled: %s" % main.status_label.text)
+	ok(main.remembered_show() == path, "the last saved show is still the one reopened at start")
+	ok(main.music_panel.timeline().timeline_store == null, "no music timelines")
+	# Saving an untitled show asks where (it doesn't overwrite the default file).
+	var before: int = main.find_children("*", "FileDialog", false, false).size()
+	main._on_save_show()
+	var fds: Array = main.find_children("*", "FileDialog", false, false)
+	ok(fds.size() == before + 1 and fds[-1].title == "Save Show As", "Save Show on a new show asks where")
+	fds[-1].canceled.emit()
+	main.queue_free()
+	await process_frame
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(STORE))
+	if DirAccess.dir_exists_absolute("user://_new_show_test.timelines"):
+		DirAccess.remove_absolute("user://_new_show_test.timelines")
+	fx.effects.clear()

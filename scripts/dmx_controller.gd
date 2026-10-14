@@ -449,18 +449,27 @@ func _build_top_bar() -> Control:
 	remove_uni_btn.pressed.connect(_on_remove_universe)
 	row.add_child(remove_uni_btn)
 
+	var new_show := Button.new()
+	new_show.text = "New Show"
+	new_show.tooltip_text = "Start a new, empty show (Ctrl+N)"
+	new_show.pressed.connect(_on_new_show)
+	row.add_child(new_show)
+
 	var save_show := Button.new()
 	save_show.text = "Save Show"
+	save_show.tooltip_text = "Save the show to its current file (Ctrl+S)"
 	save_show.pressed.connect(_on_save_show)
 	row.add_child(save_show)
 
 	var save_show_as := Button.new()
 	save_show_as.text = "Save Show As…"
+	save_show_as.tooltip_text = "Save the show to a new file (Shift+Ctrl+S)"
 	save_show_as.pressed.connect(_on_save_show_as)
 	row.add_child(save_show_as)
 
 	var load_show := Button.new()
 	load_show.text = "Load Show…"
+	load_show.tooltip_text = "Open a show file (Ctrl+O)"
 	load_show.pressed.connect(_on_load_show)
 	row.add_child(load_show)
 
@@ -830,6 +839,21 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_SPACE and run_mode == 0 and _console_view.visible:
 			cue_panel.go()
+			get_viewport().set_input_as_handled()
+		elif event.keycode == KEY_S and event.is_command_or_control_pressed():
+			# Ctrl+S: Save Show; Shift+Ctrl+S: Save Show As… — from either view.
+			if event.shift_pressed:
+				_on_save_show_as()
+			else:
+				_on_save_show()
+			get_viewport().set_input_as_handled()
+		elif event.keycode == KEY_N and event.is_command_or_control_pressed() and not event.shift_pressed:
+			# Ctrl+N: New Show, from either view.
+			_on_new_show()
+			get_viewport().set_input_as_handled()
+		elif event.keycode == KEY_O and event.is_command_or_control_pressed() and not event.shift_pressed:
+			# Ctrl+O: Load Show…, from either view.
+			_on_load_show()
 			get_viewport().set_input_as_handled()
 
 
@@ -1602,7 +1626,8 @@ const SHOW_EXT := "slight"
 const SHOW_FORMAT := "sLight show"
 const SHOW_VERSION := 1
 
-## The show file Save Show writes to (the last one saved / loaded).
+## The show file Save Show writes to (the last one saved / loaded); ""
+## for a new show not saved yet (Save Show asks where, like Save As).
 var show_path := SHOW_PATH
 ## Where the current show file's path is remembered between runs, so it's
 ## reopened at the next start (restore_last_show()).
@@ -1757,8 +1782,43 @@ func apply_show_dict(parsed) -> void:
 	_apply_viz_window(doc.get("viz_window", {}))
 
 
+## New Show (Ctrl+N): after a confirmation, start an empty show.
+func _on_new_show() -> void:
+	var dlg := ConfirmationDialog.new()
+	dlg.title = "New Show"
+	dlg.dialog_text = "Start a new, empty show?\n\nAnything in the current show that hasn't been saved will be lost (the open song's timelines are saved)."
+	dlg.ok_button_text = "New Show"
+	add_child(dlg)
+	dlg.confirmed.connect(func():
+		dlg.queue_free()
+		new_show())
+	dlg.canceled.connect(func(): dlg.queue_free())
+	dlg.popup_centered()
+
+
+## Replace the current show with an empty one: no fixtures (one
+## universe, keeping universe 1's output settings — those are this
+## machine's), everything dark, no cues, chases, effects, groups, sound
+## reactions, triggers or Auto Show, the visualizer's stage reset, and no
+## music timelines. It's untitled until saved (show_path ""); the last
+## show stays the one reopened at start until then.
+func new_show() -> void:
+	if music_panel:
+		music_panel.timeline().flush()        # the outgoing show's open song
+	var conn: Dictionary = _panels[0].patch_dict()
+	conn["fixtures"] = []
+	apply_show_dict({"universes": [conn], "live": [{}]})
+	if music_panel:
+		music_panel.timeline().set_timeline_store(null)
+	show_path = ""
+	status_label.text = "New show (not saved yet)."
+
+
 ## Save Show: to the current show file.
 func _on_save_show() -> void:
+	if show_path == "":
+		_on_save_show_as()              # a new show: ask where
+		return
 	var err := save_show_to(show_path)
 	if err != "":
 		status_label.text = "Show save failed: " + err
@@ -1791,14 +1851,15 @@ func _on_load_show() -> void:
 
 func _show_file_dialog(mode: FileDialog.FileMode, title: String, on_pick: Callable) -> void:
 	var fd := FileDialog.new()
-	fd.title = title
+	fd.mode_overrides_title = false     # keep "Save Show As" / "Load Show"
 	fd.file_mode = mode
+	fd.title = title
 	fd.access = FileDialog.ACCESS_FILESYSTEM
 	fd.add_filter("*." + SHOW_EXT, "sLight show")
 	fd.add_filter("*.json", "Show (JSON)")
 	fd.use_native_dialog = true
 	RecentDirs.track(fd, "show")
-	if show_path != SHOW_PATH:
+	if show_path != SHOW_PATH and show_path != "":
 		fd.current_file = show_path.get_file()
 	add_child(fd)
 	fd.file_selected.connect(func(path: String):

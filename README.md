@@ -361,8 +361,9 @@ Global controls live in the top bar:
   Save Show As… copies the folder alongside the new file, and Load Show…
   switches to that show's folder. **Save Show** writes to the
   current show file (the last saved or loaded; `user://dmx_show.json`
-  until you pick one), **Save Show As…** picks a new one and **Load
-  Show…** opens one. The current show file is remembered
+  until you pick one; also **Ctrl+S**, from either view), **Save Show
+  As…** picks a new one (also **Shift+Ctrl+S**) and **Load Show…** opens
+  one (also **Ctrl+O**). The current show file is remembered
   (`user://last_show.json`) and reopened when the app next starts; if
   it's been moved or won't load, the app starts empty and the status
   line says why. Files are tagged with a format version: one from a
@@ -371,6 +372,14 @@ Global controls live in the top bar:
   uids — new ones are made) still load, as
   does a legacy single-universe patch file (a bare fixtures array), as
   universe 1.
+- **New Show** (also **Ctrl+N**) — after asking, starts an empty show: one
+  universe with no fixtures, everything dark, no cues, chases, effects,
+  groups, sound reactions, triggers or Auto Show, the visualizer's stage
+  reset and no music timelines (the open song's are saved first).
+  Universe 1's output settings (IP / port / sACN / USB) are kept, as
+  they belong to this machine rather than the show. The new show is
+  untitled: **Save Show** asks where to save it, and until it's saved the
+  last saved show is still the one reopened at start.
 - **Save/Load Preset** — one `user://dmx_preset.json` with every
   universe's live DMX buffer (non-zero channels only). A legacy flat
   `{channel: value}` preset still loads, into universe 1. A preset wider
