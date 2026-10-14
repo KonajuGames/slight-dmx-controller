@@ -39,8 +39,8 @@ extends VBoxContainer
 ## snapping says, on every row the drag crosses — rows of several tracks
 ## included. A plain drag replaces the selection, Ctrl adds to it, and
 ## Shift extends the last area to take in the new one. Delete clears the
-## selected areas; Ctrl+C copies them and Ctrl+V pastes (copy_selection(),
-## paste()).
+## selected areas; Ctrl+C copies them, Ctrl+X cuts them and Ctrl+V pastes
+## (copy_selection(), cut_selection(), paste()).
 ## Above the bar ruler, the song's structure (Intro / Verse / Chorus / ...,
 ## from SongAnalyzer, run in the background when a track opens; with
 ## VirtualDJ's beat grid swapped in and the section borders snapped to its
@@ -728,6 +728,15 @@ func copy_selection() -> bool:
 	return true
 
 
+## Cut the selected areas (Ctrl+X): copy them, then clear them as Delete
+## does. Returns whether there was anything to cut.
+func cut_selection() -> bool:
+	if not copy_selection():
+		return false
+	delete_selection()
+	return true
+
+
 ## What's been copied ({} = nothing).
 func clipboard() -> Dictionary:
 	return _clip
@@ -867,11 +876,14 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		delete_selection()
 		get_viewport().set_input_as_handled()
 	elif event is InputEventKey and event.pressed and not event.echo and event.is_command_or_control_pressed() \
-			and event.keycode in [KEY_C, KEY_V]:
-		if event.keycode == KEY_C:
-			copy_selection()
-		else:
-			paste()
+			and event.keycode in [KEY_C, KEY_X, KEY_V]:
+		match event.keycode:
+			KEY_C:
+				copy_selection()
+			KEY_X:
+				cut_selection()
+			KEY_V:
+				paste()
 		get_viewport().set_input_as_handled()
 
 

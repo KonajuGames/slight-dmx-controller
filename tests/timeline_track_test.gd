@@ -652,6 +652,20 @@ func _test_copy_paste() -> void:
 	_key(KEY_V)
 	ok(is_equal_approx(p1.dimmer_at(51.0), 0.3) and is_equal_approx(m.dimmer_at(51.0), 0.7),
 		"several copied tracks pair off in order (Par 1 -> Par 1, Par 2 -> master)")
+	# Ctrl+X: copied, then cleared like Delete; pastes back the same shape.
+	m.dimmer_nodes = PackedVector2Array([Vector2(0, 0.5), Vector2(55, 1.0)])
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["master|%d" % R.DIMMER]), 10.0, 20.0)])
+	var at15 := m.dimmer_at(15.0)
+	_key(KEY_X)
+	ok(tl.clipboard()["length"] == 10.0 and tl.clipboard()["tracks"][0]["key"] == "master", "Ctrl+X copies the selection")
+	ok(m._dimmer_after(10.0) == 0.0 and m.dimmer_at(19.0) == 0.0 and is_equal_approx(m.dimmer_at(25.0), 0.5 + 0.5 * 25.0 / 55.0),
+		"...and clears it, the line outside kept")
+	ok(sel.blocks.size() == 1, "the selection stays")
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["master|%d" % R.DIMMER]), 30.0, 31.0)])
+	_key(KEY_V)
+	ok(is_equal_approx(m.dimmer_at(35.0), at15), "what was cut pastes elsewhere")
+	sel.clear()
+	ok(not tl.cut_selection(), "nothing selected: nothing to cut")
 	# The copy survives opening another song.
 	tl.open("user://_paste_song_2.wav")
 	tl._set_analysis(a)
