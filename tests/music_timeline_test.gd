@@ -208,7 +208,10 @@ func _test_timeline() -> void:
 	var wav := _synth_wav("user://_timeline_test.wav")
 	tl.open(wav)
 	ok(tl.is_loading(), "decodes on a worker thread")
+	ok(tl.overview().progress >= 0.0, "the whole-track waveform's background shows the progress")
+	ok(tl.find_children("*", "ProgressBar", true, false).is_empty(), "no separate progress bar")
 	ok(await _wait_loaded(tl), "loads")
+	ok(tl.overview().progress < 0.0, "progress cleared once loaded")
 	var w := tl.wave()
 	ok(w.analysis != null and is_equal_approx(w.analysis.duration, 40.0), "duration %.2f s" % (w.analysis.duration if w.analysis else -1.0))
 	ok(w.analysis != null and w.analysis.wave_peak.size() == 4000, "100 columns per second (%d)" % (w.analysis.wave_peak.size() if w.analysis else -1))
@@ -260,6 +263,7 @@ func _test_timeline() -> void:
 		var t1 := Time.get_ticks_msec()
 		tl.open(wav)   # cached -> cancels the mix decode and returns
 		ok(Time.get_ticks_msec() - t1 < 2000 and not tl.is_loading(), "switching track cancels a long decode (%d ms)" % (Time.get_ticks_msec() - t1))
+		ok(tl.overview().progress < 0.0, "...and clears its progress")
 	else:
 		skip("long mix not on this machine")
 	tl.queue_free()

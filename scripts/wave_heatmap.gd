@@ -30,6 +30,14 @@ var background_color := Color(0, 0, 0, 0):
 	set(v):
 		background_color = v
 		queue_redraw()
+## A progress bar drawn as the background while there's no wave yet (the
+## song still being read): 0..1 fills that much of the width from the
+## left in `progress_color`; negative = none.
+var progress := -1.0:
+	set(v):
+		progress = v
+		queue_redraw()
+var progress_color := Color(0.20, 0.30, 0.45)
 
 ## An optional beat grid drawn over the wave (set_beat_grid()): a thin
 ## line per beat and a bolder one at the start of each bar, thinned out
@@ -170,6 +178,9 @@ func _draw() -> void:
 
 	if analysis == null or not analysis.has_wave():
 		draw_rect(Rect2(0, 0, w, h), background_color if background_color.a > 0.0 else Color(0.10, 0.10, 0.13))
+		if progress >= 0.0:
+			draw_rect(Rect2(0, 0, w * clampf(progress, 0.0, 1.0), h), progress_color)
+			return
 		draw_string(ThemeDB.fallback_font, Vector2(8, h * 0.5 + 4),
 			"analyse a song to see its waveform",
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.5, 0.5, 0.55))

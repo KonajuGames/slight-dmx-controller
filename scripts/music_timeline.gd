@@ -21,8 +21,9 @@ extends VBoxContainer
 ## OS's decoder), at WAVE_COLS_PER_SEC so zooming in shows real detail.
 ## An M4A is also decoded for playback on a second worker thread
 ## (SongAnalyzer.decode_os_stream); Play is enabled once it's ready.
-## Above the waveforms there's only a status line with a progress bar,
-## for loading and errors; it's empty once a track is shown.
+## Above the waveforms there's only a status line, for loading and
+## errors; it's empty once a track is shown. While the track's being read,
+## the whole-track waveform's background is the progress bar.
 
 ## At the top, the master lighting timeline (TimelineTrack: position,
 ## strobe, cue and colour rows and a dimmer node line), which affects
@@ -57,7 +58,6 @@ const WAVE_HEIGHT_DEFAULT := 90.0
 var _status: Label
 var _wave_note := ""            # status line: waveform loading / errors
 var _play_note := ""            # status line: preparing / can't play the audio
-var _progress: ProgressBar
 var _spacer: Control
 var _wave: WaveHeatmap
 var _ruler: BarRuler
@@ -104,12 +104,6 @@ func _ready() -> void:
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	load_row.add_child(_status)
-	_progress = ProgressBar.new()
-	_progress.custom_minimum_size = Vector2(220, 0)
-	_progress.max_value = 1.0
-	_progress.step = 0.001
-	_progress.visible = false
-	load_row.add_child(_progress)
 
 	# Everything above stays at the top; the waveforms sit at the bottom.
 	_spacer = Control.new()
@@ -255,8 +249,8 @@ func open(path: String, song: VirtualDjDatabase.Song = null) -> void:
 		_set_wave_note("File not found.")
 	else:
 		_set_wave_note("Reading waveform…")
-		_progress.value = 0.0
-		_progress.visible = true
+		# The whole-track waveform's background is the progress bar.
+		_overview.progress = 0.0
 		_result = {}
 		_sf = ClassDB.instantiate("SongFeatures")
 		_thread = Thread.new()
@@ -503,7 +497,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 func _process(_delta: float) -> void:
 	if _thread != null:
 		if _thread.is_alive():
-			_progress.value = _sf.get_progress()
+			_overview.progress = _sf.get_progress()
 		else:
 			_finish_wave_load()
 	if _play_thread != null and not _play_thread.is_alive():
@@ -535,7 +529,7 @@ func _finish_wave_load() -> void:
 	_thread.wait_to_finish()
 	_thread = null
 	_sf = null
-	_progress.visible = false
+	_overview.progress = -1.0
 	if not bool(_result.get("ok", false)):
 		_set_wave_note("Couldn't read the waveform: %s." % String(_result.get("error", "unknown error")))
 		return
@@ -576,7 +570,7 @@ func _stop_loading() -> void:
 	_thread.wait_to_finish()
 	_thread = null
 	_sf = null
-	_progress.visible = false
+	_overview.progress = -1.0
 
 
 func _decode(sf, path: String) -> void:
