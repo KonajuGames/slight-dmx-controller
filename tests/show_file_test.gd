@@ -455,6 +455,15 @@ func _test_new_show() -> void:
 	await process_frame
 	ok(main._panels.size() == 2 and main._panels[1].patched_fixtures.size() == 1
 		and main._panels[1].patched_fixtures[0]["name"] == "Last", "confirmed: universe 2 removed, the one after it moves up")
+	# The Remove Universe button asks the same way.
+	main.universe_tabs.current_tab = 1
+	main.remove_uni_btn.pressed.emit()
+	rd = main.find_children("*", "ConfirmationDialog", false, false)
+	ok(rd.size() == dlg_count + 1 and rd[-1].dialog_text == "Remove universe 2 and its 1 fixture (also taken out of any groups)?"
+		and main._panels.size() == 2, "the Remove Universe button asks first: %s" % rd[-1].dialog_text)
+	rd[-1].confirmed.emit()
+	await process_frame
+	ok(main._panels.size() == 1, "...and removes it when confirmed")
 	# Saving an untitled show asks where (it doesn't overwrite the default file).
 	var before: int = main.find_children("*", "FileDialog", false, false).size()
 	main._on_save_show()

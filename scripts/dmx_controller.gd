@@ -447,8 +447,8 @@ func _build_top_bar() -> Control:
 
 	remove_uni_btn = Button.new()
 	remove_uni_btn.text = "Remove Universe"
-	remove_uni_btn.tooltip_text = "Remove the selected universe (Ctrl+Shift+R asks first)"
-	remove_uni_btn.pressed.connect(_on_remove_universe)
+	remove_uni_btn.tooltip_text = "Remove the selected universe, after asking (Ctrl+Shift+R)"
+	remove_uni_btn.pressed.connect(_confirm_remove_universe)
 	row.add_child(remove_uni_btn)
 
 	var new_show := Button.new()
@@ -537,8 +537,9 @@ func _on_add_universe() -> void:
 	status_label.text = "Added universe %d." % _panels.size()
 
 
-## Ctrl+Shift+R: ask, then remove the current universe (the selected
-## universe tab) — saying how many fixtures go with it.
+## Remove Universe (button or Ctrl+Shift+R): ask, then remove the current
+## universe (the selected universe tab), saying how many fixtures go with
+## it.
 func _confirm_remove_universe() -> void:
 	if _panels.size() <= 1:
 		status_label.text = "Can't remove the only universe."
