@@ -668,6 +668,40 @@ func _on_select_drag(_track: TimelineTrack, phase: int, gpos: Vector2, ctrl: boo
 		_sel_drag = {}
 
 
+## Clear what's in the selected areas (Delete), by kind of row: the
+## dimmer is blacked out across each span (TimelineTrack.clear_dimmer);
+## the other rows have nothing to clear yet. Each row's overlapping spans
+## are merged first. The selection stays. Returns whether anything changed.
+func delete_selection() -> bool:
+	var changed := false
+	for tr in [_master] + Array(_fixture_tracks):
+		var key := String(tr.get_meta("key"))
+		for row in tr.rows:
+			for span in _merged(_selection.spans_for(key, row)):
+				match row:
+					TimelineTrack.Row.DIMMER:
+						if tr.clear_dimmer(span.x, span.y):
+							changed = true
+					_:
+						pass        # Position / Strobe / Cues / Colour: nothing to clear yet
+	if changed:
+		_mark_dirty()
+	return changed
+
+
+## Spans ([Vector2(t0, t1)]) sorted and with overlapping / touching ones
+## joined.
+static func _merged(spans: Array) -> Array:
+	spans.sort_custom(func(a: Vector2, b: Vector2): return a.x < b.x)
+	var out: Array = []
+	for sp in spans:
+		if not out.is_empty() and sp.x <= out[-1].y:
+			out[-1] = Vector2(out[-1].x, maxf(out[-1].y, sp.y))
+		else:
+			out.append(sp)
+	return out
+
+
 func _row_ids(rows: Array, lo: int, hi: int) -> PackedStringArray:
 	var out := PackedStringArray()
 	for k in range(lo, hi + 1):
@@ -717,6 +751,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		return
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_SPACE:
 		toggle_play()
+		get_viewport().set_input_as_handled()
+	elif event is InputEventKey and event.pressed and event.keycode == KEY_DELETE and not _selection.is_empty():
+		delete_selection()
 		get_viewport().set_input_as_handled()
 
 

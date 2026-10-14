@@ -34,6 +34,8 @@ func _run() -> void:
 	_test_fixture_specs()
 	await _test_fixture_tracks()
 	await _test_area_selection()
+	_test_clear_dimmer()
+	await _test_delete_selection()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
 
@@ -464,5 +466,87 @@ func _test_area_selection() -> void:
 	# Opening another song clears it.
 	tl.open("user://_another_song.wav")
 	ok(sel.is_empty(), "another song: selection cleared")
+	tl.queue_free()
+	await process_frame
+
+
+func _test_clear_dimmer() -> void:
+	print("- clearing a span of the dimmer")
+	var tr := TimelineTrack.new()             # no waveform: no song end
+	tr.dimmer_nodes = PackedVector2Array([Vector2(0, 0.2), Vector2(4, 1.0), Vector2(6, 0.6), Vector2(10, 0.2)])
+	ok(tr.clear_dimmer(2.0, 8.0), "reports a change")
+	var n := tr.dimmer_nodes
+	ok(n == PackedVector2Array([Vector2(0, 0.2), Vector2(2, 0.6), Vector2(2, 0), Vector2(8, 0), Vector2(8, 0.4), Vector2(10, 0.2)]),
+		"nodes inside go; steps down to 0 and back up at the edges (%s)" % str(n))
+	ok(is_equal_approx(tr.dimmer_at(1.0), 0.4) and is_equal_approx(tr.dimmer_at(9.0), 0.3),
+		"the level outside the span is unchanged")
+	ok(tr.dimmer_at(3.0) == 0.0 and tr.dimmer_at(7.9) == 0.0, "0 inside")
+	ok(not tr.clear_dimmer(2.0, 8.0) and tr.dimmer_nodes == n, "clearing it again changes nothing")
+	# No nodes (a flat 100 %).
+	tr.dimmer_nodes = PackedVector2Array()
+	tr.clear_dimmer(3.0, 5.0)
+	ok(tr.dimmer_nodes == PackedVector2Array([Vector2(3, 1), Vector2(3, 0), Vector2(5, 0), Vector2(5, 1)])
+		and tr.dimmer_at(1.0) == 1.0 and tr.dimmer_at(9.0) == 1.0, "a flat line: a gap at 0, full either side")
+	# From the song's start; and where it's already dark outside.
+	tr.dimmer_nodes = PackedVector2Array([Vector2(0, 0.0), Vector2(10, 1.0)])
+	tr.clear_dimmer(0.0, 5.0)
+	ok(tr.dimmer_nodes == PackedVector2Array([Vector2(0, 0), Vector2(5, 0), Vector2(5, 0.5), Vector2(10, 1)]),
+		"from the start: no node before it (%s)" % str(tr.dimmer_nodes))
+	tr.dimmer_nodes = PackedVector2Array([Vector2(2, 0.0), Vector2(4, 0.0)])
+	tr.clear_dimmer(2.5, 3.5)
+	ok(tr.dimmer_nodes == PackedVector2Array([Vector2(2, 0), Vector2(2.5, 0), Vector2(3.5, 0), Vector2(4, 0)]),
+		"already dark outside: no extra edge nodes")
+	ok(not tr.clear_dimmer(5.0, 5.0), "an empty span: nothing")
+	tr.free()
+
+
+func _test_delete_selection() -> void:
+	print("- Delete clears the selected areas")
+	var R := TimelineTrack.Row
+	var fixtures := [{"key": "par", "name": "Par", "profile": _par(), "mode": 0}]
+	var tl := MusicTimeline.new()
+	tl.fixtures_provider = func(): return fixtures
+	root.add_child(tl)
+	tl.position = Vector2.ZERO
+	tl.size = Vector2(1100, 700)
+	var a := SongAnalysis.new()
+	a.duration = 60.0
+	for arr in [a.wave_lo, a.wave_mid, a.wave_hi, a.wave_peak]:
+		arr.resize(6000)
+	tl._set_analysis(a)
+	tl.open("user://_delete_song.wav")         # so edits count (no file: not saved)
+	tl._set_analysis(a)
+	tl.refresh_fixtures()
+	await process_frame
+	await process_frame
+	var m := tl.master_track()
+	var par := tl.fixture_tracks()[0]
+	m.dimmer_nodes = PackedVector2Array([Vector2(1, 0.5), Vector2(5, 1.0), Vector2(30, 0.5)])
+	par.dimmer_nodes = PackedVector2Array([Vector2(3, 0.8)])
+	var sel := tl.selection()
+	sel.set_blocks([
+		TimelineSelection.block(PackedStringArray(["master|%d" % R.DIMMER, "master|%d" % R.CUES]), 4.0, 8.0),
+		TimelineSelection.block(PackedStringArray(["master|%d" % R.DIMMER]), 6.0, 12.0),     # overlaps: merged
+		TimelineSelection.block(PackedStringArray(["par|%d" % R.DIMMER]), 10.0, 20.0)])
+	var ev := InputEventKey.new()
+	ev.keycode = KEY_DELETE
+	ev.pressed = true
+	root.push_input(ev)
+	await process_frame
+	var mn := m.dimmer_nodes
+	ok(mn.size() == 6 and mn[0] == Vector2(1, 0.5) and mn[2] == Vector2(4, 0) and mn[3] == Vector2(12, 0)
+		and mn[5] == Vector2(30, 0.5), "the master's dimmer: one dark span over the merged 4–12 s (%s)" % str(mn))
+	ok(is_equal_approx(m.dimmer_at(4.0), 0.875) and is_equal_approx(m.dimmer_at(20.0), 0.7)
+		and is_equal_approx(m._dimmer_after(12.0), 0.86), "levels either side kept")
+	ok(par.dimmer_nodes.size() == 5 and par.dimmer_at(15.0) == 0.0 and is_equal_approx(par.dimmer_at(5.0), 0.8)
+		and is_equal_approx(par.dimmer_at(25.0), 0.8), "the fixture's dimmer too")
+	ok(tl.has_unsaved_timelines(), "marked as changed (saved on leaving the song)")
+	ok(sel.blocks.size() == 3, "the selection stays")
+	sel.clear()
+	ev = InputEventKey.new()
+	ev.keycode = KEY_DELETE
+	ev.pressed = true
+	root.push_input(ev)
+	ok(m.dimmer_nodes == mn, "nothing selected: Delete does nothing")
 	tl.queue_free()
 	await process_frame

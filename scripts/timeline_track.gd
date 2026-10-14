@@ -222,6 +222,57 @@ func remove_node(i: int) -> void:
 	dimmer_nodes = nodes
 
 
+## The dimmer level just after `t` — where two nodes share a time (a
+## step), the later one's; dimmer_at() gives the earlier's.
+func _dimmer_after(t: float) -> float:
+	var n := dimmer_nodes.size()
+	if n == 0:
+		return 1.0
+	for i in range(n):
+		if dimmer_nodes[i].x > t:
+			if i == 0:
+				return dimmer_nodes[0].y
+			var a := dimmer_nodes[i - 1]
+			var b := dimmer_nodes[i]
+			return lerpf(a.y, b.y, (t - a.x) / maxf(b.x - a.x, 1e-6))
+	return dimmer_nodes[n - 1].y
+
+
+## Black out the dimmer from `t0` to `t1` seconds: the nodes in that span
+## go, the level there is 0, and a node at each edge keeps the level just
+## outside it as it was (a step down at t0, back up at t1). No edge node
+## where the span reaches the song's start / end, or where the level
+## outside is already 0. Returns whether anything changed.
+func clear_dimmer(t0: float, t1: float) -> bool:
+	t0 = _clamp_time(t0)
+	t1 = _clamp_time(t1)
+	if t1 <= t0:
+		return false
+	var before := dimmer_at(t0)         # just before t0 (the left of any step there)
+	var after := _dimmer_after(t1)      # just after t1 (the right of any step)
+	var end := wave.duration() if wave != null and wave.analysis != null else INF
+	var nodes := PackedVector2Array()
+	var i := 0
+	while i < dimmer_nodes.size() and dimmer_nodes[i].x < t0:
+		nodes.append(dimmer_nodes[i])
+		i += 1
+	if t0 > 0.0 and before > 0.0:
+		nodes.append(Vector2(t0, before))
+	nodes.append(Vector2(t0, 0.0))
+	nodes.append(Vector2(t1, 0.0))
+	if t1 < end and after > 0.0:
+		nodes.append(Vector2(t1, after))
+	while i < dimmer_nodes.size() and dimmer_nodes[i].x <= t1:
+		i += 1                          # inside the span: dropped
+	while i < dimmer_nodes.size():
+		nodes.append(dimmer_nodes[i])
+		i += 1
+	if nodes == dimmer_nodes:
+		return false
+	dimmer_nodes = nodes
+	return true
+
+
 ## Move node `i` to the track position `pos`: its time stays between its
 ## neighbours' (and within the song), its level within 0..1.
 func move_node(i: int, pos: Vector2) -> void:

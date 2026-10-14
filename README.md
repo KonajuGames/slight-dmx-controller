@@ -185,9 +185,14 @@ technical reference.
   selection, **Ctrl** adds the new area to it, and **Shift** extends the
   last area through the new one (all the rows and time between). It's
   drawn as a translucent blue over each selected row
-  (`timeline_selection.gd`), and cleared when another song opens. So far
-  the rows other than the dimmer are empty, nothing acts on a selection
-  yet, and nothing drives the fixtures.
+  (`timeline_selection.gd`), and cleared when another song opens.
+  **Delete** clears what's selected, by kind of row: on a dimmer row the
+  nodes inside each selected span go and the level drops to 0 across it,
+  with a node at each edge keeping the level just outside as it was (a
+  step down at the start, back up at the end; overlapping spans on a row
+  are merged first). The selection stays. So far the rows other than the
+  dimmer are empty (nothing to clear there yet), and nothing drives the
+  fixtures.
 - `timeline_store.gd` — the `TimelineStore` class: a show's music
   timelines, in a folder beside the show file (`MyShow.slight` →
   `MyShow.timelines/`): one JSON file per song, named by the song's
