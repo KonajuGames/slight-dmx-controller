@@ -18,7 +18,7 @@ const MODELS_DIR := "user://fixture_models"
 var available_profiles: Array[FixtureProfile] = []
 var _builtin_ids := {}  # profile ids that come from code (can't be file-deleted)
 
-## Fixture groups: [{ "name": String, "members": Array of [u, fixture_id] }].
+## Fixture groups: [{ "name": String, "members": Array of fixture uids }].
 var groups: Array = []
 
 var _panels: Array[UniversePanel] = []
@@ -535,19 +535,15 @@ func _on_remove_universe() -> void:
 
 	ArtNet.remove_universe(idx)
 	var panel := _panels[idx]
+	# Its fixtures leave their groups.
+	var gone := {}
+	for fx in panel.patched_fixtures:
+		gone[String(fx["uid"])] = true
+	for g in groups:
+		g["members"] = (g["members"] as Array).filter(func(m): return not gone.has(String(m)))
 	universe_tabs.remove_child(panel)
 	panel.queue_free()
 	_panels.remove_at(idx)
-
-	# fix up group members: drop the removed universe, shift higher ones down
-	for g in groups:
-		var mm: Array = []
-		for m in g["members"]:
-			var mu := int(m[0])
-			if mu == idx:
-				continue
-			mm.append([mu - 1 if mu > idx else mu, int(m[1])])
-		g["members"] = mm
 	groups_panel.sync_to_patch()
 
 	_refresh_tab_titles()
@@ -585,14 +581,14 @@ func _resolve_fx_targets(role: String, universe: int, group: String = "") -> Arr
 			if String(g["name"]) == group:
 				use_group = true
 				for m in g["members"]:
-					member_set["%d/%d" % [int(m[0]), int(m[1])]] = true
+					member_set[String(m)] = true
 
 	var out: Array = []
 	for ui in range(_panels.size()):
 		if not use_group and universe != -1 and universe != ui:
 			continue
 		for fixture in _panels[ui].patched_fixtures:
-			if use_group and not member_set.has("%d/%d" % [ui, int(fixture["id"])]):
+			if use_group and not member_set.has(String(fixture["uid"])):
 				continue
 			var profile: FixtureProfile = fixture["profile"]
 			var chans: Array = profile.channels_for_mode(int(fixture.get("mode", 0)))
@@ -610,7 +606,7 @@ func _group_names() -> Array:
 	return out
 
 
-## Every patched fixture as { u, id, label } for the groups checklist.
+## Every patched fixture as { uid, label } for the groups checklist.
 func _list_patched_fixtures() -> Array:
 	var out: Array = []
 	for ui in range(_panels.size()):
@@ -619,20 +615,10 @@ func _list_patched_fixtures() -> Array:
 			var start: int = fx["start"]
 			var count := prof.channel_count(int(fx.get("mode", 0)))
 			out.append({
-				"u": ui, "id": int(fx["id"]),
+				"uid": String(fx["uid"]),
 				"label": "U%d · %s (ch %d-%d)" % [ui + 1, fx["name"], start + 1, start + count],
 			})
 	return out
-
-
-func _fixture_index(u: int, id: int) -> int:
-	if u < 0 or u >= _panels.size():
-		return -1
-	var pf: Array = _panels[u].patched_fixtures
-	for i in range(pf.size()):
-		if int(pf[i]["id"]) == id:
-			return i
-	return -1
 
 
 func _on_patch_changed() -> void:
@@ -656,17 +642,11 @@ func _timeline_fixtures() -> Array:
 	return out
 
 
-## Groups saved with members as [universe, patch-index] so they survive a
-## save/load even though fixture ids are session-local.
+## Groups saved with their members' fixture uids (saved with the patch).
 func _groups_to_dict() -> Dictionary:
 	var arr: Array = []
 	for g in groups:
-		var mem: Array = []
-		for m in g["members"]:
-			var idx := _fixture_index(int(m[0]), int(m[1]))
-			if idx != -1:
-				mem.append([int(m[0]), idx])
-		arr.append({"name": String(g["name"]), "members": mem})
+		arr.append({"name": String(g["name"]), "members": (g["members"] as Array).duplicate()})
 	return {"groups": arr}
 
 
@@ -679,12 +659,15 @@ func _groups_from_dict(d) -> void:
 			continue
 		var mem: Array = []
 		for m in g.get("members", []):
-			if not (m is Array) or m.size() < 2:
-				continue
-			var u := int(m[0])
-			var idx := int(m[1])
-			if u >= 0 and u < _panels.size() and idx >= 0 and idx < _panels[u].patched_fixtures.size():
-				mem.append([u, int(_panels[u].patched_fixtures[idx]["id"])])
+			if m is String:
+				mem.append(m)
+			elif m is Array and m.size() >= 2:
+				# Older shows: [universe, patch index] — that fixture's uid
+				# (the patch is loaded first).
+				var u := int(m[0])
+				var idx := int(m[1])
+				if u >= 0 and u < _panels.size() and idx >= 0 and idx < _panels[u].patched_fixtures.size():
+					mem.append(String(_panels[u].patched_fixtures[idx]["uid"]))
 		groups.append({"name": String(g.get("name", "Group")), "members": mem})
 
 

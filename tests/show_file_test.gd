@@ -31,6 +31,7 @@ func _run() -> void:
 	await _test_round_trip()
 	await _test_reopen_at_start()
 	await _test_timelines_with_show()
+	await _test_groups_by_uid()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
 
@@ -66,13 +67,14 @@ func _test_round_trip() -> void:
 	panel.add_patched(_bar(), 10, 0, "Bar", Vector3(1.5, 3.5, -2), Vector3(80, 0, 30))
 	await process_frame
 	var par_id := int(panel.patched_fixtures[0]["id"])
-	var bar_id := int(panel.patched_fixtures[1]["id"])
 	panel.load_look(PackedByteArray([200, 40, 10]))
 	u.set_virtual_dimmer_level(par_id, 0.4)
 	panel.patched_fixtures[0]["_set_vdim"].call(0.4)
 	# A cue, a group, an effect.
 	main.cue_panel.record_cue()
-	main.groups.append({"name": "Front", "members": [[0, par_id], [0, bar_id]]})
+	var par_uid := String(panel.patched_fixtures[0]["uid"])
+	var bar_uid := String(panel.patched_fixtures[1]["uid"])
+	main.groups.append({"name": "Front", "members": [par_uid, bar_uid]})
 	var e = load("res://scripts/wave_effect.gd").new()
 	e.name = "Test wave"
 	e.group = "Front"
@@ -112,8 +114,8 @@ func _test_round_trip() -> void:
 	ok(is_equal_approx(u.virtual_dimmer_level(new_par), 0.4), "virtual dimmer level (%.2f)" % u.virtual_dimmer_level(new_par))
 	ok(main.cue_panel.cues.size() == 1 and main.cue_panel.cues[0].levels.size() > 0 and int(main.cue_panel.cues[0].levels[0].get("0", main.cue_panel.cues[0].levels[0].get(0, -1))) == 200,
 		"the cue, with its levels")
-	ok(main.groups.size() == 1 and main.groups[0]["name"] == "Front" and main.groups[0]["members"].size() == 2,
-		"the group and its members (remapped to the new fixture ids)")
+	ok(main.groups.size() == 1 and main.groups[0]["name"] == "Front" and main.groups[0]["members"] == [par_uid, bar_uid],
+		"the group and its members (by fixture uid)")
 	ok(fx.effects.size() == 1 and fx.effects[0].name == "Test wave" and fx.effects[0].group == "Front", "the effect")
 	var tracks: Array = main.music_panel.timeline().fixture_tracks()
 	ok(tracks.size() == 4, "the Music Library timeline follows: par, bar + 2 heads (%d)" % tracks.size())
@@ -254,3 +256,75 @@ func _test_timelines_with_show() -> void:
 	_rm_dir("user://_tl_show_a.timelines")
 	_rm_dir("user://_tl_show_b.timelines")
 	root.get_node("Fx").effects.clear()
+
+
+func _test_groups_by_uid() -> void:
+	print("- fixture groups by fixture uid")
+	var path := "user://_groups_test.slight"
+	var main: Control = load("res://main.tscn").instantiate()
+	main.last_show_store = STORE
+	root.add_child(main)
+	await process_frame
+	var panel = main._panels[0]
+	panel.apply_patch_dict({"fixtures": []})
+	panel.add_patched(_rgb(), 0, 0, "A", Vector3.ZERO, Vector3.ZERO)
+	panel.add_patched(_rgb(), 3, 0, "B", Vector3.ZERO, Vector3.ZERO)
+	panel.add_patched(_rgb(), 6, 0, "C", Vector3.ZERO, Vector3.ZERO)
+	var uid_a := String(panel.patched_fixtures[0]["uid"])
+	var uid_c := String(panel.patched_fixtures[2]["uid"])
+	main.groups.append({"name": "Ends", "members": [uid_a, uid_c]})
+	main.groups_panel.sync_to_patch()
+	var reds: Array = main._resolve_fx_targets("RED", -1, "Ends")
+	ok(reds.size() == 2 and reds[0]["ch"] == 0 and reds[1]["ch"] == 6, "an effect on the group reaches its members' channels")
+	var listed: Array = main._list_patched_fixtures()
+	ok(listed.size() == 3 and listed[0]["uid"] == uid_a, "the groups checklist lists fixtures by uid")
+	main.save_show_to(path)
+	var doc = JSON.parse_string(FileAccess.get_file_as_string(path))
+	ok(doc["groups"]["groups"][0]["members"] == [uid_a, uid_c], "saved as uids")
+
+	# Reorder the patch in the file: the group still means A and C.
+	var fx: Array = doc["universes"][0]["fixtures"]
+	fx.reverse()
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	f.store_string(JSON.stringify(doc))
+	f.close()
+	main.load_show_from(path)
+	await process_frame
+	var names := []
+	for m in main.groups[0]["members"]:
+		for p in main._panels[0].patched_fixtures:
+			if String(p["uid"]) == m:
+				names.append(p["name"])
+	ok(names == ["A", "C"], "a reordered patch keeps the same members (%s)" % str(names))
+	reds = main._resolve_fx_targets("RED", -1, "Ends")
+	ok(reds.size() == 2 and reds.map(func(r): return r["ch"]).has(0) and reds.map(func(r): return r["ch"]).has(6),
+		"...and the same channels")
+
+	# An older show: members as [universe, patch index].
+	doc["groups"] = {"groups": [{"name": "Old", "members": [[0, 1], [0, 7]]}]}
+	f = FileAccess.open(path, FileAccess.WRITE)
+	f.store_string(JSON.stringify(doc))
+	f.close()
+	main.load_show_from(path)
+	await process_frame
+	ok(main.groups[0]["members"] == [String(main._panels[0].patched_fixtures[1]["uid"])],
+		"an older show's [universe, index] members become uids (out-of-range ones dropped)")
+
+	# Removing a universe takes its fixtures out of groups.
+	main._on_add_universe()
+	await process_frame
+	main._panels[1].add_patched(_rgb(), 0, 0, "D", Vector3.ZERO, Vector3.ZERO)
+	var uid_d := String(main._panels[1].patched_fixtures[0]["uid"])
+	var keep := String(main.groups[0]["members"][0])
+	main.groups[0]["members"].append(uid_d)
+	main.universe_tabs.current_tab = 1
+	main._on_remove_universe()
+	await process_frame
+	ok(main.groups[0]["members"] == [keep], "removing a universe drops its fixtures from groups")
+
+	main.queue_free()
+	await process_frame
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(STORE))
+	if DirAccess.dir_exists_absolute("user://_groups_test.timelines"):
+		DirAccess.remove_absolute("user://_groups_test.timelines")

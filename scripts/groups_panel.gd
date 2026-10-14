@@ -3,14 +3,15 @@ extends VBoxContainer
 ## Groups tab: named sets of patched fixtures. An effect can target a
 ## group instead of "every fixture with role X on universe Y".
 ##
-## A group is { "name": String, "members": Array } where each member is
-## a two-element [universe_index, fixture_id]. The shell owns the list
-## and shares the reference here.
+## A group is { "name": String, "members": Array } where each member is a
+## fixture's uid (its permanent identity, unique across universes — so a
+## group survives the patch being reordered or a show reloaded). The shell
+## owns the list, shares the reference here, and saves it.
 
 signal groups_changed
 
 var groups: Array = []                 # shared reference, owned by the shell
-var fixtures_provider := Callable()     # func() -> Array of {u, id, label}
+var fixtures_provider := Callable()     # func() -> Array of {uid, label}
 
 var group_list: ItemList
 var members_box: VBoxContainer
@@ -98,11 +99,8 @@ func group_names() -> Array:
 	return out
 
 
-func _member_has(members: Array, u: int, id: int) -> int:
-	for i in range(members.size()):
-		if int(members[i][0]) == u and int(members[i][1]) == id:
-			return i
-	return -1
+func _member_has(members: Array, uid: String) -> int:
+	return members.find(uid)
 
 
 # ----------------------------------------------------------------- ACTIONS --
@@ -175,9 +173,9 @@ func _refresh_members() -> void:
 	# prune members whose fixture is gone
 	var live := {}
 	for fx in fixtures:
-		live["%d/%d" % [int(fx["u"]), int(fx["id"])]] = true
+		live[String(fx["uid"])] = true
 	for i in range(members.size() - 1, -1, -1):
-		if not live.has("%d/%d" % [int(members[i][0]), int(members[i][1])]):
+		if not live.has(String(members[i])):
 			members.remove_at(i)
 
 	if fixtures.is_empty():
@@ -186,15 +184,14 @@ func _refresh_members() -> void:
 		status_label.text = "%d of %d fixtures in '%s'." % [members.size(), fixtures.size(), g["name"]]
 
 	for fx in fixtures:
-		var u := int(fx["u"])
-		var id := int(fx["id"])
+		var uid := String(fx["uid"])
 		var cb := CheckBox.new()
 		cb.text = String(fx["label"])
-		cb.button_pressed = _member_has(members, u, id) != -1
+		cb.button_pressed = _member_has(members, uid) != -1
 		cb.toggled.connect(func(on: bool):
-			var at := _member_has(members, u, id)
+			var at := _member_has(members, uid)
 			if on and at == -1:
-				members.append([u, id])
+				members.append(uid)
 			elif not on and at != -1:
 				members.remove_at(at)
 			_refresh_list()
@@ -208,30 +205,3 @@ func sync_to_patch() -> void:
 	_refresh_list()
 	_refresh_members()
 
-
-# ------------------------------------------------------- SERIALIZATION --
-
-func to_dict() -> Dictionary:
-	var arr: Array = []
-	for g in groups:
-		var mem: Array = []
-		for m in g["members"]:
-			mem.append([int(m[0]), int(m[1])])
-		arr.append({"name": String(g["name"]), "members": mem})
-	return {"groups": arr}
-
-
-func from_dict(d: Dictionary) -> void:
-	groups.clear()
-	for g in d.get("groups", []):
-		if not (g is Dictionary):
-			continue
-		var mem: Array = []
-		for m in g.get("members", []):
-			if m is Array and m.size() >= 2:
-				mem.append([int(m[0]), int(m[1])])
-		groups.append({"name": String(g.get("name", "Group")), "members": mem})
-	_refresh_list()
-	if not groups.is_empty():
-		group_list.select(0)
-	_refresh_members()

@@ -197,8 +197,8 @@ technical reference.
 - `wave_effect.gd` / `effects_panel.gd` — the `WaveEffect` class and its
   tab: a waveform on one channel role, fanned across the fixtures, in
   Absolute or Pickup (base-value) mode.
-- `groups_panel.gd` — the Groups tab: named sets of patched fixtures an
-  effect can target instead of a whole universe.
+- `groups_panel.gd` — the Groups tab: named sets of patched fixtures
+  (by fixture uid) an effect can target instead of a whole universe.
 - `fixture_import.gd` — the `FixtureImport` class: reads GDTF (`.gdtf`
   ZIP, including its `<Geometries>` tree + glTF models) and Open Fixture
   Library (`.json`) definitions into `FixtureProfile` — best-effort role
@@ -575,7 +575,11 @@ The **Groups** tab holds named sets of patched fixtures. Pick one in an
 effect's **Group** box to run the effect on just those fixtures (in
 patch order, which sets the fan sequence) instead of a whole universe.
 Tick fixtures in/out with the checklist; **Sync to patch** refreshes it
-after you add or remove fixtures.
+after you add or remove fixtures. A group remembers its fixtures by their
+permanent uid, so it keeps the same fixtures however the patch is
+reordered, and across saving and loading the show (older shows, which
+saved members by patch position, are converted on load). Removing a
+universe takes its fixtures out of every group.
 
 Chases, effects and groups are saved inside the show file. **Blackout
 All**, loading a preset, or loading a show stops every chase and effect.
