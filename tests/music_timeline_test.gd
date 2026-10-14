@@ -219,10 +219,10 @@ func _test_timeline() -> void:
 	if w.analysis != null:
 		var pk := w.analysis.wave_peak
 		ok(pk[2000] > 0.9 and pk[500] < 0.15 and pk[3500] < 0.15, "loud burst lands at 15-25 s (%.2f / %.2f / %.2f)" % [pk[500], pk[2000], pk[3500]])
-	ok(is_equal_approx(w.view_start, 0.0) and is_equal_approx(w.visible_length(), 30.0), "opens showing the first 30 s")
+	ok(is_equal_approx(w.view_start, 0.0) and is_equal_approx(w.visible_length(), 40.0), "opens fully zoomed out (the whole 40 s)")
 	var box := tl.overview_box()
-	ok(is_equal_approx(box.start, 0.0) and is_equal_approx(box.length, 30.0) and is_equal_approx(box.duration, 40.0),
-		"overview rectangle follows")
+	ok(is_equal_approx(box.start, 0.0) and is_equal_approx(box.length, 40.0) and is_equal_approx(box.duration, 40.0),
+		"overview rectangle follows (the whole track)")
 	w.set_view(5.0, 10.0)
 	ok(is_equal_approx(box.start, 5.0) and is_equal_approx(box.length, 10.0), "zooming moves the rectangle")
 	box.view_moved.emit(20.0)
@@ -240,8 +240,10 @@ func _test_timeline() -> void:
 		"no header or time label; only the transport and structure buttons (%d buttons, labels %s)" % [
 		buttons.size(), str(shown.map(func(l): return l.text))])
 
+	w.set_view(12.0, 6.0)                       # zoomed in, then the song opened again
 	tl.open(wav)
 	ok(not tl.is_loading() and tl.wave().analysis != null, "reopening comes from the cache")
+	ok(tl.wave().view_start == 0.0 and is_equal_approx(tl.wave().visible_length(), 40.0), "...fully zoomed out again")
 
 	tl.open(ProjectSettings.globalize_path("user://_no_such_track.mp3"))
 	ok(not tl.is_loading() and tl._status.text == "File not found.", "missing file")

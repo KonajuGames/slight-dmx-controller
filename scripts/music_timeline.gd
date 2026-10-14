@@ -63,8 +63,6 @@ signal timeline_store_changed
 
 ## Waveform columns per second of audio: ~10 ms each.
 const WAVE_COLS_PER_SEC := 100
-## How much of the track the zoomable waveform shows at first, seconds.
-const INITIAL_VIEW := 30.0
 ## Recently opened tracks' waveforms kept in memory.
 const CACHE_SIZE := 6
 const BEATS_PER_BAR := 4
@@ -1025,7 +1023,7 @@ func _set_analysis(a: SongAnalysis) -> void:
 		_update_cursor()
 		return
 	_apply_beat_grid(a.duration)
-	_wave.set_view(0.0, minf(INITIAL_VIEW, a.duration))
+	_wave.set_view(0.0, 0.0)            # a song opens fully zoomed out
 	_box_follow(_wave.view_start, _wave.visible_length())
 	_update_cursor()
 

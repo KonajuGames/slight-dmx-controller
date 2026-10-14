@@ -124,7 +124,8 @@ technical reference.
   is fingerprinted, in the background. The icons update when a song's
   timelines are first saved and when another show is loaded.
 - `music_timeline.gd` — the `MusicTimeline` class: a track's timeline —
-  the zoomable colour waveform along the bottom (mouse wheel zooms,
+  the zoomable colour waveform along the bottom (a song opens fully
+  zoomed out, showing the whole track; mouse wheel zooms,
   Shift+wheel scrolls, and pressing and dragging the middle button
   anywhere over the waveform or the timelines above it pans the view
   with the pointer) above a slim whole-track overview whose rectangle
