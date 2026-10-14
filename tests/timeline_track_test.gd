@@ -762,6 +762,19 @@ func _test_undo_redo() -> void:
 	ok(sa.sections[0]["label"] == "Verse", "undo puts the structure back")
 	tl.redo()
 	ok(sa.sections[0]["label"] == "Intro", "redo re-applies it")
+	# Ctrl+A: everything.
+	tl.selection().clear()
+	_key(KEY_A)
+	var all: Array = tl.selection().blocks
+	ok(all.size() == 1 and all[0]["t0"] == 0.0 and all[0]["t1"] == 60.0
+		and (all[0]["rows"] as PackedStringArray).size() == tl.fixture_tracks()[0].rows.size() + m.rows.size(),
+		"Ctrl+A selects every row of every timeline over the whole song")
+	ok(tl.selection().has("p1", R.DIMMER, 30.0) and tl.selection().has("master", R.POSITION, 59.0), "fixtures and master alike")
+	tl.selection().set_blocks([TimelineSelection.block(PackedStringArray(["master|%d" % R.CUES]), 1.0, 2.0)])
+	_key(KEY_A)
+	ok(tl.selection().blocks.size() == 1 and tl.selection().blocks[0]["t1"] == 60.0, "replacing any selection")
+	_key(KEY_A, false)
+	ok(tl.selection().blocks[0]["t1"] == 60.0, "(plain A: nothing)")
 	# Per song: another song has its own history; coming back keeps this one's.
 	tl.open("user://_undo_song_2.wav")
 	ok(not tl.can_undo(), "another song: its own (empty) history")

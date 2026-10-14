@@ -39,8 +39,9 @@ extends VBoxContainer
 ## snapping says, on every row the drag crosses — rows of several tracks
 ## included. A plain drag replaces the selection, Ctrl adds to it, and
 ## Shift extends the last area to take in the new one. Delete clears the
-## selected areas; Ctrl+C copies them, Ctrl+X cuts them and Ctrl+V pastes
-## (copy_selection(), cut_selection(), paste()).
+## selected areas; Ctrl+A selects everything, Ctrl+C copies, Ctrl+X cuts
+## and Ctrl+V pastes (select_all(), copy_selection(), cut_selection(),
+## paste()).
 ## Every timeline edit (dimmer nodes / line, Delete, cut, paste, the
 ## structure) can be undone with Ctrl+Z and redone with Ctrl+Y or
 ## Ctrl+Shift+Z (undo(), redo()) — per song, while the show's open.
@@ -642,6 +643,19 @@ func snap_span(ta: float, tb: float) -> Vector2:
 	return Vector2(g[i] if i >= 0 else 0.0, g[j] if j < g.size() else dur)
 
 
+## Select every row of every timeline (fixtures', heads' and the master's)
+## over the whole song (Ctrl+A). Returns whether there was a song to
+## select in.
+func select_all() -> bool:
+	if _wave.analysis == null:
+		return false
+	var rows := _row_list()
+	if rows.is_empty():
+		return false
+	_selection.set_blocks([TimelineSelection.block(_row_ids(rows, 0, rows.size() - 1), 0.0, _wave.duration())])
+	return true
+
+
 func _on_select_drag(_track: TimelineTrack, phase: int, gpos: Vector2, ctrl: bool, shift: bool) -> void:
 	if _wave.analysis == null:
 		return
@@ -891,8 +905,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			undo()
 		get_viewport().set_input_as_handled()
 	elif event is InputEventKey and event.pressed and not event.echo and event.is_command_or_control_pressed() \
-			and event.keycode in [KEY_C, KEY_X, KEY_V]:
+			and event.keycode in [KEY_A, KEY_C, KEY_X, KEY_V]:
 		match event.keycode:
+			KEY_A:
+				select_all()
 			KEY_C:
 				copy_selection()
 			KEY_X:
