@@ -175,8 +175,19 @@ technical reference.
   right-click a node to remove it. With no nodes the dimmer is a flat
   100 %. A song's timelines (every track's nodes, keyed by the fixture's
   uid, and the structure once edited) are saved with the show — see
-  `timeline_store.gd`. So far the rows other than the dimmer are empty,
-  and nothing drives the fixtures yet.
+  `timeline_store.gd`.
+  A left-button drag on an empty part of the timelines (not a node or
+  the dimmer line) selects an area: on every row the drag crosses —
+  rows of several fixtures and the master included — and over whole
+  bars, whole beats or exactly the dragged time, as the structure bar's
+  Snapping says (with snapping, a click selects the bar or beat under
+  it; without, a click clears the selection). A plain drag replaces the
+  selection, **Ctrl** adds the new area to it, and **Shift** extends the
+  last area through the new one (all the rows and time between). It's
+  drawn as a translucent blue over each selected row
+  (`timeline_selection.gd`), and cleared when another song opens. So far
+  the rows other than the dimmer are empty, nothing acts on a selection
+  yet, and nothing drives the fixtures.
 - `timeline_store.gd` — the `TimelineStore` class: a show's music
   timelines, in a folder beside the show file (`MyShow.slight` →
   `MyShow.timelines/`): one JSON file per song, named by the song's

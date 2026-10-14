@@ -23,10 +23,18 @@ extends Control
 ##                          up or down
 ##   Ctrl + left-click line add a node there
 ##   Ctrl + right-click     remove the node under the pointer
+## A left-button drag anywhere else selects an area (select_drag: the
+## track's owner — MusicTimeline — keeps the TimelineSelection, which can
+## span rows of several tracks; this track draws its rows' part of it).
 
 ## Emitted when the user changes the dimmer nodes (after each add / remove,
 ## and when a drag ends).
 signal dimmer_edited
+## A left-button drag on no node / line: `phase` SELECT_PRESS, _MOVE or
+## _RELEASE, at `global_pos`, with the Ctrl / Shift keys as held at the
+## press.
+signal select_drag(track: TimelineTrack, phase: int, global_pos: Vector2, ctrl: bool, shift: bool)
+enum { SELECT_PRESS, SELECT_MOVE, SELECT_RELEASE }
 
 ## The kinds of row (stacked bottom to top in this order: ROW_ORDER).
 enum Row { POSITION, STROBE, CUES, COLOUR, DIMMER }
@@ -45,6 +53,8 @@ const _LABEL := Color(1, 1, 1, 0.28)
 const _LINE := Color(1, 1, 1, 0.9)
 const _FILL_TOP_ALPHA := 0.5
 const _NODE_RADIUS := 3.0
+const _SELECT_FILL := Color(0.35, 0.6, 1.0, 0.28)
+const _SELECT_EDGE := Color(0.55, 0.78, 1.0, 0.9)
 const _NODE_HOVER_RADIUS := 4.5
 ## How close (px) the pointer must be to grab a node or hit the line.
 const _GRAB := 6.0
@@ -72,6 +82,17 @@ var dimmer_nodes := PackedVector2Array():
 var wave: WaveHeatmap
 ## Whether the mouse can edit the dimmer nodes.
 var editable := true
+## The selected areas this track draws its rows' part of (and its key in
+## them: meta "key"). Null = none.
+var selection: TimelineSelection:
+	set(v):
+		if selection != null and selection.changed.is_connected(queue_redraw):
+			selection.changed.disconnect(queue_redraw)
+		selection = v
+		if selection != null:
+			selection.changed.connect(queue_redraw)
+		queue_redraw()
+var _selecting := false
 
 var _hover := -1      # node index under the pointer, or -1
 var _drag := -1       # node index being dragged, or -1
@@ -261,8 +282,36 @@ func move_line(t: float, dy: float, from: PackedVector2Array) -> PackedInt32Arra
 	return idx
 
 
+## The row at `pos` (track coordinates), or -1.
+func row_at(pos: Vector2) -> int:
+	for r in rows:
+		if row_rect(r).has_point(pos):
+			return r
+	return -1
+
+
 func _gui_input(event: InputEvent) -> void:
-	if not editable or not has_row(Row.DIMMER):
+	# An area selection under way: follow it to the release.
+	if _selecting:
+		if event is InputEventMouseMotion:
+			select_drag.emit(self, SELECT_MOVE, get_global_transform() * event.position, false, false)
+			accept_event()
+		elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+			_selecting = false
+			select_drag.emit(self, SELECT_RELEASE, get_global_transform() * event.position, false, false)
+			accept_event()
+		return
+	var dimmer_editing := editable and has_row(Row.DIMMER)
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		var at: Vector2 = event.position
+		var special := dimmer_editing and (node_at(at) >= 0 or on_line(at))
+		if not special and row_at(at) >= 0:
+			# Empty timeline: start selecting an area.
+			_selecting = true
+			select_drag.emit(self, SELECT_PRESS, get_global_transform() * at, event.ctrl_pressed, event.shift_pressed)
+			accept_event()
+			return
+	if not dimmer_editing:
 		return
 	if event is InputEventMouseMotion:
 		var mm := event as InputEventMouseMotion
@@ -408,6 +457,23 @@ func _draw() -> void:
 		var band := minf(r.size.y, 14.0)
 		draw_string(font, Vector2(4.0, r.position.y + band * 0.5 + fs * 0.35),
 			ROW_NAMES[row], HORIZONTAL_ALIGNMENT_LEFT, -1, fs, _LABEL)
+		_draw_selection(row, r)
+
+
+## This row's selected spans: a translucent blue fill, edged at each end.
+func _draw_selection(row: Row, r: Rect2) -> void:
+	if selection == null or not has_meta("key"):
+		return
+	for span in selection.spans_for(String(get_meta("key")), row):
+		if _t2x(span.y) < 0.0 or _t2x(span.x) > size.x:
+			continue                    # out of view
+		var x0 := clampf(_t2x(span.x), 0.0, size.x)
+		var x1 := clampf(_t2x(span.y), 0.0, size.x)
+		draw_rect(Rect2(x0, r.position.y, maxf(x1 - x0, 1.0), r.size.y), _SELECT_FILL)
+		for t in [span.x, span.y]:
+			var x := _t2x(t)
+			if x >= 0.0 and x <= size.x:
+				draw_line(Vector2(x, r.position.y), Vector2(x, r.end.y), _SELECT_EDGE, 1.0)
 
 
 func _draw_dimmer(r: Rect2) -> void:

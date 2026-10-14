@@ -34,6 +34,11 @@ extends VBoxContainer
 ## edited) are kept in the show's timeline_store, keyed by fixture uid, and
 ## saved automatically when the song is left (another song opened, the
 ## timeline hidden, the app closed) — or by flush().
+## A left-button drag on an empty part of the timelines selects an area
+## (selection()): whole bars, beats, or exact times as the structure bar's
+## snapping says, on every row the drag crosses — rows of several tracks
+## included. A plain drag replaces the selection, Ctrl adds to it, and
+## Shift extends the last area to take in the new one.
 ## Above the bar ruler, the song's structure (Intro / Verse / Chorus / ...,
 ## from SongAnalyzer, run in the background when a track opens; with
 ## VirtualDJ's beat grid swapped in and the section borders snapped to its
@@ -80,6 +85,11 @@ var _fixture_tracks: Array[TimelineTrack] = []
 ## timelines live only in memory).
 var timeline_store: TimelineStore
 var _songs := {}                # song path -> its timelines data (loaded / edited this session)
+var _selection := TimelineSelection.new()
+# An area selection being dragged: the row index (in _row_list()) and time
+# where it started, the blocks to keep under it, and (Shift) the area it
+# extends; empty = not selecting.
+var _sel_drag := {}
 var _dirty := false             # the open song's timelines changed since saved
 var _wave: WaveHeatmap
 var _ruler: BarRuler
@@ -175,6 +185,8 @@ func _ready() -> void:
 	_master.wave = _wave
 	_master.set_meta("key", "master")
 	_master.dimmer_edited.connect(_mark_dirty)
+	_master.selection = _selection
+	_master.select_drag.connect(_on_select_drag)
 	wave_col.add_child(_master)
 	_master.item_rect_changed.connect(_place_buttons)
 	# The song's structure, above the bar ruler and as tall.
@@ -287,6 +299,7 @@ func open(path: String, song: VirtualDjDatabase.Song = null) -> void:
 	if path != _path:
 		_stop_playback()
 		flush()                 # leaving the last song: save its timelines
+		_selection.clear()
 	_path = path
 	_song = song
 	_set_analysis(null)
@@ -538,6 +551,130 @@ func _update_cursor() -> void:
 	_ruler.queue_redraw()
 
 
+# ------------------------------------------------------ AREA SELECTION --
+
+## The selected areas of the timelines.
+func selection() -> TimelineSelection:
+	return _selection
+
+
+## Every timeline row, top to bottom on screen: the fixtures' tracks (in
+## order, each's rows top down) then the master's, as [{track, row}].
+func _row_list() -> Array:
+	var out: Array = []
+	for tr in Array(_fixture_tracks) + [_master]:
+		var rs: Array = tr.rows.duplicate()
+		rs.reverse()                    # rows are kept bottom to top
+		for r in rs:
+			out.append({"track": tr, "row": r})
+	return out
+
+
+## The index in `rows` of the row at global y (the nearest, if between or
+## beyond them).
+func _row_index_at(rows: Array, gy: float) -> int:
+	var best := 0
+	var best_d := INF
+	for i in range(rows.size()):
+		var tr: TimelineTrack = rows[i]["track"]
+		var r := tr.row_rect(rows[i]["row"])
+		var top := tr.get_global_transform() * r.position
+		var d := 0.0 if gy >= top.y and gy < top.y + r.size.y else minf(absf(gy - top.y), absf(gy - top.y - r.size.y))
+		if d < best_d:
+			best = i
+			best_d = d
+	return best
+
+
+## The song time at global x (the timelines share the waveform's view).
+func _time_at(gx: float) -> float:
+	var wr := _wave.get_global_rect()
+	var t := _wave.view_start + (gx - wr.position.x) / maxf(wr.size.x, 1.0) * _wave.visible_length()
+	return clampf(t, 0.0, _wave.duration())
+
+
+## The boundaries a selection snaps to for the structure bar's snapping:
+## bar or beat starts (from the waveform's beat grid, else the structure
+## analysis), or none (NONE, or no grid).
+func _snap_grid() -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	if _structure.snap == StructureBar.Snap.NONE:
+		return out
+	var beats := _wave.grid_beats
+	if not beats.is_empty():
+		if _structure.snap == StructureBar.Snap.BEAT:
+			return beats
+		for i in range(beats.size()):
+			if posmod(i - _wave.bar_phase, _wave.beats_per_bar) == 0:
+				out.append(beats[i])
+		return out
+	var a: SongAnalysis = _struct_cache.get(_path)
+	if a != null:
+		return a.beat_times if _structure.snap == StructureBar.Snap.BEAT else a.downbeats
+	return out
+
+
+## The span from `ta` to `tb` widened to whole grid cells (bars / beats):
+## from the start of the cell holding the earlier to the end of the cell
+## holding the later. As is with no grid.
+func snap_span(ta: float, tb: float) -> Vector2:
+	var lo := minf(ta, tb)
+	var hi := maxf(ta, tb)
+	var g := _snap_grid()
+	if g.is_empty():
+		return Vector2(lo, hi)
+	var dur := _wave.duration()
+	var i := g.bsearch(lo, false) - 1      # the last boundary <= lo
+	var j := g.bsearch(hi, false)          # the first boundary > hi
+	return Vector2(g[i] if i >= 0 else 0.0, g[j] if j < g.size() else dur)
+
+
+func _on_select_drag(_track: TimelineTrack, phase: int, gpos: Vector2, ctrl: bool, shift: bool) -> void:
+	if _wave.analysis == null:
+		return
+	var rows := _row_list()
+	if rows.is_empty():
+		return
+	if phase == TimelineTrack.SELECT_PRESS:
+		var keep: Array = []
+		var extend := {}
+		if shift and not _selection.is_empty():
+			keep = _selection.blocks.slice(0, _selection.blocks.size() - 1)
+			extend = _selection.blocks[-1]
+		elif ctrl:
+			keep = _selection.blocks.duplicate()
+		_sel_drag = {"row": _row_index_at(rows, gpos.y), "t": _time_at(gpos.x), "keep": keep, "extend": extend}
+	if _sel_drag.is_empty():
+		return
+	var i0: int = _sel_drag["row"]
+	var i1 := _row_index_at(rows, gpos.y)
+	var span := snap_span(_sel_drag["t"], _time_at(gpos.x))
+	var lo := mini(i0, i1)
+	var hi := maxi(i0, i1)
+	var extend: Dictionary = _sel_drag["extend"]
+	if not extend.is_empty():
+		# Shift: from the last area through the new one — every row and
+		# all the time between them.
+		span = Vector2(minf(span.x, extend["t0"]), maxf(span.y, extend["t1"]))
+		for k in range(rows.size()):
+			if _row_ids(rows, k, k)[0] in extend["rows"]:
+				lo = mini(lo, k)
+				hi = maxi(hi, k)
+	var blocks: Array = (_sel_drag["keep"] as Array).duplicate()
+	if span.y > span.x:
+		blocks.append(TimelineSelection.block(_row_ids(rows, lo, hi), span.x, span.y))
+	_selection.set_blocks(blocks)
+	if phase == TimelineTrack.SELECT_RELEASE:
+		_sel_drag = {}
+
+
+func _row_ids(rows: Array, lo: int, hi: int) -> PackedStringArray:
+	var out := PackedStringArray()
+	for k in range(lo, hi + 1):
+		out.append(TimelineSelection.row_id(String(rows[k]["track"].get_meta("key")), rows[k]["row"]))
+	return out
+
+
 ## Where a middle-button drag pans the view: the waveform's width, from
 ## the top of the fixtures' timelines down to the bottom of the waveform
 ## (the timelines, structure bar, bar ruler and waveform), in global
@@ -774,6 +911,8 @@ func _rebuild_fixture_tracks() -> void:
 			tr.set_meta("key", spec["key"])
 			tr.dimmer_nodes = _nodes_from(saved.get(spec["key"], {}).get("dimmer", []))
 			tr.dimmer_edited.connect(_mark_dirty)
+			tr.selection = _selection
+			tr.select_drag.connect(_on_select_drag)
 			row.add_child(tr)
 			var plate := TimelineTrack.NamePlate.new()
 			plate.track = tr

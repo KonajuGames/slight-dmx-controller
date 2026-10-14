@@ -33,6 +33,7 @@ func _run() -> void:
 	await _test_in_timeline()
 	_test_fixture_specs()
 	await _test_fixture_tracks()
+	await _test_area_selection()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
 
@@ -344,3 +345,124 @@ func _test_in_timeline() -> void:
 		root.push_input(ev)
 	ok(m.dimmer_nodes.size() == 1, "ctrl+click in the timeline adds a master dimmer node")
 	tl.queue_free()
+
+
+# The global position of time `t` on `row` of track `tr` (in a timeline).
+func _at(tl: MusicTimeline, tr: TimelineTrack, row: int, t: float, dy := 0.0) -> Vector2:
+	var wr := tl.wave().get_global_rect()
+	var x := wr.position.x + (t - tl.wave().view_start) / tl.wave().visible_length() * wr.size.x
+	var r := tr.row_rect(row)
+	return Vector2(x, (tr.get_global_transform() * r.get_center()).y + dy)
+
+
+func _press(tl: MusicTimeline, pos: Vector2, pressed: bool, ctrl := false, shift := false) -> void:
+	var ev := InputEventMouseButton.new()
+	ev.position = pos
+	ev.global_position = pos
+	ev.button_index = MOUSE_BUTTON_LEFT
+	ev.pressed = pressed
+	ev.ctrl_pressed = ctrl
+	ev.shift_pressed = shift
+	tl.get_viewport().push_input(ev)
+
+
+func _move(tl: MusicTimeline, pos: Vector2) -> void:
+	var ev := InputEventMouseMotion.new()
+	ev.position = pos
+	ev.global_position = pos
+	ev.button_mask = MOUSE_BUTTON_MASK_LEFT
+	tl.get_viewport().push_input(ev)
+
+
+func _sel_drag(tl: MusicTimeline, a: Vector2, b: Vector2, ctrl := false, shift := false) -> void:
+	_press(tl, a, true, ctrl, shift)
+	_move(tl, (a + b) * 0.5)
+	_move(tl, b)
+	_press(tl, b, false, ctrl, shift)
+
+
+func _test_area_selection() -> void:
+	print("- selecting areas of the timelines")
+	var R := TimelineTrack.Row
+	var fixtures := [{"key": "par", "name": "Par", "profile": _par(), "mode": 0}]
+	var tl := MusicTimeline.new()
+	tl.fixtures_provider = func(): return fixtures
+	root.add_child(tl)
+	tl.position = Vector2.ZERO
+	tl.size = Vector2(1100, 700)
+	var a := SongAnalysis.new()
+	a.duration = 60.0
+	for arr in [a.wave_lo, a.wave_mid, a.wave_hi, a.wave_peak]:
+		arr.resize(6000)
+	tl._set_analysis(a)
+	var beats := PackedFloat32Array()
+	for i in range(120):
+		beats.append(i * 0.5)                  # 120 BPM: bars of 2 s from 0
+	tl.wave().set_beat_grid(beats, 4, 0)
+	tl.refresh_fixtures()
+	await process_frame
+	await process_frame
+	tl.wave().set_view(0.0, 20.0)
+	var m := tl.master_track()
+	var par := tl.fixture_tracks()[0]
+	var sel := tl.selection()
+	var sb := tl.structure_bar()
+
+	# Bar snapping (the default): whole bars on the row.
+	_sel_drag(tl, _at(tl, m, R.DIMMER, 3.1), _at(tl, m, R.DIMMER, 6.9))
+	ok(sel.blocks.size() == 1 and sel.blocks[0]["rows"] == PackedStringArray(["master|%d" % R.DIMMER])
+		and is_equal_approx(sel.blocks[0]["t0"], 2.0) and is_equal_approx(sel.blocks[0]["t1"], 8.0),
+		"a drag on a row selects the whole bars it touches (2–8 s)")
+	ok(m.dimmer_nodes.is_empty(), "...without touching the dimmer line")
+	ok(sel.has("master", R.DIMMER, 5.0) and not sel.has("master", R.COLOUR, 5.0), "only that row")
+	# Another plain drag replaces it.
+	_sel_drag(tl, _at(tl, m, R.CUES, 10.5), _at(tl, m, R.CUES, 11.0))
+	ok(sel.blocks.size() == 1 and is_equal_approx(sel.blocks[0]["t0"], 10.0) and is_equal_approx(sel.blocks[0]["t1"], 12.0)
+		and sel.blocks[0]["rows"] == PackedStringArray(["master|%d" % R.CUES]), "a new plain drag replaces the selection")
+	# Ctrl adds.
+	_sel_drag(tl, _at(tl, m, R.STROBE, 14.2), _at(tl, m, R.STROBE, 14.4), true)
+	ok(sel.blocks.size() == 2 and sel.has("master", R.CUES, 11.0) and sel.has("master", R.STROBE, 15.0),
+		"Ctrl adds to it")
+	# Shift: from the last area (strobe, 14–16 s) through the new one.
+	_sel_drag(tl, _at(tl, m, R.DIMMER, 18.5), _at(tl, m, R.DIMMER, 18.6), false, true)
+	var last: Dictionary = sel.blocks[-1]
+	ok(sel.blocks.size() == 2 and is_equal_approx(last["t0"], 14.0) and is_equal_approx(last["t1"], 20.0),
+		"Shift extends the last area through the new one in time (14–20 s)")
+	ok(last["rows"] == PackedStringArray(["master|%d" % R.DIMMER, "master|%d" % R.COLOUR, "master|%d" % R.CUES, "master|%d" % R.STROBE]),
+		"...and takes in the rows between (%s)" % str(last["rows"]))
+	ok(sel.has("master", R.CUES, 11.0), "earlier Ctrl-added areas stay")
+	# Across tracks: the fixture's dimmer down to the master's position row.
+	_sel_drag(tl, _at(tl, par, R.DIMMER, 4.0), _at(tl, m, R.POSITION, 5.0))
+	var rows: PackedStringArray = sel.blocks[0]["rows"]
+	ok(sel.blocks.size() == 1 and rows.size() == 3 + 5 and rows[0] == "par|%d" % R.DIMMER
+		and rows[2] == "par|%d" % R.CUES and rows[3] == "master|%d" % R.DIMMER and rows[7] == "master|%d" % R.POSITION,
+		"dragging across tracks covers every row between, top to bottom (%d rows)" % rows.size())
+	ok(par.selection == sel and m.selection == sel, "both tracks draw the same selection")
+	# Beat and no snapping.
+	sb.snap = StructureBar.Snap.BEAT
+	_sel_drag(tl, _at(tl, m, R.CUES, 3.1), _at(tl, m, R.CUES, 3.3))
+	ok(is_equal_approx(sel.blocks[0]["t0"], 3.0) and is_equal_approx(sel.blocks[0]["t1"], 3.5), "beat snapping: whole beats")
+	sb.snap = StructureBar.Snap.NONE
+	_sel_drag(tl, _at(tl, m, R.CUES, 3.1), _at(tl, m, R.CUES, 7.3))
+	ok(absf(sel.blocks[0]["t0"] - 3.1) < 0.05 and absf(sel.blocks[0]["t1"] - 7.3) < 0.05,
+		"no snapping: exactly where dragged (%.2f–%.2f)" % [sel.blocks[0]["t0"], sel.blocks[0]["t1"]])
+	# A plain click (no drag) clears it — with snapping, it selects that cell.
+	_press(tl, _at(tl, m, R.CUES, 9.0), true)
+	_press(tl, _at(tl, m, R.CUES, 9.0), false)
+	ok(sel.is_empty(), "no snapping: a click clears the selection")
+	sb.snap = StructureBar.Snap.BAR
+	_press(tl, _at(tl, m, R.CUES, 9.0), true)
+	_press(tl, _at(tl, m, R.CUES, 9.0), false)
+	ok(sel.blocks.size() == 1 and is_equal_approx(sel.blocks[0]["t0"], 8.0) and is_equal_approx(sel.blocks[0]["t1"], 10.0),
+		"bar snapping: a click selects the bar under it")
+	# A node or the line isn't empty timeline: no selecting there.
+	m.dimmer_nodes = PackedVector2Array([Vector2(5.0, 0.5)])
+	var node_pos := m.get_global_transform() * Vector2(m._t2x(5.0), m._level_y(m.row_rect(R.DIMMER), 0.5))
+	_sel_drag(tl, node_pos, node_pos + Vector2(80, 0))
+	ok(sel.blocks.size() == 1 and is_equal_approx(sel.blocks[0]["t0"], 8.0) and m.dimmer_nodes[0].x > 5.0,
+		"dragging a node moves the node, not the selection")
+	# Opening another song clears it.
+	tl.open("user://_another_song.wav")
+	ok(sel.is_empty(), "another song: selection cleared")
+	tl.queue_free()
+	await process_frame
