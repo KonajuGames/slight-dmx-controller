@@ -321,7 +321,8 @@ technical reference.
 
 The window is a tab per Art-Net universe. **Add Universe** (also
 **Ctrl+Shift+N**) / **Remove Universe** in the top bar manage the list
-(1–8 universes); each tab has
+(1–8 universes); **Ctrl+Shift+R** removes the selected universe too,
+after asking (and saying how many fixtures go with it). Each tab has
 its own IP, port, and Art-Net universe number (several tabs may target
 the same number on different IPs), its own fixture patch, and its own
 512-channel buffer. New universes are numbered to the first free Art-Net

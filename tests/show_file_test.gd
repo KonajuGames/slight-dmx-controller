@@ -425,6 +425,36 @@ func _test_new_show() -> void:
 	ok(main._panels.size() == 8 and "limit" in main.status_label.text, "...up to the limit: %s" % main.status_label.text)
 	main.new_show()
 	ok(main._panels.size() == 1, "(back to one)")
+	# Ctrl+Shift+R removes the current universe, after asking.
+	var kr := InputEventKey.new()
+	kr.keycode = KEY_R
+	kr.ctrl_pressed = true
+	kr.shift_pressed = true
+	kr.pressed = true
+	dlg_count = main.find_children("*", "ConfirmationDialog", false, false).size()
+	root.push_input(kr)
+	ok(main.find_children("*", "ConfirmationDialog", false, false).size() == dlg_count
+		and "only universe" in main.status_label.text, "with one universe: nothing to remove (%s)" % main.status_label.text)
+	root.push_input(ku)
+	root.push_input(ku)
+	main._panels[1].add_patched(_rgb(), 0, 0, "Mid A", Vector3.ZERO, Vector3.ZERO)
+	main._panels[1].add_patched(_rgb(), 3, 0, "Mid B", Vector3.ZERO, Vector3.ZERO)
+	main._panels[2].add_patched(_rgb(), 0, 0, "Last", Vector3.ZERO, Vector3.ZERO)
+	main.universe_tabs.current_tab = 1
+	root.push_input(kr)
+	var rd: Array = main.find_children("*", "ConfirmationDialog", false, false)
+	ok(rd.size() == dlg_count + 1 and rd[-1].title == "Remove Universe"
+		and rd[-1].dialog_text == "Remove universe 2 and its 2 fixtures (also taken out of any groups)?",
+		"Ctrl+Shift+R asks about the current universe: %s" % rd[-1].dialog_text)
+	rd[-1].canceled.emit()
+	await process_frame
+	ok(main._panels.size() == 3, "cancelled: nothing removed")
+	root.push_input(kr)
+	rd = main.find_children("*", "ConfirmationDialog", false, false)
+	rd[-1].confirmed.emit()
+	await process_frame
+	ok(main._panels.size() == 2 and main._panels[1].patched_fixtures.size() == 1
+		and main._panels[1].patched_fixtures[0]["name"] == "Last", "confirmed: universe 2 removed, the one after it moves up")
 	# Saving an untitled show asks where (it doesn't overwrite the default file).
 	var before: int = main.find_children("*", "FileDialog", false, false).size()
 	main._on_save_show()

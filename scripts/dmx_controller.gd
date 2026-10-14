@@ -447,6 +447,7 @@ func _build_top_bar() -> Control:
 
 	remove_uni_btn = Button.new()
 	remove_uni_btn.text = "Remove Universe"
+	remove_uni_btn.tooltip_text = "Remove the selected universe (Ctrl+Shift+R asks first)"
 	remove_uni_btn.pressed.connect(_on_remove_universe)
 	row.add_child(remove_uni_btn)
 
@@ -534,6 +535,29 @@ func _on_add_universe() -> void:
 	fx_panel.refresh_universe_options()
 	sound_panel.refresh_universe_options()
 	status_label.text = "Added universe %d." % _panels.size()
+
+
+## Ctrl+Shift+R: ask, then remove the current universe (the selected
+## universe tab) — saying how many fixtures go with it.
+func _confirm_remove_universe() -> void:
+	if _panels.size() <= 1:
+		status_label.text = "Can't remove the only universe."
+		return
+	var idx: int = universe_tabs.current_tab
+	if idx < 0 or idx >= _panels.size():
+		idx = _panels.size() - 1
+	var n: int = _panels[idx].patched_fixtures.size()
+	var dlg := ConfirmationDialog.new()
+	dlg.title = "Remove Universe"
+	dlg.dialog_text = "Remove universe %d%s?" % [idx + 1,
+		"" if n == 0 else " and its %d fixture%s (also taken out of any groups)" % [n, "" if n == 1 else "s"]]
+	dlg.ok_button_text = "Remove"
+	add_child(dlg)
+	dlg.confirmed.connect(func():
+		dlg.queue_free()
+		_on_remove_universe())
+	dlg.canceled.connect(func(): dlg.queue_free())
+	dlg.popup_centered()
 
 
 func _on_remove_universe() -> void:
@@ -854,6 +878,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 				_on_add_universe()
 			else:
 				_on_new_show()
+			get_viewport().set_input_as_handled()
+		elif event.keycode == KEY_R and event.is_command_or_control_pressed() and event.shift_pressed:
+			# Ctrl+Shift+R: remove the current universe, after asking.
+			_confirm_remove_universe()
 			get_viewport().set_input_as_handled()
 		elif event.keycode == KEY_O and event.is_command_or_control_pressed() and not event.shift_pressed:
 			# Ctrl+O: Load Show…, from either view.
