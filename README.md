@@ -149,6 +149,8 @@ technical reference.
   transparent at the bottom to 50 % at the top. The master track (every
   row) sits above the song structure and follows the waveform's zoom;
   beside each track, a name plate shows its target's name vertically.
+  A fixture or head with colour channels but no DIMMER channel still gets
+  a Dimmer row — its virtual dimmer.
   So far it's display only: the rows other than the dimmer are empty,
   the dimmer is a flat 100 % unless given nodes, and nothing drives the
   fixtures yet.
@@ -605,8 +607,15 @@ Fixture**. Its panel appears below with the right controls automatically:
   own** also gets a **virtual dimmer**: a per-fixture intensity master
   that scales its Red/Green/Blue/White/Amber/UV output on the way to the
   wire, so you can fade the fixture without disturbing the colour you
+  set. It's applied when the universe builds each DMX frame
+  (`ArtNetUniverse.compute_output`, after effect / chase overrides and
+  before the grand master), so the colour channels keep holding the
+  actual colour — the fixture controls, cues, presets and Load to Patch
+  all see the undimmed values; only the frame on the wire (and the 3D
+  view, which reads it) is dimmed. A fixture with a real DIMMER channel
+  has no virtual dimmer, and its colour channels output the colour as
   set. It homes to full (so a homed fixture acts like one whose real
-  dimmer is open).
+  dimmer is open), and opens fully when a look is loaded.
 - **Flash** (hold) drives that fixture to full white — dimmer and every
   R/G/B/W channel to full for each head, a colour wheel to its open slot
   — and snaps the affected channels back to exactly what they were on

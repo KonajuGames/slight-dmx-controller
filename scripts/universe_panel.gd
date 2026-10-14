@@ -11,9 +11,6 @@ extends VBoxContainer
 
 const CHANNEL_MAX := 512
 
-## Channel roles the per-fixture virtual dimmer scales.
-const INTENSITY_ROLES := ["RED", "GREEN", "BLUE", "WHITE", "AMBER", "UV"]
-
 ## Emitted when a fixture is added or removed by the user (so the shell
 ## can refresh fixture-group membership).
 signal patch_changed
@@ -553,6 +550,7 @@ func _on_remove_fixture(fixture_id: int) -> void:
 		if patched_fixtures[i]["id"] == fixture_id:
 			patched_fixtures.remove_at(i)
 			break
+	sender.remove_virtual_dimmer(fixture_id)
 	_refresh_fixtures_vbox()
 	patch_changed.emit()
 
@@ -560,13 +558,22 @@ func _on_remove_fixture(fixture_id: int) -> void:
 func _refresh_fixtures_vbox() -> void:
 	for c in fixtures_vbox.get_children():
 		c.queue_free()
+	# Drop the virtual dimmers of fixtures no longer patched (a reloaded
+	# patch renumbers them); each row registers its own again.
+	var ids := {}
+	for fixture in patched_fixtures:
+		ids[int(fixture["id"])] = true
+	for key in sender.virtual_dimmers.keys():
+		if not ids.has(key):
+			sender.remove_virtual_dimmer(key)
 	for fixture in patched_fixtures:
 		fixtures_vbox.add_child(_build_fixture_row(fixture))
 
 
 ## Builds one fixture's control panel for its selected mode:
 ##   - a virtual dimmer, if the fixture has colour/white channels but no
-##     DIMMER channel of its own
+##     DIMMER channel of its own (applied to the output frame, not to the
+##     colour channels' stored values)
 ##   - a complete Red/Green/Blue trio  -> one colour picker
 ##   - a channel followed by a "fine" channel  -> one 16-bit slider
 ##   - a channel with named value ranges  -> a slot dropdown + trim slider
@@ -642,32 +649,17 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 	var controls_row := _flow(12, 8)
 	vbox.add_child(controls_row)
 
-	# Decide whether this fixture needs a virtual dimmer: it must have at
-	# least one colour/white channel and no DIMMER channel of its own.
-	var has_dimmer := false
-	var intensity_idx: Array = []
-	for k in range(chans.size()):
-		var role_k := String(chans[k]["role"])
-		if role_k == "DIMMER":
-			has_dimmer = true
-		elif role_k in INTENSITY_ROLES:
-			intensity_idx.append(k)
-	var use_vdim: bool = (not has_dimmer) and not intensity_idx.is_empty()
+	# A fixture with colour / white channels but no DIMMER channel of its
+	# own gets a virtual dimmer: the universe scales those channels by its
+	# level when it builds the DMX frame, so the colour controls (and the
+	# stored channel values) keep the actual colour.
+	var fid: int = fixture["id"]
+	var vchans := PackedInt32Array()
+	for k in profile.virtual_dimmer_channels(mode):
+		vchans.append(start + k)
+	sender.set_virtual_dimmer(fid, vchans)
 
-	# vdim["frac"] is the 0..1 master; full_levels[i] is the raw 0..255
-	# value the user dialed for intensity channel i. Every intensity write
-	# goes through push_intensity so the master always applies.
-	var vdim := {"frac": 1.0}
-	var full_levels := {}
-	for k in intensity_idx:
-		full_levels[k] = 0
-
-	var push_intensity := func(local_k: int):
-		var lvl: int = int(full_levels.get(local_k, 0))
-		lvl = int(round(lvl * float(vdim["frac"])))
-		sender.set_channel(start + local_k, clampi(lvl, 0, 255))
-
-	if use_vdim:
+	if not vchans.is_empty():
 		var d_box := VBoxContainer.new()
 		d_box.alignment = BoxContainer.ALIGNMENT_CENTER
 		d_box.add_child(_centered_label("Dimmer\n(virtual)"))
@@ -680,28 +672,21 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 		d_box.add_child(d_slider)
 		var d_val := _centered_label("255")
 		d_box.add_child(d_val)
-		d_slider.value_changed.connect(func(v: float):
-			vdim["frac"] = float(v) / 255.0
-			d_val.text = str(int(v))
-			for li in full_levels:
-				push_intensity.call(li)
-		)
+		var set_vdim := func(v: int):
+			sender.set_virtual_dimmer_level(fid, v / 255.0)
+			d_val.text = str(v)
+		d_slider.value_changed.connect(func(v: float): set_vdim.call(int(v)))
 		controls_row.add_child(d_box)
 		# The virtual dimmer homes to full, so a homed fixture behaves like
 		# one whose real dimmer is open.
 		reset_callables.append(func():
-			d_slider.value = 255
-			vdim["frac"] = 1.0
-			d_val.text = "255"
-			for li in full_levels:
-				push_intensity.call(li)
+			d_slider.set_value_no_signal(255)
+			set_vdim.call(255)
 		)
-		# A loaded look bakes intensity into the raw colour values, so open
-		# the virtual dimmer fully before the colour / intensity appliers run.
+		# A loaded look holds the colour itself; open the virtual dimmer.
 		apply_callables.append(func(_buf: PackedByteArray):
 			d_slider.set_value_no_signal(255)
-			vdim["frac"] = 1.0
-			d_val.text = "255"
+			set_vdim.call(255)
 		)
 
 	# One colour picker per head (RGB triplet). Multi-head fixtures — LED
@@ -719,12 +704,9 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 		picker.color = Color.BLACK
 		picker.custom_minimum_size = Vector2(60, 24)
 		picker.color_changed.connect(func(c: Color):
-			full_levels[r_idx] = int(round(c.r * 255))
-			full_levels[g_idx] = int(round(c.g * 255))
-			full_levels[b_idx] = int(round(c.b * 255))
-			push_intensity.call(r_idx)
-			push_intensity.call(g_idx)
-			push_intensity.call(b_idx)
+			sender.set_channel(start + r_idx, int(round(c.r * 255)))
+			sender.set_channel(start + g_idx, int(round(c.g * 255)))
+			sender.set_channel(start + b_idx, int(round(c.b * 255)))
 		)
 		color_box.add_child(picker)
 		controls_row.add_child(color_box)
@@ -733,24 +715,18 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 		handled[b_idx] = true
 		reset_callables.append(func():
 			picker.color = Color.BLACK
-			full_levels[r_idx] = 0
-			full_levels[g_idx] = 0
-			full_levels[b_idx] = 0
-			push_intensity.call(r_idx)
-			push_intensity.call(g_idx)
-			push_intensity.call(b_idx)
+			sender.set_channel(start + r_idx, 0)
+			sender.set_channel(start + g_idx, 0)
+			sender.set_channel(start + b_idx, 0)
 		)
 		apply_callables.append(func(buf: PackedByteArray):
 			var rv := _bufv(buf, start + r_idx)
 			var gv := _bufv(buf, start + g_idx)
 			var bv := _bufv(buf, start + b_idx)
 			picker.color = Color(rv / 255.0, gv / 255.0, bv / 255.0)
-			full_levels[r_idx] = rv
-			full_levels[g_idx] = gv
-			full_levels[b_idx] = bv
-			push_intensity.call(r_idx)
-			push_intensity.call(g_idx)
-			push_intensity.call(b_idx)
+			sender.set_channel(start + r_idx, rv)
+			sender.set_channel(start + g_idx, gv)
+			sender.set_channel(start + b_idx, bv)
 		)
 
 	# A fixture with both a Pan and a Tilt channel gets a single 2D pad
@@ -798,17 +774,6 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 
 		if not (ch["ranges"] as Array).is_empty():
 			controls_row.add_child(_build_range_control(start, ci, ch, reset_callables, apply_callables))
-			ci += 1
-			continue
-
-		# Route lone intensity channels (White, Amber, UV) through the
-		# virtual dimmer too, not just the RGB trio.
-		if String(ch["role"]) in INTENSITY_ROLES:
-			var li := ci
-			var wcb := func(v: int):
-				full_levels[li] = v
-				push_intensity.call(li)
-			controls_row.add_child(_build_slider_control(start, ci, ch, reset_callables, apply_callables, wcb))
 			ci += 1
 			continue
 
@@ -934,10 +899,8 @@ func _build_xy_pad(start: int, pan: Dictionary, tilt: Dictionary, reset_callable
 	return box
 
 
-## Plain 8-bit channel: a vertical slider clamped to [min, max]. When
-## write_cb is given it receives the value instead of a direct DMX write
-## (used to route intensity channels through the virtual dimmer).
-func _build_slider_control(start: int, local_i: int, ch: Dictionary, reset_callables: Array, apply_callables: Array, write_cb := Callable()) -> Control:
+## Plain 8-bit channel: a vertical slider clamped to [min, max].
+func _build_slider_control(start: int, local_i: int, ch: Dictionary, reset_callables: Array, apply_callables: Array) -> Control:
 	var box := VBoxContainer.new()
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
 	box.add_child(_centered_label(ch["name"]))
@@ -954,10 +917,7 @@ func _build_slider_control(start: int, local_i: int, ch: Dictionary, reset_calla
 	box.add_child(val_lbl)
 
 	var do_write := func(v: int):
-		if write_cb.is_valid():
-			write_cb.call(v)
-		else:
-			sender.set_channel(start + local_i, v)
+		sender.set_channel(start + local_i, v)
 
 	slider.value_changed.connect(func(v: float):
 		do_write.call(int(v))

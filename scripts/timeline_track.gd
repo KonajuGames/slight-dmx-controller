@@ -58,7 +58,9 @@ var wave: WaveHeatmap
 
 ## The rows a fixture (or head) with these channel roles gets: Position for
 ## pan / tilt, Strobe for a strobe / shutter channel, Colour for any colour
-## channel or wheel, Dimmer for a dimmer; Cues always.
+## channel or wheel, Dimmer for a dimmer channel — or for colour / white
+## channels without one, which the fixture's virtual dimmer scales; Cues
+## always.
 static func rows_for_roles(roles: Array) -> Array:
 	var out := []
 	if "PAN" in roles or "TILT" in roles:
@@ -70,7 +72,10 @@ static func rows_for_roles(roles: Array) -> Array:
 		if r in roles:
 			out.append(Row.COLOUR)
 			break
-	if "DIMMER" in roles:
+	var dimmable := "DIMMER" in roles
+	for r in FixtureProfile.VIRTUAL_DIMMER_ROLES:
+		dimmable = dimmable or r in roles
+	if dimmable:
 		out.append(Row.DIMMER)
 	return out
 

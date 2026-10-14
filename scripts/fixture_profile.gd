@@ -24,6 +24,10 @@ const ROLES: Array[String] = [
 	"STROBE", "ZOOM", "GOBO", "GOBO_ROT", "COLOR_WHEEL", "GENERIC",
 ]
 
+## The colour / white roles a virtual dimmer scales on a fixture without a
+## DIMMER channel (see virtual_dimmer_channels()).
+const VIRTUAL_DIMMER_ROLES := ["RED", "GREEN", "BLUE", "WHITE", "AMBER", "UV"]
+
 ## Physical hints for the 3D visualizer. `category` is one of
 ## moving_head / wash / par / beam / strip / blinder / generic ("" = let
 ## the visualizer guess from the roles).
@@ -233,6 +237,21 @@ func channels_for_mode(mode_index: int) -> Array:
 	if modes.is_empty():
 		return []
 	return modes[clampi(mode_index, 0, modes.size() - 1)]["channels"]
+
+
+## The local channel indices a virtual dimmer scales in this mode: every
+## colour / white channel (VIRTUAL_DIMMER_ROLES) when the mode has no
+## DIMMER channel of its own; empty when it has one (or no colour).
+func virtual_dimmer_channels(mode_index: int) -> PackedInt32Array:
+	var chans := channels_for_mode(mode_index)
+	var out := PackedInt32Array()
+	for k in range(chans.size()):
+		var role := String(chans[k]["role"])
+		if role == "DIMMER":
+			return PackedInt32Array()
+		if role in VIRTUAL_DIMMER_ROLES:
+			out.append(k)
+	return out
 
 
 ## Channel count of the given mode (mode 0 by default).

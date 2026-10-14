@@ -41,6 +41,11 @@ var dmx_data := PackedByteArray()
 ## overrides and grand master already applied. The 3D visualizer reads
 ## this so it shows exactly what a receiver would.
 var output := PackedByteArray()
+## Virtual dimmers for fixtures without a DIMMER channel of their own:
+## key (the fixture's id) -> {"channels": PackedInt32Array of universe
+## channels, "level": 0..1}. compute_output() scales those channels by the
+## level in `output` only, so `dmx_data` keeps the actual colour.
+var virtual_dimmers := {}
 
 
 func _init() -> void:
@@ -96,15 +101,53 @@ func set_all(value: int) -> void:
 	dmx_data.fill(clampi(value, 0, 255))
 
 
-## Fold the effect/chase `overrides` ({channel: value}) and the grand
-## master `scale` (0..1) into `output`, without touching the stored
-## per-channel values. Always safe to call; does not send anything.
+## Give a fixture a virtual dimmer over these universe `channels` (its
+## colour channels). Re-registering keeps the current level; an empty
+## channel list removes it.
+func set_virtual_dimmer(key: int, channels: PackedInt32Array) -> void:
+	if channels.is_empty():
+		virtual_dimmers.erase(key)
+		return
+	var level := virtual_dimmer_level(key)
+	virtual_dimmers[key] = {"channels": channels, "level": level}
+
+
+func remove_virtual_dimmer(key: int) -> void:
+	virtual_dimmers.erase(key)
+
+
+func has_virtual_dimmer(key: int) -> bool:
+	return virtual_dimmers.has(key)
+
+
+func set_virtual_dimmer_level(key: int, level: float) -> void:
+	if virtual_dimmers.has(key):
+		virtual_dimmers[key]["level"] = clampf(level, 0.0, 1.0)
+
+
+## A virtual dimmer's level, 0..1 (1.0, open, if there isn't one).
+func virtual_dimmer_level(key: int) -> float:
+	return float(virtual_dimmers[key]["level"]) if virtual_dimmers.has(key) else 1.0
+
+
+## Fold the effect/chase `overrides` ({channel: value}), the fixtures'
+## virtual dimmers and the grand master `scale` (0..1) into `output`,
+## without touching the stored per-channel values. Always safe to call;
+## does not send anything.
 func compute_output(scale: float = 1.0, overrides: Dictionary = {}) -> void:
 	var data := dmx_data.duplicate()
 	for key in overrides:
 		var c := int(key)
 		if c >= 0 and c < data.size():
 			data[c] = clampi(int(overrides[key]), 0, 255)
+	for key in virtual_dimmers:
+		var vd: Dictionary = virtual_dimmers[key]
+		var level: float = vd["level"]
+		if level >= 1.0:
+			continue
+		for c in vd["channels"]:
+			if c >= 0 and c < data.size():
+				data[c] = int(round(data[c] * level))
 	if scale < 1.0:
 		for i in range(data.size()):
 			data[i] = int(data[i] * scale)
