@@ -39,7 +39,8 @@ extends VBoxContainer
 ## snapping says, on every row the drag crosses — rows of several tracks
 ## included. A plain drag replaces the selection, Ctrl adds to it, and
 ## Shift extends the last area to take in the new one. Delete clears the
-## selected areas; Ctrl+A selects everything, Ctrl+C copies, Ctrl+X cuts
+## selected areas; Escape or Ctrl+D deselects; Ctrl+A selects everything,
+## Ctrl+C copies, Ctrl+X cuts
 ## and Ctrl+V pastes (select_all(), copy_selection(), cut_selection(),
 ## paste()).
 ## Every timeline edit (dimmer nodes / line, Delete, cut, paste, the
@@ -893,6 +894,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		return
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_SPACE:
 		toggle_play()
+		get_viewport().set_input_as_handled()
+	elif event is InputEventKey and event.pressed and not _selection.is_empty() 			and (event.keycode == KEY_ESCAPE or (event.keycode == KEY_D and event.is_command_or_control_pressed())):
+		_selection.clear()
 		get_viewport().set_input_as_handled()
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_DELETE and not _selection.is_empty():
 		delete_selection()

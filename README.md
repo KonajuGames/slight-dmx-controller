@@ -192,7 +192,7 @@ technical reference.
   step down at the start, back up at the end; overlapping spans on a row
   are merged first). The selection stays.
   **Ctrl+A** selects everything — every row of every timeline, over the
-  whole song. **Ctrl+C** copies the selected areas (kept when another
+  whole song — and **Escape** or **Ctrl+D** clears the selection. **Ctrl+C** copies the selected areas (kept when another
   song opens),
   **Ctrl+X** cuts them (copies, then clears them as Delete does) and
   **Ctrl+V** pastes them: at the start of the current selection, into

@@ -775,6 +775,18 @@ func _test_undo_redo() -> void:
 	ok(tl.selection().blocks.size() == 1 and tl.selection().blocks[0]["t1"] == 60.0, "replacing any selection")
 	_key(KEY_A, false)
 	ok(tl.selection().blocks[0]["t1"] == 60.0, "(plain A: nothing)")
+	_key(KEY_D, false)
+	ok(not tl.selection().is_empty(), "(plain D: nothing)")
+	_key(KEY_D)
+	ok(tl.selection().is_empty(), "Ctrl+D clears the selection")
+	_key(KEY_A)
+	_key(KEY_ESCAPE, false)
+	ok(tl.selection().is_empty(), "so does Escape")
+	var esc := InputEventKey.new()
+	esc.keycode = KEY_ESCAPE
+	esc.pressed = true
+	root.push_input(esc)
+	ok(not root.is_input_handled(), "Escape with nothing selected is left for others")
 	# Per song: another song has its own history; coming back keeps this one's.
 	tl.open("user://_undo_song_2.wav")
 	ok(not tl.can_undo(), "another song: its own (empty) history")
