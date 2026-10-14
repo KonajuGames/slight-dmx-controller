@@ -151,9 +151,14 @@ technical reference.
   beside each track, a name plate shows its target's name vertically.
   A fixture or head with colour channels but no DIMMER channel still gets
   a Dimmer row — its virtual dimmer.
-  So far it's display only: the rows other than the dimmer are empty,
-  the dimmer is a flat 100 % unless given nodes, and nothing drives the
-  fixtures yet.
+  The dimmer line's nodes are edited with the mouse: drag a node to move
+  it (in time, kept between its neighbours, and in level, 0–100 %) — hold
+  Shift to lock it to the axis the pointer has moved furthest on; drag the
+  line itself to move that stretch of it (the nodes either side) up or
+  down; Ctrl + left-click on the line to add a node there; Ctrl +
+  right-click a node to remove it. With no nodes the dimmer is a flat 100 %. So far the
+  rows other than the dimmer are empty, the nodes aren't saved, and
+  nothing drives the fixtures yet.
 - `universe_panel.gd` — the `UniversePanel` class: one universe's tab —
   its connection settings, blackout/full, and fixture patch with
   purpose-built per-fixture controls.
