@@ -44,6 +44,10 @@ extends VBoxContainer
 ## Ask the shell to build an Auto Show light show for `path` from
 ## `analysis` (its possibly-edited structure).
 signal generate_show_requested(path: String, analysis: SongAnalysis)
+## A song's timelines were saved to the store (flush()).
+signal timelines_saved(path: String)
+## The show's timelines folder changed (set_timeline_store()).
+signal timeline_store_changed
 
 ## Waveform columns per second of audio: ~10 ms each.
 const WAVE_COLS_PER_SEC := 100
@@ -765,6 +769,7 @@ func flush() -> String:
 	var err := timeline_store.save_song(_path, song_data())
 	if err == "":
 		_dirty = false
+		timelines_saved.emit(_path)
 	else:
 		push_warning("Couldn't save the timelines for %s: %s" % [_path.get_file(), err])
 	return err
@@ -776,6 +781,7 @@ func flush() -> String:
 ## all (Save Show As… onto a copy of the folder).
 func set_timeline_store(store: TimelineStore, reload := true) -> void:
 	timeline_store = store
+	timeline_store_changed.emit()
 	if reload:
 		_songs.clear()
 		_dirty = false

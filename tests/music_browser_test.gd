@@ -37,6 +37,7 @@ func _run() -> void:
 	print("== Music Library view ==")
 	_test_folder_listing()
 	_test_panel()
+	await _test_timeline_icons()
 	_test_main_scene()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
@@ -133,6 +134,79 @@ func _test_panel() -> void:
 		var song := panel._db.find_song(r0["path"])
 		ok(song == null or r0["bpm"] == song.best_bpm(), "BPM is the database's best_bpm()")
 	panel.queue_free()
+
+
+## A fake song: `n` bytes, varied by `seed_v`.
+func _song_file(path: String, seed_v: int, n: int) -> void:
+	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
+	var b := PackedByteArray()
+	b.resize(n)
+	for i in range(0, n, 31):
+		b[i] = (i * seed_v) & 0xFF
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	f.store_buffer(b)
+	f.close()
+
+
+func _test_timeline_icons() -> void:
+	print("- the timelines icon in the track list")
+	var dir := ProjectSettings.globalize_path("user://_music_icons")
+	var songs := dir.path_join("songs")
+	_song_file(songs.path_join("a.mp3"), 3, 120000)     # saved here
+	_song_file(songs.path_join("b.mp3"), 5, 130000)     # saved elsewhere, since moved here
+	_song_file(songs.path_join("c.mp3"), 7, 140000)     # none
+	_song_file(songs.path_join("d.mp3"), 9, 130000)     # none, but b's size
+	_song_file(dir.path_join("old/b.mp3"), 5, 130000)
+	var store := TimelineStore.new(dir.path_join("show.timelines"))
+	store.save_song(songs.path_join("a.mp3"), {"tracks": {"master": {"dimmer": [[1.0, 0.5]]}}})
+	store.save_song(dir.path_join("old/b.mp3"), {"tracks": {"master": {"dimmer": [[2.0, 0.5]]}}})
+	DirAccess.remove_absolute(dir.path_join("old/b.mp3"))
+
+	var panel := MusicBrowserPanel.new()
+	root.add_child(panel)
+	await process_frame
+	panel.timeline().set_timeline_store(TimelineStore.new(dir.path_join("show.timelines")))
+	panel.show_folder(songs)
+	var st: TimelineStore = panel.timeline().timeline_store
+	ok(panel.has_timelines_mark(songs.path_join("a.mp3")), "a song saved at this path: marked straight away (from the index)")
+	ok(not panel.has_timelines_mark(songs.path_join("c.mp3")) and not st._fingerprints.has(songs.path_join("c.mp3")),
+		"a song no indexed song's size: unmarked without reading it")
+	ok(not panel.timeline_marks_done(), "same-size songs are checked in the background")
+	var t := Time.get_ticks_msec()
+	while not panel.timeline_marks_done() and Time.get_ticks_msec() - t < 5000:
+		await process_frame
+	ok(panel.has_timelines_mark(songs.path_join("b.mp3")), "a moved song: found by fingerprint and marked")
+	ok(not panel.has_timelines_mark(songs.path_join("d.mp3")), "same size, different song: unmarked")
+	var items: Dictionary = panel._items
+	var ia: TreeItem = items[songs.path_join("a.mp3")]
+	var ic: TreeItem = items[songs.path_join("c.mp3")]
+	ok(ia.get_icon(MusicBrowserPanel.Col.TITLE) == MusicBrowserPanel.timeline_icon()
+		and ia.get_tooltip_text(MusicBrowserPanel.Col.TITLE) == MusicBrowserPanel.HAS_TIMELINES_TIP,
+		"marked: the node-line icon before the title, with a tooltip")
+	var blank := ic.get_icon(MusicBrowserPanel.Col.TITLE)
+	ok(blank != null and blank != MusicBrowserPanel.timeline_icon() and blank.get_size() == MusicBrowserPanel.timeline_icon().get_size(),
+		"unmarked: a blank the same size, so titles line up")
+	var img := MusicBrowserPanel.timeline_icon().get_image()
+	var lit := 0
+	for y in range(img.get_height()):
+		for x in range(img.get_width()):
+			if img.get_pixel(x, y).a > 0.5:
+				lit += 1
+	ok(img.get_size() == Vector2i(16 + MusicBrowserPanel.ICON_GAP, 12) and lit > 20 and lit < 120,
+		"the icon: 16 x 12 plus a gap before the title, a thin line with dots (%d px)" % lit)
+	# Saving a song's timelines marks it.
+	panel.timeline().timelines_saved.emit(songs.path_join("c.mp3"))
+	ok(panel.has_timelines_mark(songs.path_join("c.mp3"))
+		and ic.get_icon(MusicBrowserPanel.Col.TITLE) == MusicBrowserPanel.timeline_icon(), "saving a song's timelines marks it")
+	# Another show's folder (here, an empty one): marks cleared.
+	panel.timeline().set_timeline_store(TimelineStore.new(dir.path_join("other.timelines")))
+	ok(not panel.has_timelines_mark(songs.path_join("a.mp3")) and panel.timeline_marks_done(), "another show: its own marks (none)")
+	panel.queue_free()
+	await process_frame
+	for d in [dir.path_join("show.timelines"), songs, dir.path_join("old"), dir]:
+		for f in DirAccess.get_files_at(d):
+			DirAccess.remove_absolute(d.path_join(f))
+		DirAccess.remove_absolute(d)
 
 
 func _test_main_scene() -> void:

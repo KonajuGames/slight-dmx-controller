@@ -5,7 +5,7 @@ extends RefCounted
 ## JSON file per song, named by the song's fingerprint, plus an index:
 ##
 ##   MyShow.timelines/
-##       index.json        { fingerprint: {path, title}, ... }
+##       index.json        { fingerprint: {path, title, size}, ... }
 ##       <fingerprint>.json
 ##
 ## A song's file:
@@ -21,10 +21,14 @@ const FORMAT := "sLight timelines"
 const VERSION := 1
 const _SAMPLE := 65536
 
+## has_song_quick()'s answers.
+enum Has { NO, YES, MAYBE }
+
 ## The folder (any path FileAccess takes: absolute or user://).
 var dir := ""
 
 var _fingerprints := {}       # song path -> fingerprint (this session)
+var _index = null             # index.json, read once (kept up to date by save_song)
 
 
 func _init(p_dir := "") -> void:
@@ -113,18 +117,61 @@ func save_song(path: String, data: Dictionary) -> String:
 	out["track"] = {"path": path, "fingerprint": fp}
 	if not _write_json(_song_file(fp), out):
 		return "can't write to %s" % dir
-	var index = _read_json(_index_file())
-	if not index is Dictionary:
-		index = {}
-	index[fp] = {"path": path, "title": path.get_file().get_basename()}
-	_write_json(_index_file(), index)
+	var idx := index()
+	idx[fp] = {"path": path, "title": path.get_file().get_basename(), "size": _size_of(path)}
+	_write_json(_index_file(), idx)
 	return ""
 
 
-## The songs this folder has timelines for: {fingerprint: {path, title}}.
+## The songs this folder has timelines for: {fingerprint: {path, title,
+## size}}.
 func index() -> Dictionary:
-	var d = _read_json(_index_file())
-	return d if d is Dictionary else {}
+	if _index == null:
+		var d = _read_json(_index_file())
+		_index = d if d is Dictionary else {}
+	return _index
+
+
+## Whether the song at `path` has saved timelines here, as far as can be
+## told without reading the song: YES (the index lists it at this path),
+## NO (nothing indexed is its size — or nothing's indexed), or MAYBE
+## (has_song() must fingerprint it: it may have been moved or renamed).
+func has_song_quick(path: String) -> Has:
+	var idx := index()
+	if idx.is_empty():
+		return Has.NO
+	var size := _size_of(path)
+	var maybe := false
+	for fp in idx:
+		var e = idx[fp]
+		if not e is Dictionary:
+			continue
+		if String(e.get("path", "")) == path and FileAccess.file_exists(_song_file(fp)):
+			return Has.YES
+		if not e.has("size") or int(e["size"]) == size:
+			maybe = true
+	return Has.MAYBE if maybe and size >= 0 else Has.NO
+
+
+## Whether the song at `path` has saved timelines here (reads part of the
+## song for its fingerprint unless has_song_quick() can tell).
+func has_song(path: String) -> bool:
+	match has_song_quick(path):
+		Has.YES:
+			return true
+		Has.NO:
+			return false
+	var fp := fingerprint(path)
+	return fp != "" and FileAccess.file_exists(_song_file(fp))
+
+
+static func _size_of(path: String) -> int:
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return -1
+	var n := f.get_length()
+	f.close()
+	return n
 
 
 ## Copy every file in this folder to `to_dir` (Save Show As…). Returns

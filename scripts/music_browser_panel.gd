@@ -9,6 +9,12 @@ extends HSplitContainer
 ## knows the file (artist / title / BPM / key / length, the same values
 ## its decks use), falling back to the file name. The database and lists
 ## load the first time the view is shown, not at app start.
+##
+## A track with saved lighting timelines in the current show gets a small
+## node-line icon (timeline_icon()) before its title. Most are told from
+## the show's timelines index alone; a song that might have been moved
+## there (same size as an indexed one) is fingerprinted in the background,
+## a few per frame.
 
 ## Audio files listed in a folder (lower-case extensions).
 const AUDIO_EXTS := ["mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "wma", "aif", "aiff"]
@@ -20,6 +26,14 @@ const COL_KEYS := ["num", "title", "artist", "bpm", "key", "length", "album", "g
 
 const _PLACEHOLDER := "_placeholder"
 const _MISSING_COLOR := Color(1.0, 0.5, 0.5)
+const HAS_TIMELINES_TIP := "Has lighting timelines in this show"
+## The timeline icon's colour: a muted blue, readable on the list.
+const ICON_COLOR := Color(0.45, 0.72, 0.95)
+## Time per frame spent fingerprinting songs for their icons, ms.
+const _CHECK_BUDGET_MS := 6
+
+static var _icon: Texture2D
+static var _blank: Texture2D
 
 var _tree: Tree                 # left: drives / folders / Virtual Folders
 var _list: Tree                 # right: the tracks
@@ -31,6 +45,9 @@ var _lists: Array = []          # [VirtualDjList]
 var _loaded := false
 
 var _rows: Array = []           # [{num, title, artist, bpm, key, length, album, genre, file, path, missing}]
+var _items := {}                # path -> its TreeItem in the list
+var _has_timelines := {}        # path -> whether it has saved timelines (known so far)
+var _to_check: Array = []       # paths still to fingerprint for their icon
 var _sort_col := Col.NUM
 var _sort_asc := true
 
@@ -66,6 +83,11 @@ func _ready() -> void:
 	_timeline = MusicTimeline.new()
 	_timeline.visible = false
 	right_holder.add_child(_timeline)
+	_timeline.timelines_saved.connect(func(path: String):
+		_has_timelines[path] = true
+		_show_mark(path))
+	_timeline.timeline_store_changed.connect(refresh_timeline_marks)
+	set_process(false)
 
 	_heading = Label.new()
 	_heading.text = "Select a folder or a VirtualDJ Virtual Folder."
@@ -354,6 +376,7 @@ func _set_heading(what: String, rows_: Array) -> void:
 
 func _fill_list() -> void:
 	_list.clear()
+	_items.clear()
 	var root := _list.create_item()
 	for r in _rows:
 		var it := _list.create_item(root)
@@ -374,7 +397,116 @@ func _fill_list() -> void:
 			for c in range(COL_TITLES.size()):
 				it.set_custom_color(c, _MISSING_COLOR)
 			it.set_tooltip_text(Col.TITLE, "File not found: " + r["path"])
+		_items[r["path"]] = it
 	_update_column_titles()
+	refresh_timeline_marks()
+
+
+# ------------------------------------------------------- TIMELINE ICONS --
+
+## Work out (again) which listed tracks have saved timelines in the
+## current show, and mark them.
+func refresh_timeline_marks() -> void:
+	_has_timelines.clear()
+	_to_check.clear()
+	var store := _timeline.timeline_store
+	for r in _rows:
+		var path: String = r["path"]
+		var has := TimelineStore.Has.NO
+		if store != null and not r["missing"]:
+			has = store.has_song_quick(path)
+		if has == TimelineStore.Has.MAYBE:
+			_to_check.append(path)
+		else:
+			_has_timelines[path] = has == TimelineStore.Has.YES
+		_show_mark(path)
+	set_process(not _to_check.is_empty())
+
+
+## Whether the listed track at `path` is marked as having timelines (false
+## while still being checked).
+func has_timelines_mark(path: String) -> bool:
+	return bool(_has_timelines.get(path, false))
+
+
+## Whether every listed track's mark is settled (none still to check).
+func timeline_marks_done() -> bool:
+	return _to_check.is_empty()
+
+
+func _process(_delta: float) -> void:
+	var store := _timeline.timeline_store
+	var t0 := Time.get_ticks_msec()
+	while not _to_check.is_empty() and Time.get_ticks_msec() - t0 < _CHECK_BUDGET_MS:
+		var path: String = _to_check.pop_front()
+		_has_timelines[path] = store != null and store.has_song(path)
+		_show_mark(path)
+	if _to_check.is_empty():
+		set_process(false)
+
+
+func _show_mark(path: String) -> void:
+	var it: TreeItem = _items.get(path)
+	if it == null or not is_instance_valid(it):
+		return
+	var has := has_timelines_mark(path)
+	# A blank of the same size keeps every title lined up.
+	it.set_icon(Col.TITLE, timeline_icon() if has else _blank_icon())
+	# (A missing file keeps its "File not found" tooltip: it's never marked.)
+	if has:
+		it.set_tooltip_text(Col.TITLE, HAS_TIMELINES_TIP)
+	elif it.get_tooltip_text(Col.TITLE) == HAS_TIMELINES_TIP:
+		it.set_tooltip_text(Col.TITLE, "")
+
+
+## The "has lighting timelines" icon: a little dimmer node line — three
+## segments with a dot at each node — like the timeline's dimmer row.
+static func timeline_icon() -> Texture2D:
+	if _icon == null:
+		_icon = _draw_node_line(ICON_COLOR)
+	return _icon
+
+
+static func _blank_icon() -> Texture2D:
+	if _blank == null:
+		_blank = _draw_node_line(Color(0, 0, 0, 0))
+	return _blank
+
+
+## The line's 16 x 12 px, drawn by coverage (4 x 4 samples a pixel) so
+## it's smooth, followed by ICON_GAP px of clear space before the title.
+const ICON_GAP := 4
+static func _draw_node_line(col: Color) -> Texture2D:
+	const W := 16
+	const H := 12
+	var pts := [Vector2(1.6, 9.6), Vector2(5.6, 3.4), Vector2(10.2, 7.2), Vector2(14.4, 2.2)]
+	var img := Image.create_empty(W + ICON_GAP, H, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	if col.a > 0.0:
+		for y in range(H):
+			for x in range(W):
+				var hit := 0
+				for sy in range(4):
+					for sx in range(4):
+						var q := Vector2(x + (sx + 0.5) / 4.0, y + (sy + 0.5) / 4.0)
+						if _on_node_line(q, pts):
+							hit += 1
+				if hit > 0:
+					img.set_pixel(x, y, Color(col.r, col.g, col.b, col.a * hit / 16.0))
+	return ImageTexture.create_from_image(img)
+
+
+static func _on_node_line(q: Vector2, pts: Array) -> bool:
+	for p in pts:
+		if q.distance_to(p) <= 1.75:          # the nodes
+			return true
+	for i in range(pts.size() - 1):           # the line, 1.2 px wide
+		var a: Vector2 = pts[i]
+		var b: Vector2 = pts[i + 1]
+		var t := clampf((q - a).dot(b - a) / (b - a).length_squared(), 0.0, 1.0)
+		if q.distance_to(a.lerp(b, t)) <= 0.6:
+			return true
+	return false
 
 
 func _on_column_title_clicked(column: int, mouse_button: int) -> void:

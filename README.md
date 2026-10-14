@@ -116,7 +116,13 @@ technical reference.
   length, album, genre, file — from VirtualDJ's database where it knows
   the track, sortable by any column, with missing files flagged.
   Double-clicking a track replaces the list with its timeline; selecting
-  a folder goes back.
+  a folder goes back. A track with saved lighting timelines in the
+  current show has a small node-line icon before its title (blue, like a
+  dimmer line). Most are told straight from the show's timelines index
+  (which records each song's path and size); only a track the same size
+  as an indexed song that isn't at its path — it may have been moved —
+  is fingerprinted, in the background. The icons update when a song's
+  timelines are first saved and when another show is loaded.
 - `music_timeline.gd` — the `MusicTimeline` class: a track's timeline —
   the zoomable colour waveform along the bottom (mouse wheel zooms,
   Shift+wheel scrolls) above a slim whole-track overview whose rectangle
@@ -174,7 +180,7 @@ technical reference.
   `MyShow.timelines/`): one JSON file per song, named by the song's
   fingerprint (its size and a hash of its first and last 64 KB, so a
   moved or renamed song keeps its timelines), plus an `index.json` of the
-  songs. Each holds the song's tracks (`master`, `<fixture uid>`,
+  songs (each one's path, title and size). Each holds the song's tracks (`master`, `<fixture uid>`,
   `<fixture uid>/h<n>`: their dimmer nodes) and its edited structure.
   The timeline saves the open song's into it when the song is left —
   another song opened, the timeline hidden, the app closed — and on Save
