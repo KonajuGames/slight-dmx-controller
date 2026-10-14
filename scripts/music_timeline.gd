@@ -113,6 +113,10 @@ var _play_result: Dictionary = {}
 var _pos := 0.0                 # playback position while stopped / paused
 var _was_playing := false
 var _scrubbing := false         # dragging the playhead with the mouse
+# Middle-button drag panning: where it started (screen x) and the view's
+# start then; _pan_x < 0 = not panning.
+var _pan_x := -1.0
+var _pan_from := 0.0
 
 
 func _ready() -> void:
@@ -258,7 +262,10 @@ func _ready() -> void:
 	visibility_changed.connect(func():
 		if not is_visible_in_tree():
 			pause()
-			flush())
+			flush()
+			if is_panning():
+				_pan_x = -1.0
+				Input.set_default_cursor_shape(Input.CURSOR_ARROW))
 	_update_transport()
 
 
@@ -529,6 +536,43 @@ func _update_cursor() -> void:
 			w.song_pos = t
 		w.queue_redraw()
 	_ruler.queue_redraw()
+
+
+## Where a middle-button drag pans the view: the waveform's width, from
+## the top of the fixtures' timelines down to the bottom of the waveform
+## (the timelines, structure bar, bar ruler and waveform), in global
+## coordinates.
+func pan_area() -> Rect2:
+	var w := _wave.get_global_rect()
+	var top := _fixture_scroll.get_global_rect().position.y
+	return Rect2(w.position.x, top, w.size.x, w.end.y - top)
+
+
+func is_panning() -> bool:
+	return _pan_x >= 0.0
+
+
+## Press and drag the middle button over the timeline area: the view
+## follows the pointer left / right (the time under it stays under it).
+## Caught here, ahead of the controls under the pointer, so it works the
+## same over all of them.
+func _input(event: InputEvent) -> void:
+	if not is_visible_in_tree() or _wave.analysis == null:
+		return
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_MIDDLE:
+		if event.pressed and pan_area().has_point(event.global_position):
+			_pan_x = event.global_position.x
+			_pan_from = _wave.view_start
+			Input.set_default_cursor_shape(Input.CURSOR_DRAG)
+			get_viewport().set_input_as_handled()
+		elif not event.pressed and is_panning():
+			_pan_x = -1.0
+			Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+			get_viewport().set_input_as_handled()
+	elif event is InputEventMouseMotion and is_panning():
+		var per_px := _wave.visible_length() / maxf(_wave.size.x, 1.0)
+		_wave.set_view(_pan_from - (event.global_position.x - _pan_x) * per_px, _wave.visible_length())
+		get_viewport().set_input_as_handled()
 
 
 func _unhandled_key_input(event: InputEvent) -> void:

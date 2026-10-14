@@ -47,6 +47,7 @@ func _run() -> void:
 	await _test_playback()
 	await _test_beat_grid_real()
 	await _test_browser_switch()
+	await _test_middle_pan()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
 
@@ -872,3 +873,86 @@ func _test_browser_switch() -> void:
 	tree.item_mouse_selected.emit(Vector2.ZERO, MOUSE_BUTTON_LEFT)   # click the already-selected folder
 	ok(not panel.is_timeline_shown(), "clicking the already-selected folder also goes back")
 	panel.queue_free()
+
+
+func _mouse(tl: MusicTimeline, pos: Vector2, button: MouseButton, pressed: bool) -> void:
+	var ev := InputEventMouseButton.new()
+	ev.position = pos
+	ev.global_position = pos
+	ev.button_index = button
+	ev.pressed = pressed
+	tl.get_viewport().push_input(ev)
+
+
+func _drag_to(tl: MusicTimeline, pos: Vector2, mask: int) -> void:
+	var ev := InputEventMouseMotion.new()
+	ev.position = pos
+	ev.global_position = pos
+	ev.button_mask = mask
+	tl.get_viewport().push_input(ev)
+
+
+func _test_middle_pan() -> void:
+	print("- middle-button drag pans the view")
+	var tl := MusicTimeline.new()
+	root.add_child(tl)
+	tl.position = Vector2.ZERO
+	tl.size = Vector2(1100, 700)
+	tl._set_analysis(_analysis(100.0, 10000))
+	await process_frame
+	await process_frame
+	var w := tl.wave()
+	w.set_view(40.0, 20.0)
+	var per_px := 20.0 / w.size.x
+	var area := tl.pan_area()
+	var wr := w.get_global_rect()
+	ok(area.position.x == wr.position.x and area.size.x == wr.size.x and is_equal_approx(area.end.y, wr.end.y)
+		and area.position.y <= tl.master_track().get_global_rect().position.y
+		and area.position.y <= tl.fixture_scroll().get_global_rect().position.y + 0.5,
+		"the area: the waveform's width, from the fixtures' timelines down to the waveform")
+	var mid := MOUSE_BUTTON_MASK_MIDDLE
+	# On the waveform: drag left 200 px -> later in the song.
+	var p := Vector2(wr.position.x + 400.0, wr.get_center().y)
+	_mouse(tl, p, MOUSE_BUTTON_MIDDLE, true)
+	ok(tl.is_panning(), "pressing the middle button starts panning")
+	_drag_to(tl, p + Vector2(-200, 5), mid)
+	ok(is_equal_approx(w.view_start, 40.0 + 200.0 * per_px) and is_equal_approx(w.visible_length(), 20.0),
+		"dragging left moves the view later, zoom unchanged (%.2f)" % w.view_start)
+	_drag_to(tl, p + Vector2(300, 0), mid)
+	ok(is_equal_approx(w.view_start, 40.0 - 300.0 * per_px), "dragging right moves it earlier (%.2f)" % w.view_start)
+	ok(w.song_pos == 0.0, "the playhead doesn't move")
+	_mouse(tl, p + Vector2(300, 0), MOUSE_BUTTON_MIDDLE, false)
+	ok(not tl.is_panning(), "releasing stops")
+	var after := w.view_start
+	_drag_to(tl, p + Vector2(-500, 0), 0)
+	ok(w.view_start == after, "no panning after release")
+	# On the master timeline: the same, and the tracks follow.
+	var mr := tl.master_track().get_global_rect()
+	var q := Vector2(mr.position.x + 600.0, mr.get_center().y)
+	_mouse(tl, q, MOUSE_BUTTON_MIDDLE, true)
+	_drag_to(tl, q + Vector2(-100, 0), mid)
+	_mouse(tl, q + Vector2(-100, 0), MOUSE_BUTTON_MIDDLE, false)
+	ok(is_equal_approx(w.view_start, after + 100.0 * per_px), "works over the timelines too (%.2f)" % w.view_start)
+	ok(tl.structure_bar().view_start == w.view_start, "the structure bar follows")
+	# Clamped at the ends.
+	_mouse(tl, q, MOUSE_BUTTON_MIDDLE, true)
+	_drag_to(tl, q + Vector2(5000, 0), mid)
+	ok(w.view_start == 0.0, "stops at the start")
+	_drag_to(tl, q + Vector2(-50000, 0), mid)
+	ok(is_equal_approx(w.view_start, 80.0), "stops at the end")
+	_mouse(tl, q, MOUSE_BUTTON_MIDDLE, false)
+	# Outside the area (the name plates' column, the overview): nothing.
+	var pr := tl.play_button().get_global_rect()
+	_mouse(tl, pr.get_center(), MOUSE_BUTTON_MIDDLE, true)
+	ok(not tl.is_panning(), "not from the buttons column")
+	_mouse(tl, pr.get_center(), MOUSE_BUTTON_MIDDLE, false)
+	var orr := tl.overview().get_global_rect()
+	_mouse(tl, orr.get_center(), MOUSE_BUTTON_MIDDLE, true)
+	ok(not tl.is_panning(), "not from the whole-track overview")
+	_mouse(tl, orr.get_center(), MOUSE_BUTTON_MIDDLE, false)
+	# Left button still scrubs, not pans.
+	_mouse(tl, p, MOUSE_BUTTON_LEFT, true)
+	ok(not tl.is_panning(), "the left button doesn't pan")
+	_mouse(tl, p, MOUSE_BUTTON_LEFT, false)
+	tl.queue_free()
+	await process_frame

@@ -125,7 +125,9 @@ technical reference.
   timelines are first saved and when another show is loaded.
 - `music_timeline.gd` — the `MusicTimeline` class: a track's timeline —
   the zoomable colour waveform along the bottom (mouse wheel zooms,
-  Shift+wheel scrolls) above a slim whole-track overview whose rectangle
+  Shift+wheel scrolls, and pressing and dragging the middle button
+  anywhere over the waveform or the timelines above it pans the view
+  with the pointer) above a slim whole-track overview whose rectangle
   marks the visible part: drag it, or click elsewhere to jump. Decoded on
   a worker thread by the native extension (`SongFeatures.waveform_file`,
   100 columns per second), including M4A through the OS's decoder.
