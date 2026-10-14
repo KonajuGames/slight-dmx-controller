@@ -506,6 +506,7 @@ func _on_add_fixture_pressed() -> void:
 
 	var fixture := {
 		"id": _next_fixture_id,
+		"uid": new_uid(),
 		"name": fixture_label,
 		"profile": profile,
 		"start": start,
@@ -527,11 +528,19 @@ func _on_add_fixture_pressed() -> void:
 	patch_changed.emit()
 
 
+## A fixture's permanent identity (saved in the show, unlike "id", which
+## is only for this session): 16 random hex digits. What a show's music
+## timelines are keyed by.
+static func new_uid() -> String:
+	return "%08x%08x" % [randi(), randi()]
+
+
 ## Patch a fixture programmatically (MVR import, scripting). `emit`
 ## defers the patch_changed signal so a bulk add fires it once.
 func add_patched(profile: FixtureProfile, p_start: int, p_mode: int, p_name: String, pos: Vector3, rot: Vector3, emit := true) -> void:
 	patched_fixtures.append({
 		"id": _next_fixture_id,
+		"uid": new_uid(),
 		"name": p_name if p_name != "" else profile.profile_name,
 		"profile": profile,
 		"start": p_start,
@@ -1148,6 +1157,7 @@ func patch_dict() -> Dictionary:
 	for fixture in patched_fixtures:
 		var profile: FixtureProfile = fixture["profile"]
 		fixtures.append({
+			"uid": String(fixture.get("uid", "")),
 			"name": fixture["name"],
 			"start": fixture["start"],
 			"mode": int(fixture.get("mode", 0)),
@@ -1203,6 +1213,8 @@ func apply_patch_dict(d: Dictionary) -> void:
 		var profile := FixtureProfile.from_dict(entry.get("profile", {}))
 		patched_fixtures.append({
 			"id": _next_fixture_id,
+			# Kept from the show file (older ones have none: a new one).
+			"uid": String(entry.get("uid", "")) if String(entry.get("uid", "")) != "" else new_uid(),
 			"name": entry.get("name", profile.profile_name),
 			"profile": profile,
 			"start": int(entry.get("start", 0)),

@@ -265,6 +265,7 @@ func _test_fixture_tracks() -> void:
 	tl.size = Vector2(1100, 700)
 	await process_frame
 	ok(tl.fixture_tracks().is_empty(), "nothing until refreshed / a track opens")
+	tl.open("user://_no_such_song.wav")             # dimmer nodes belong to the open song
 	tl.refresh_fixtures()
 	await process_frame
 	await process_frame

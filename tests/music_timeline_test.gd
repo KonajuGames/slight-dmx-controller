@@ -600,6 +600,7 @@ func _test_structure() -> void:
 
 	# Cached per track, edits included.
 	a.sections[0]["label"] = "Bridge"
+	tl.structure_bar().structure_edited.emit()      # as the bar does for any edit
 	tl.open(wav, song)
 	ok(tl.structure() == a and a.sections[0]["label"] == "Bridge", "reopening keeps the (edited) structure")
 	tl.queue_free()

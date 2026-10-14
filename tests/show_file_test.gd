@@ -30,6 +30,7 @@ func _run() -> void:
 	print("== Show files ==")
 	await _test_round_trip()
 	await _test_reopen_at_start()
+	await _test_timelines_with_show()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
 
@@ -172,3 +173,84 @@ func _test_reopen_at_start() -> void:
 	ok(main.remembered_show() == "", "nothing remembered: nothing to do")
 	root.get_node("Fx").effects.clear()
 	main.queue_free()
+
+
+func _rm_dir(d: String) -> void:
+	if DirAccess.dir_exists_absolute(d):
+		for f in DirAccess.get_files_at(d):
+			DirAccess.remove_absolute(d.path_join(f))
+		DirAccess.remove_absolute(d)
+
+
+func _test_timelines_with_show() -> void:
+	print("- music timelines saved with the show")
+	var a_show := "user://_tl_show_a.slight"
+	var b_show := "user://_tl_show_b.slight"
+	var song := "user://_tl_show_song.song"
+	var sf := FileAccess.open(song, FileAccess.WRITE)
+	var bytes := PackedByteArray()
+	bytes.resize(100000)
+	for i in range(0, bytes.size(), 13):
+		bytes[i] = i & 0xFF
+	sf.store_buffer(bytes)
+	sf.close()
+	var main: Control = load("res://main.tscn").instantiate()
+	main.last_show_store = STORE
+	root.add_child(main)
+	await process_frame
+	var panel = main._panels[0]
+	panel.apply_patch_dict({"fixtures": []})
+	panel.add_patched(_rgb(), 0, 0, "Par L", Vector3.ZERO, Vector3.ZERO)
+	panel.add_patched(_bar(), 10, 0, "Bar", Vector3.ZERO, Vector3.ZERO)
+	var uids := [String(panel.patched_fixtures[0]["uid"]), String(panel.patched_fixtures[1]["uid"])]
+	ok(uids[0].length() == 16 and uids[0] != uids[1], "each patched fixture gets a permanent uid")
+	var tl = main.music_panel.timeline()
+	tl.open(song)
+	await process_frame
+	ok(tl.fixture_tracks().size() == 4 and tl.fixture_tracks()[0].get_meta("key") == uids[0]
+		and tl.fixture_tracks()[2].get_meta("key") == uids[1] + "/h0", "the timeline's tracks are keyed by uid (heads: uid/h<n>)")
+	tl.fixture_tracks()[2].dimmer_nodes = PackedVector2Array([Vector2(4, 0.5)])
+	tl.fixture_tracks()[2].dimmer_edited.emit()
+
+	ok(main.save_show_to(a_show) == "", "save the show")
+	var doc = JSON.parse_string(FileAccess.get_file_as_string(a_show))
+	ok(doc["timelines"] == "_tl_show_a.timelines", "it names its timelines folder")
+	ok(doc["universes"][0]["fixtures"][1]["uid"] == uids[1], "and saves each fixture's uid")
+	var a_store := TimelineStore.new("user://_tl_show_a.timelines")
+	ok(a_store.load_song(song).get("tracks", {}).get(uids[1] + "/h0", {}).get("dimmer") == [[4.0, 0.5]],
+		"Save Show saves the open song's unsaved timelines into the folder")
+
+	# Save As: the folder's copied, and edits from then on go to the copy.
+	ok(main.save_show_to(b_show) == "", "save as another show")
+	ok(tl.timeline_store.dir == "user://_tl_show_b.timelines"
+		and TimelineStore.new("user://_tl_show_b.timelines").load_song(song).get("tracks", {}).has(uids[1] + "/h0"),
+		"its timelines folder is a copy")
+	tl.master_track().dimmer_nodes = PackedVector2Array([Vector2(1, 1)])
+	tl.master_track().dimmer_edited.emit()
+	main.save_show_to(b_show)
+	ok(TimelineStore.new("user://_tl_show_b.timelines").load_song(song)["tracks"].has("master")
+		and not a_store.load_song(song)["tracks"].has("master"), "later edits go to the new show only")
+
+	# Loading a show: same uids, its own timelines.
+	ok(main.load_show_from(a_show) == "", "load the first show")
+	await process_frame
+	ok(String(main._panels[0].patched_fixtures[1]["uid"]) == uids[1], "fixtures keep their uids")
+	ok(tl.timeline_store.dir == "user://_tl_show_a.timelines" and tl.master_track().dimmer_nodes.is_empty()
+		and tl.fixture_tracks()[2].dimmer_nodes == PackedVector2Array([Vector2(4, 0.5)]),
+		"the open song shows that show's timelines")
+	# An older show without uids gets new ones.
+	doc["universes"][0]["fixtures"][0].erase("uid")
+	var f := FileAccess.open(a_show, FileAccess.WRITE)
+	f.store_string(JSON.stringify(doc))
+	f.close()
+	main.load_show_from(a_show)
+	ok(String(main._panels[0].patched_fixtures[0]["uid"]).length() == 16
+		and String(main._panels[0].patched_fixtures[0]["uid"]) != uids[0], "an older show's fixtures get uids")
+
+	main.queue_free()
+	await process_frame
+	for p in [a_show, b_show, song, STORE]:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
+	_rm_dir("user://_tl_show_a.timelines")
+	_rm_dir("user://_tl_show_b.timelines")
+	root.get_node("Fx").effects.clear()

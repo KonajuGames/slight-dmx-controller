@@ -95,6 +95,7 @@ func _ready() -> void:
 	main_vbox.add_child(music_panel)
 	music_panel.timeline().generate_show_requested.connect(_generate_show_from_library)
 	music_panel.timeline().fixtures_provider = _timeline_fixtures
+	music_panel.timeline().set_timeline_store(TimelineStore.new(TimelineStore.folder_for_show(show_path)))
 
 	var playback_tabs := TabContainer.new()
 	playback_tabs.custom_minimum_size = Vector2(336, 0)
@@ -644,12 +645,13 @@ func _on_patch_changed() -> void:
 
 
 ## Every patched fixture, universe by universe, for the Music Library
-## timeline's per-fixture tracks.
+## timeline's per-fixture tracks — keyed by its uid, which the show's saved
+## timelines use.
 func _timeline_fixtures() -> Array:
 	var out: Array = []
 	for ui in range(_panels.size()):
 		for fx in _panels[ui].patched_fixtures:
-			out.append({"key": "%d/%d" % [ui, int(fx["id"])], "name": String(fx["name"]),
+			out.append({"key": String(fx["uid"]), "name": String(fx["name"]),
 				"profile": fx["profile"], "mode": int(fx.get("mode", 0))})
 	return out
 
@@ -1610,7 +1612,9 @@ func _refresh_all_profile_options(select_new: bool) -> void:
 ## the fixtures' live levels and virtual dimmers, the cue list, chases,
 ## effects, fixture groups, sound reactions, triggers, Auto Show, run mode
 ## and the visualizer's stage. JSON; saved to any file (SHOW_EXT), or the
-## default user:// one.
+## default user:// one. The music tracks' lighting timelines go in a
+## folder beside it (TimelineStore: "<show>.timelines/"), named in the
+## show's "timelines".
 const SHOW_EXT := "slight"
 const SHOW_FORMAT := "sLight show"
 const SHOW_VERSION := 1
@@ -1668,14 +1672,27 @@ func show_dict() -> Dictionary:
 		"viz_window": _viz_window_dict(),
 		"sacn_cid": Marshalls.raw_to_base64(ArtNet.sacn_cid),
 	}
+	var store := music_panel.timeline().timeline_store if music_panel else null
+	if store != null:
+		data["timelines"] = store.dir.get_file()
 	for p in _panels:
 		data["universes"].append(p.patch_dict())
 		data["live"].append(p.live_dict())
 	return data
 
 
-## Write the show to `path`. Returns "" or what went wrong.
+## Write the show to `path`. Returns "" or what went wrong. The music
+## timelines follow: to a new file, the timelines folder is copied beside
+## it; either way the open song's unsaved timelines are saved too.
 func save_show_to(path: String) -> String:
+	if music_panel:
+		var tl := music_panel.timeline()
+		var dir := TimelineStore.folder_for_show(path)
+		if tl.timeline_store == null:
+			tl.set_timeline_store(TimelineStore.new(dir), false)
+		elif tl.timeline_store.dir != dir:
+			tl.set_timeline_store(tl.timeline_store.copy_to(dir), false)
+		tl.flush()
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:
 		return "Couldn't write %s (%s)." % [path.get_file(), error_string(FileAccess.get_open_error())]
@@ -1700,7 +1717,15 @@ func load_show_from(path: String) -> String:
 		return "%s isn't a show file." % path.get_file()
 	if parsed is Dictionary and int(parsed.get("version", 1)) > SHOW_VERSION:
 		return "%s was saved by a newer sLight." % path.get_file()
+	if music_panel:
+		music_panel.timeline().flush()        # the outgoing show's open song
 	apply_show_dict(parsed)
+	if music_panel:
+		var folder := TimelineStore.folder_for_show(path)
+		var named = parsed.get("timelines") if parsed is Dictionary else null
+		if named is String and named != "":
+			folder = path.get_base_dir().path_join(named)
+		music_panel.timeline().set_timeline_store(TimelineStore.new(folder))
 	show_path = path
 	_remember_show(path)
 	return ""

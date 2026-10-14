@@ -164,9 +164,22 @@ technical reference.
   Shift to lock it to the axis the pointer has moved furthest on; drag the
   line itself to move that stretch of it (the nodes either side) up or
   down; Ctrl + left-click on the line to add a node there; Ctrl +
-  right-click a node to remove it. With no nodes the dimmer is a flat 100 %. So far the
-  rows other than the dimmer are empty, the nodes aren't saved, and
-  nothing drives the fixtures yet.
+  right-click a node to remove it. With no nodes the dimmer is a flat
+  100 %. A song's timelines (every track's nodes, keyed by the fixture's
+  uid, and the structure once edited) are saved with the show — see
+  `timeline_store.gd`. So far the rows other than the dimmer are empty,
+  and nothing drives the fixtures yet.
+- `timeline_store.gd` — the `TimelineStore` class: a show's music
+  timelines, in a folder beside the show file (`MyShow.slight` →
+  `MyShow.timelines/`): one JSON file per song, named by the song's
+  fingerprint (its size and a hash of its first and last 64 KB, so a
+  moved or renamed song keeps its timelines), plus an `index.json` of the
+  songs. Each holds the song's tracks (`master`, `<fixture uid>`,
+  `<fixture uid>/h<n>`: their dimmer nodes) and its edited structure.
+  The timeline saves the open song's into it when the song is left —
+  another song opened, the timeline hidden, the app closed — and on Save
+  Show. A removed fixture's timeline is kept, and shows again if the
+  fixture comes back.
 - `universe_panel.gd` — the `UniversePanel` class: one universe's tab —
   its connection settings, blackout/full, and fixture patch with
   purpose-built per-fixture controls.
@@ -301,7 +314,12 @@ Global controls live in the top bar:
   portable — address, mode, and position / rotation in the visualizer),
   the fixtures' live levels and virtual dimmer settings, the cue list,
   chases, effects, fixture groups, sound reactions, triggers, Auto Show,
-  run mode and the visualizer's stage. **Save Show** writes to the
+  run mode and the visualizer's stage. Each fixture has a permanent uid,
+  saved with it. The music tracks' lighting timelines go in a folder
+  beside the show (`<show>.timelines/`, named in the show file), keyed by
+  those uids: Save Show also saves the open song's unsaved timelines,
+  Save Show As… copies the folder alongside the new file, and Load Show…
+  switches to that show's folder. **Save Show** writes to the
   current show file (the last saved or loaded; `user://dmx_show.json`
   until you pick one), **Save Show As…** picks a new one and **Load
   Show…** opens one. The current show file is remembered
@@ -309,7 +327,8 @@ Global controls live in the top bar:
   it's been moved or won't load, the app starts empty and the status
   line says why. Files are tagged with a format version: one from a
   newer sLight, or a file that isn't a show, is refused and the current
-  show left alone. Older show files (without live levels) still load, as
+  show left alone. Older show files (without live levels or fixture
+  uids — new ones are made) still load, as
   does a legacy single-universe patch file (a bare fixtures array), as
   universe 1.
 - **Save/Load Preset** — one `user://dmx_preset.json` with every

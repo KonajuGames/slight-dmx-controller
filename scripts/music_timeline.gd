@@ -30,6 +30,10 @@ extends VBoxContainer
 ## for each of its heads when it has more than one.
 ## Then the master lighting timeline (TimelineTrack: position, strobe, cue
 ## and colour rows and a dimmer node line), which affects every fixture.
+## A song's timelines (every track's dimmer nodes, and the structure once
+## edited) are kept in the show's timeline_store, keyed by fixture uid, and
+## saved automatically when the song is left (another song opened, the
+## timeline hidden, the app closed) — or by flush().
 ## Above the bar ruler, the song's structure (Intro / Verse / Chorus / ...,
 ## from SongAnalyzer, run in the background when a track opens; with
 ## VirtualDJ's beat grid swapped in and the section borders snapped to its
@@ -68,7 +72,11 @@ var _fixture_scroll: ScrollContainer
 var _fixture_list: VBoxContainer
 var _fixture_empty: Label
 var _fixture_tracks: Array[TimelineTrack] = []
-var _fixture_nodes := {}        # track key -> its dimmer nodes, kept across refreshes
+## The current show's timelines folder (set by the shell; null = none,
+## timelines live only in memory).
+var timeline_store: TimelineStore
+var _songs := {}                # song path -> its timelines data (loaded / edited this session)
+var _dirty := false             # the open song's timelines changed since saved
 var _wave: WaveHeatmap
 var _ruler: BarRuler
 var _structure: StructureBar
@@ -157,6 +165,8 @@ func _ready() -> void:
 	_master.target = TimelineTrack.Target.MASTER
 	_master.title = "Master"
 	_master.wave = _wave
+	_master.set_meta("key", "master")
+	_master.dimmer_edited.connect(_mark_dirty)
 	wave_col.add_child(_master)
 	_master.item_rect_changed.connect(_place_buttons)
 	# The song's structure, above the bar ruler and as tall.
@@ -166,6 +176,7 @@ func _ready() -> void:
 	_structure.editable = false
 	_structure.seek_requested.connect(seek)
 	_structure.tooltip_text = "Song structure: unlock to drag a border or right-click a section"
+	_structure.structure_edited.connect(_on_structure_edited)
 	wave_col.add_child(_structure)
 	# The lock / generate buttons stay level with it.
 	_structure.item_rect_changed.connect(_place_buttons)
@@ -242,11 +253,18 @@ func _ready() -> void:
 
 	visibility_changed.connect(func():
 		if not is_visible_in_tree():
-			pause())
+			pause()
+			flush())
 	_update_transport()
 
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		flush()                 # the app's closing: save the open song's timelines
+
+
 func _exit_tree() -> void:
+	flush()
 	_stop_loading()
 	_stop_stream_load()
 
@@ -257,10 +275,11 @@ func open(path: String, song: VirtualDjDatabase.Song = null) -> void:
 	_stop_loading()
 	if path != _path:
 		_stop_playback()
+		flush()                 # leaving the last song: save its timelines
 	_path = path
 	_song = song
 	_set_analysis(null)
-	refresh_fixtures()
+	_show_song_data()
 
 	if _cache.has(path):
 		_touch_cache(path)
@@ -679,10 +698,14 @@ static func fixture_track_specs(key: String, fixture_name: String, profile: Fixt
 ## Rebuild the fixtures' timelines from fixtures_provider (call when the
 ## patch changes). A track that's still there keeps its dimmer nodes.
 func refresh_fixtures() -> void:
+	_collect()
+	_rebuild_fixture_tracks()
+
+
+func _rebuild_fixture_tracks() -> void:
 	if _fixture_list == null:
 		return
-	for tr in _fixture_tracks:
-		_fixture_nodes[tr.get_meta("key")] = tr.dimmer_nodes
+	var saved: Dictionary = song_data().get("tracks", {})
 	for c in _fixture_list.get_children():
 		if c != _fixture_empty:
 			_fixture_list.remove_child(c)
@@ -701,7 +724,8 @@ func refresh_fixtures() -> void:
 			tr.wave = _wave
 			tr.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			tr.set_meta("key", spec["key"])
-			tr.dimmer_nodes = _fixture_nodes.get(spec["key"], PackedVector2Array())
+			tr.dimmer_nodes = _nodes_from(saved.get(spec["key"], {}).get("dimmer", []))
+			tr.dimmer_edited.connect(_mark_dirty)
 			row.add_child(tr)
 			var plate := TimelineTrack.NamePlate.new()
 			plate.track = tr
@@ -710,6 +734,120 @@ func refresh_fixtures() -> void:
 			_fixture_list.add_child(row)
 			_fixture_tracks.append(tr)
 	_fixture_empty.visible = _fixture_tracks.is_empty()
+
+
+# ----------------------------------------------------- SAVED TIMELINES --
+
+## The open song's timelines: {tracks: {key: {dimmer: [[t, level], ...]}},
+## structure?: {sections}} — from the store the first time, then kept.
+func song_data() -> Dictionary:
+	if _path == "":
+		return {}
+	if not _songs.has(_path):
+		var d := timeline_store.load_song(_path) if timeline_store != null else {}
+		if not d.get("tracks") is Dictionary:
+			d["tracks"] = {}
+		_songs[_path] = d
+	return _songs[_path]
+
+
+## Whether the open song's timelines have changed since they were saved.
+func has_unsaved_timelines() -> bool:
+	return _dirty
+
+
+## Save the open song's timelines to the store, if they've changed.
+## Returns "" or what went wrong.
+func flush() -> String:
+	if not _dirty or _path == "" or timeline_store == null:
+		return ""
+	_collect()
+	var err := timeline_store.save_song(_path, song_data())
+	if err == "":
+		_dirty = false
+	else:
+		push_warning("Couldn't save the timelines for %s: %s" % [_path.get_file(), err])
+	return err
+
+
+## Switch to another show's timelines folder. `reload`: forget what's in
+## memory and show the open song's timelines from the new folder (loading
+## another show — flush() the old one first); otherwise keep it, edits and
+## all (Save Show As… onto a copy of the folder).
+func set_timeline_store(store: TimelineStore, reload := true) -> void:
+	timeline_store = store
+	if reload:
+		_songs.clear()
+		_dirty = false
+		_show_song_data()
+
+
+## The tracks' current nodes into the open song's data.
+func _collect() -> void:
+	if _path == "" or _master == null:
+		return
+	var tracks: Dictionary = song_data()["tracks"]
+	for tr in [_master] + Array(_fixture_tracks):
+		var key := String(tr.get_meta("key"))
+		var entry: Dictionary = tracks.get(key, {})
+		if tr.dimmer_nodes.is_empty():
+			entry.erase("dimmer")
+		else:
+			entry["dimmer"] = _nodes_to(tr.dimmer_nodes)
+		if entry.is_empty():
+			tracks.erase(key)
+		else:
+			tracks[key] = entry
+
+
+## Show the open song's data on the tracks (and its structure, if it's
+## been analysed already).
+func _show_song_data() -> void:
+	var tracks: Dictionary = song_data().get("tracks", {})
+	if _master != null:
+		_master.dimmer_nodes = _nodes_from(tracks.get("master", {}).get("dimmer", []))
+	_rebuild_fixture_tracks()
+	if _path != "" and _struct_cache.has(_path):
+		_apply_saved_structure(_path, _struct_cache[_path])
+		_set_structure(_struct_cache[_path])
+
+
+func _mark_dirty() -> void:
+	_dirty = true
+
+
+func _on_structure_edited() -> void:
+	var a: SongAnalysis = _struct_cache.get(_path)
+	if a == null:
+		return
+	song_data()["structure"] = {"sections": a.sections.duplicate(true)}
+	_dirty = true
+
+
+## Put the song's saved (edited) sections on its analysis — or, with none
+## saved, the analyser's own (kept aside the first time).
+func _apply_saved_structure(path: String, a: SongAnalysis) -> void:
+	if not a.has_meta("analysed_sections"):
+		a.set_meta("analysed_sections", a.sections.duplicate(true))
+	var d: Dictionary = _songs.get(path, {})
+	var saved = d["structure"].get("sections") if d.get("structure") is Dictionary else null
+	a.sections = (saved if saved is Array else a.get_meta("analysed_sections")).duplicate(true)
+
+
+static func _nodes_from(arr) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	if arr is Array:
+		for p in arr:
+			if p is Array and p.size() >= 2:
+				out.append(Vector2(float(p[0]), float(p[1])))
+	return out
+
+
+static func _nodes_to(nodes: PackedVector2Array) -> Array:
+	var out := []
+	for p in nodes:
+		out.append([snappedf(p.x, 0.001), snappedf(p.y, 0.0001)])
+	return out
 
 
 ## The name plates beside the fixtures' timelines: the button column's
@@ -810,6 +948,7 @@ func _load_structure(path: String) -> void:
 func _structure_ready(path: String, a: SongAnalysis, song: VirtualDjDatabase.Song) -> void:
 	if song != null:
 		apply_vdj_grid(a, song)
+	_apply_saved_structure(path, a)
 	_struct_cache[path] = a
 	if path == _path:
 		_set_structure(a)
