@@ -41,6 +41,9 @@ extends VBoxContainer
 ## Shift extends the last area to take in the new one. Delete clears the
 ## selected areas; Ctrl+C copies them, Ctrl+X cuts them and Ctrl+V pastes
 ## (copy_selection(), cut_selection(), paste()).
+## Every timeline edit (dimmer nodes / line, Delete, cut, paste, the
+## structure) can be undone with Ctrl+Z and redone with Ctrl+Y or
+## Ctrl+Shift+Z (undo(), redo()) — per song, while the show's open.
 ## Above the bar ruler, the song's structure (Intro / Verse / Chorus / ...,
 ## from SongAnalyzer, run in the background when a track opens; with
 ## VirtualDJ's beat grid swapped in and the section borders snapped to its
@@ -95,6 +98,11 @@ var _sel_drag := {}
 ## What Ctrl+C copied (kept across songs): {length, tracks: [{key, rows:
 ## {Row: [{t0, t1, nodes?}]}}]} — times relative to the copy's start.
 var _clip := {}
+## Undo / redo, per song path: {undo: [states], redo: [states], state:
+## the current state} — a state being the song's timelines (tracks and any
+## edited structure) as _snapshot() takes them.
+const UNDO_LIMIT := 100
+var _history := {}
 var _dirty := false             # the open song's timelines changed since saved
 var _wave: WaveHeatmap
 var _ruler: BarRuler
@@ -875,6 +883,13 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_DELETE and not _selection.is_empty():
 		delete_selection()
 		get_viewport().set_input_as_handled()
+	elif event is InputEventKey and event.pressed and event.is_command_or_control_pressed() \
+			and (event.keycode == KEY_Y or event.keycode == KEY_Z):
+		if event.keycode == KEY_Y or event.shift_pressed:
+			redo()
+		else:
+			undo()
+		get_viewport().set_input_as_handled()
 	elif event is InputEventKey and event.pressed and not event.echo and event.is_command_or_control_pressed() \
 			and event.keycode in [KEY_C, KEY_X, KEY_V]:
 		match event.keycode:
@@ -1134,6 +1149,7 @@ func set_timeline_store(store: TimelineStore, reload := true) -> void:
 	timeline_store_changed.emit()
 	if reload:
 		_songs.clear()
+		_history.clear()
 		_dirty = false
 		_show_song_data()
 
@@ -1166,10 +1182,15 @@ func _show_song_data() -> void:
 	if _path != "" and _struct_cache.has(_path):
 		_apply_saved_structure(_path, _struct_cache[_path])
 		_set_structure(_struct_cache[_path])
+	if _path != "" and _hist()["state"] == null:
+		_hist()["state"] = _snapshot()       # where undo stops
 
 
+## An edit's been made: the song's timelines are unsaved, and the state
+## before it goes on the undo list.
 func _mark_dirty() -> void:
 	_dirty = true
+	_record_edit()
 
 
 func _on_structure_edited() -> void:
@@ -1177,6 +1198,88 @@ func _on_structure_edited() -> void:
 	if a == null:
 		return
 	song_data()["structure"] = {"sections": a.sections.duplicate(true)}
+	_mark_dirty()
+
+
+# ------------------------------------------------------------ UNDO / REDO --
+
+## The open song's timelines as they stand: {tracks, structure?}.
+func _snapshot() -> Dictionary:
+	_collect()
+	var d := song_data()
+	var snap := {"tracks": (d["tracks"] as Dictionary).duplicate(true)}
+	if d.get("structure") is Dictionary:
+		snap["structure"] = (d["structure"] as Dictionary).duplicate(true)
+	return snap
+
+
+func _hist() -> Dictionary:
+	if not _history.has(_path):
+		_history[_path] = {"undo": [], "redo": [], "state": null}
+	return _history[_path]
+
+
+func _record_edit() -> void:
+	if _path == "":
+		return
+	var h := _hist()
+	var now := _snapshot()
+	if h["state"] != null and now != h["state"]:
+		h["undo"].push_back(h["state"])
+		if h["undo"].size() > UNDO_LIMIT:
+			h["undo"].pop_front()
+		h["redo"].clear()
+	h["state"] = now
+
+
+func can_undo() -> bool:
+	return _path != "" and not _hist()["undo"].is_empty()
+
+
+func can_redo() -> bool:
+	return _path != "" and not _hist()["redo"].is_empty()
+
+
+## Undo the open song's last timeline edit (Ctrl+Z). Returns whether there
+## was one.
+func undo() -> bool:
+	if not can_undo():
+		return false
+	var h := _hist()
+	h["redo"].push_back(h["state"])
+	h["state"] = h["undo"].pop_back()
+	_restore(h["state"])
+	return true
+
+
+## Redo the last undone edit (Ctrl+Y / Ctrl+Shift+Z). Returns whether there
+## was one.
+func redo() -> bool:
+	if not can_redo():
+		return false
+	var h := _hist()
+	h["undo"].push_back(h["state"])
+	h["state"] = h["redo"].pop_back()
+	_restore(h["state"])
+	return true
+
+
+## Put the song's timelines back to a _snapshot() (unsaved until the song's
+## left, like an edit).
+func _restore(snap: Dictionary) -> void:
+	var d := song_data()
+	d["tracks"] = (snap["tracks"] as Dictionary).duplicate(true)
+	if snap.has("structure"):
+		d["structure"] = (snap["structure"] as Dictionary).duplicate(true)
+	else:
+		d.erase("structure")
+	# Onto the tracks as they are (not rebuilt: the panel keeps its scroll).
+	var tracks: Dictionary = d["tracks"]
+	for tr in [_master] + Array(_fixture_tracks):
+		tr.dimmer_nodes = _nodes_from(tracks.get(String(tr.get_meta("key")), {}).get("dimmer", []))
+	if _struct_cache.has(_path):
+		_apply_saved_structure(_path, _struct_cache[_path])
+		_set_structure(_struct_cache[_path])
 	_dirty = true
 
 

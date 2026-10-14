@@ -38,6 +38,7 @@ func _run() -> void:
 	await _test_delete_selection()
 	_test_dimmer_segments()
 	await _test_copy_paste()
+	await _test_undo_redo()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
 
@@ -673,6 +674,102 @@ func _test_copy_paste() -> void:
 	sel.clear()
 	_key(KEY_V, false)
 	ok(sel.is_empty(), "plain V doesn't paste")
+	tl._dirty = false
+	tl.queue_free()
+	await process_frame
+
+
+func _key_shift(keycode: Key) -> void:
+	var ev := InputEventKey.new()
+	ev.keycode = keycode
+	ev.ctrl_pressed = true
+	ev.shift_pressed = true
+	ev.pressed = true
+	root.push_input(ev)
+
+
+func _test_undo_redo() -> void:
+	print("- Ctrl+Z / Ctrl+Y")
+	var R := TimelineTrack.Row
+	var fixtures := [{"key": "p1", "name": "Par 1", "profile": _par(), "mode": 0}]
+	var tl := MusicTimeline.new()
+	tl.fixtures_provider = func(): return fixtures
+	root.add_child(tl)
+	tl.position = Vector2.ZERO
+	tl.size = Vector2(1100, 700)
+	var a := SongAnalysis.new()
+	a.duration = 60.0
+	for arr in [a.wave_lo, a.wave_mid, a.wave_hi, a.wave_peak]:
+		arr.resize(6000)
+	tl.open("user://_undo_song.wav")
+	tl._set_analysis(a)
+	await process_frame
+	var m := tl.master_track()
+	var p1 := tl.fixture_tracks()[0]
+	ok(not tl.can_undo() and not tl.can_redo(), "a freshly opened song: nothing to undo")
+	# Edit 1: a node added on the master (as the mouse does: change, then report).
+	m.dimmer_nodes = PackedVector2Array([Vector2(10, 0.5)])
+	m.dimmer_edited.emit()
+	# Edit 2: the fixture's line.
+	p1.dimmer_nodes = PackedVector2Array([Vector2(5, 0.2), Vector2(15, 0.8)])
+	p1.dimmer_edited.emit()
+	# Edit 3: Delete over the master's 8–12 s.
+	tl.selection().set_blocks([TimelineSelection.block(PackedStringArray(["master|%d" % R.DIMMER]), 8.0, 12.0)])
+	tl.delete_selection()
+	var after_delete := m.dimmer_nodes
+	ok(tl.can_undo() and not tl.can_redo(), "edits can be undone")
+	_key(KEY_Z)
+	ok(m.dimmer_nodes == PackedVector2Array([Vector2(10, 0.5)]), "Ctrl+Z undoes the Delete")
+	_key(KEY_Z)
+	ok(p1.dimmer_nodes.is_empty() and m.dimmer_nodes.size() == 1, "again: the fixture's edit")
+	_key(KEY_Z)
+	ok(m.dimmer_nodes.is_empty() and not tl.can_undo(), "again: back to how the song opened")
+	ok(not tl.undo(), "nothing more to undo")
+	_key(KEY_Y)
+	ok(m.dimmer_nodes == PackedVector2Array([Vector2(10, 0.5)]) and p1.dimmer_nodes.is_empty(), "Ctrl+Y redoes")
+	_key_shift(KEY_Z)
+	ok(p1.dimmer_nodes == PackedVector2Array([Vector2(5, 0.2), Vector2(15, 0.8)]), "so does Ctrl+Shift+Z")
+	_key(KEY_Y)
+	ok(m.dimmer_nodes == after_delete and not tl.can_redo(), "all the way back")
+	ok(tl.has_unsaved_timelines(), "undo / redo leave the song to be saved")
+	# A new edit after an undo drops the redo.
+	tl.undo()
+	ok(tl.can_redo(), "(undone once)")
+	m.dimmer_nodes = PackedVector2Array([Vector2(30, 1.0)])
+	m.dimmer_edited.emit()
+	ok(not tl.can_redo(), "a new edit clears what could be redone")
+	tl.undo()
+	ok(m.dimmer_nodes == PackedVector2Array([Vector2(10, 0.5)]), "and undoes back to before it")
+	# Paste is undoable too.
+	tl.selection().set_blocks([TimelineSelection.block(PackedStringArray(["master|%d" % R.DIMMER]), 0.0, 20.0)])
+	tl.copy_selection()
+	tl.selection().set_blocks([TimelineSelection.block(PackedStringArray(["p1|%d" % R.DIMMER]), 30.0, 31.0)])
+	var p1_before := p1.dimmer_nodes
+	tl.paste()
+	ok(p1.dimmer_nodes != p1_before, "(pasted)")
+	tl.undo()
+	ok(p1.dimmer_nodes == p1_before, "a paste undoes")
+	# The structure.
+	var sa := SongAnalysis.new()
+	sa.duration = 60.0
+	sa.sections = [{"start": 0.0, "end": 30.0, "label": "Verse", "energy": 0.4, "cluster": 0}, {"start": 30.0, "end": 60.0, "label": "Chorus", "energy": 0.9, "cluster": 1}]
+	tl._struct_cache[tl.current_path()] = sa
+	tl._apply_saved_structure(tl.current_path(), sa)
+	sa.sections[0]["label"] = "Intro"
+	tl.structure_bar().structure_edited.emit()
+	ok(tl.can_undo(), "a structure edit can be undone")
+	tl.undo()
+	ok(sa.sections[0]["label"] == "Verse", "undo puts the structure back")
+	tl.redo()
+	ok(sa.sections[0]["label"] == "Intro", "redo re-applies it")
+	# Per song: another song has its own history; coming back keeps this one's.
+	tl.open("user://_undo_song_2.wav")
+	ok(not tl.can_undo(), "another song: its own (empty) history")
+	tl.open("user://_undo_song.wav")
+	ok(tl.can_undo(), "back again: this song's history is still there")
+	# Another show's folder: history gone.
+	tl.set_timeline_store(TimelineStore.new("user://_undo_other.timelines"))
+	ok(not tl.can_undo(), "another show: history cleared")
 	tl._dirty = false
 	tl.queue_free()
 	await process_frame

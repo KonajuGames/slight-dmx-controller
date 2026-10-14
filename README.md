@@ -200,7 +200,12 @@ technical reference.
   back into the tracks they came from. Each row goes into the same kind
   of row; a dimmer stretch replaces the line there, the level outside
   kept (cut off at the song's end). The pasted areas become the
-  selection. So far the rows other than the dimmer are empty (nothing to
+  selection.
+  **Ctrl+Z** undoes timeline edits — dimmer nodes and line, Delete, cut,
+  paste, the song structure — and **Ctrl+Y** (or Ctrl+Shift+Z) redoes
+  them, up to 100 steps. Each song keeps its own history while the show
+  is open (switching songs and back keeps it; loading another show
+  clears it); a new edit after undoing drops what could be redone. So far the rows other than the dimmer are empty (nothing to
   clear, copy or paste there yet), and nothing drives the fixtures.
 - `timeline_store.gd` — the `TimelineStore` class: a show's music
   timelines, in a folder beside the show file (`MyShow.slight` →
