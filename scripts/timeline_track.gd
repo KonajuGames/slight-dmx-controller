@@ -244,26 +244,67 @@ func _dimmer_after(t: float) -> float:
 ## where the span reaches the song's start / end, or where the level
 ## outside is already 0. Returns whether anything changed.
 func clear_dimmer(t0: float, t1: float) -> bool:
-	t0 = _clamp_time(t0)
-	t1 = _clamp_time(t1)
-	if t1 <= t0:
+	return replace_dimmer(t0, t1, PackedVector2Array([Vector2(0, 0), Vector2(t1 - t0, 0)]))
+
+
+## The dimmer line from `t0` to `t1` (for copying), as nodes relative to
+## t0: the level just after t0, every node strictly inside, and the level
+## just before t1 — so it pastes back exactly.
+func dimmer_segment(t0: float, t1: float) -> PackedVector2Array:
+	var out := PackedVector2Array([Vector2(0.0, _dimmer_after(t0))])
+	for p in dimmer_nodes:
+		if p.x > t0 and p.x < t1:
+			out.append(Vector2(p.x - t0, p.y))
+	out.append(Vector2(t1 - t0, dimmer_at(t1)))
+	return out
+
+
+## Replace the dimmer line from `t0` to `t1` with `segment` (nodes
+## relative to t0, from 0 to t1 - t0 — as dimmer_segment() gives): the
+## nodes in that span go, the segment's go in, and a node at each edge
+## keeps the level just outside as it was (a step there, if it differs
+## from the segment's own edge level). Cut off at the song's end. Returns
+## whether anything changed.
+func replace_dimmer(t0: float, t1: float, segment: PackedVector2Array) -> bool:
+	var end := wave.duration() if wave != null and wave.analysis != null else INF
+	var shift := t0
+	t0 = maxf(t0, 0.0)
+	t1 = minf(t1, end)
+	if t1 <= t0 or segment.is_empty():
+		return false
+	# The segment on the timeline, cut to t0..t1 (interpolated at a cut).
+	var seg := PackedVector2Array()
+	for k in range(segment.size()):
+		var p := Vector2(segment[k].x + shift, segment[k].y)
+		if p.x < t0:
+			if k + 1 < segment.size():          # crossing into the window
+				var q := Vector2(segment[k + 1].x + shift, segment[k + 1].y)
+				if q.x > t0:
+					seg.append(Vector2(t0, lerpf(p.y, q.y, (t0 - p.x) / (q.x - p.x))))
+			continue
+		if p.x > t1:
+			if k > 0:                           # crossing out of it
+				var o := Vector2(segment[k - 1].x + shift, segment[k - 1].y)
+				if o.x < t1:
+					seg.append(Vector2(t1, lerpf(o.y, p.y, (t1 - o.x) / (p.x - o.x))))
+			break
+		seg.append(p)
+	if seg.is_empty():
 		return false
 	var before := dimmer_at(t0)         # just before t0 (the left of any step there)
 	var after := _dimmer_after(t1)      # just after t1 (the right of any step)
-	var end := wave.duration() if wave != null and wave.analysis != null else INF
 	var nodes := PackedVector2Array()
 	var i := 0
 	while i < dimmer_nodes.size() and dimmer_nodes[i].x < t0:
 		nodes.append(dimmer_nodes[i])
 		i += 1
-	if t0 > 0.0 and before > 0.0:
+	if t0 > 0.0 and not is_equal_approx(before, seg[0].y):
 		nodes.append(Vector2(t0, before))
-	nodes.append(Vector2(t0, 0.0))
-	nodes.append(Vector2(t1, 0.0))
-	if t1 < end and after > 0.0:
+	nodes.append_array(seg)
+	if t1 < end and not is_equal_approx(after, seg[-1].y):
 		nodes.append(Vector2(t1, after))
 	while i < dimmer_nodes.size() and dimmer_nodes[i].x <= t1:
-		i += 1                          # inside the span: dropped
+		i += 1                          # inside the span: replaced
 	while i < dimmer_nodes.size():
 		nodes.append(dimmer_nodes[i])
 		i += 1

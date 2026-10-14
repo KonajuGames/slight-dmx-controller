@@ -36,6 +36,8 @@ func _run() -> void:
 	await _test_area_selection()
 	_test_clear_dimmer()
 	await _test_delete_selection()
+	_test_dimmer_segments()
+	await _test_copy_paste()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
 
@@ -548,5 +550,115 @@ func _test_delete_selection() -> void:
 	ev.pressed = true
 	root.push_input(ev)
 	ok(m.dimmer_nodes == mn, "nothing selected: Delete does nothing")
+	tl.queue_free()
+	await process_frame
+
+
+func _test_dimmer_segments() -> void:
+	print("- copying / replacing a stretch of the dimmer line")
+	var tr := TimelineTrack.new()
+	tr.dimmer_nodes = PackedVector2Array([Vector2(0, 0.2), Vector2(4, 1.0), Vector2(6, 0.6), Vector2(10, 0.2)])
+	var seg := tr.dimmer_segment(2.0, 8.0)
+	ok(seg == PackedVector2Array([Vector2(0, 0.6), Vector2(2, 1.0), Vector2(4, 0.6), Vector2(6, 0.4)]),
+		"a segment: the edge levels and the nodes inside, relative to its start (%s)" % str(seg))
+	tr.dimmer_nodes = PackedVector2Array([Vector2(0, 0.5), Vector2(20, 0.5)])
+	ok(tr.replace_dimmer(10.0, 16.0, seg), "pasting it reports a change")
+	for t in [10.5, 12.0, 13.0, 15.9]:
+		ok(is_equal_approx(tr.dimmer_at(t), [0.6, 1.0, 0.8, 0.41][[10.5, 12.0, 13.0, 15.9].find(t)] if t != 10.5 else 0.7),
+			"pasted shape at %.1f s (%.3f)" % [t, tr.dimmer_at(t)])
+	ok(tr.dimmer_at(9.0) == 0.5 and tr._dimmer_after(16.0) == 0.5 and tr.dimmer_at(18.0) == 0.5, "the line outside unchanged")
+	ok(not tr.replace_dimmer(10.0, 16.0, seg), "pasting the same again changes nothing")
+	# Cut off at the song's end.
+	var tl := MusicTimeline.new()
+	root.add_child(tl)
+	var a := SongAnalysis.new()
+	a.duration = 12.0
+	for arr in [a.wave_lo, a.wave_mid, a.wave_hi, a.wave_peak]:
+		arr.resize(1200)
+	tl._set_analysis(a)
+	var m := tl.master_track()
+	m.dimmer_nodes = PackedVector2Array()
+	m.replace_dimmer(10.0, 16.0, seg)
+	ok(m.dimmer_nodes[-1].x == 12.0 and is_equal_approx(m.dimmer_nodes[-1].y, 1.0) and m.dimmer_nodes.size() == 3,
+		"past the song's end: cut there (%s)" % str(m.dimmer_nodes))
+	tl.queue_free()
+	tr.free()
+
+
+func _key(keycode: Key, ctrl := true) -> void:
+	var ev := InputEventKey.new()
+	ev.keycode = keycode
+	ev.ctrl_pressed = ctrl
+	ev.pressed = true
+	root.push_input(ev)
+
+
+func _test_copy_paste() -> void:
+	print("- Ctrl+C / Ctrl+V")
+	var R := TimelineTrack.Row
+	var fixtures := [{"key": "p1", "name": "Par 1", "profile": _par(), "mode": 0},
+		{"key": "p2", "name": "Par 2", "profile": _par(), "mode": 0}]
+	var tl := MusicTimeline.new()
+	tl.fixtures_provider = func(): return fixtures
+	root.add_child(tl)
+	tl.position = Vector2.ZERO
+	tl.size = Vector2(1100, 700)
+	tl.open("user://_paste_song.wav")
+	var a := SongAnalysis.new()
+	a.duration = 60.0
+	for arr in [a.wave_lo, a.wave_mid, a.wave_hi, a.wave_peak]:
+		arr.resize(6000)
+	tl._set_analysis(a)
+	await process_frame
+	await process_frame
+	var m := tl.master_track()
+	var p1 := tl.fixture_tracks()[0]
+	var p2 := tl.fixture_tracks()[1]
+	var sel := tl.selection()
+	m.dimmer_nodes = PackedVector2Array([Vector2(4, 0.0), Vector2(6, 1.0), Vector2(8, 0.0)])
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["master|%d" % R.DIMMER, "master|%d" % R.CUES]), 4.0, 8.0)])
+	_key(KEY_C)
+	var clip := tl.clipboard()
+	ok(clip.get("length") == 4.0 and clip["tracks"].size() == 1 and clip["tracks"][0]["key"] == "master"
+		and clip["tracks"][0]["rows"].has(R.DIMMER) and clip["tracks"][0]["rows"].has(R.CUES), "Ctrl+C copies the selected rows")
+	ok(sel.blocks.size() == 1, "copying leaves the selection")
+	# Paste at a selected spot on the same track.
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["master|%d" % R.DIMMER]), 20.0, 22.0)])
+	_key(KEY_V)
+	ok(is_equal_approx(m.dimmer_at(22.0), 1.0) and m.dimmer_at(20.0) == 0.0 and is_equal_approx(m.dimmer_at(23.0), 0.5),
+		"Ctrl+V pastes at the selection's start (20–24 s)")
+	ok(m.dimmer_at(5.0) == 0.5 and m.dimmer_at(14.0) == 0.0 and m.dimmer_at(30.0) == 0.0, "the rest of the line unchanged")
+	ok(sel.blocks.size() == 2 and is_equal_approx(sel.blocks[0]["t0"], 20.0) and is_equal_approx(sel.blocks[0]["t1"], 24.0),
+		"the pasted area becomes the selection (dimmer and cues rows)")
+	ok(tl.has_unsaved_timelines(), "marked as changed")
+	# One copied track into several selected ones.
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["p1|%d" % R.COLOUR, "p1|%d" % R.CUES, "p2|%d" % R.DIMMER]), 30.0, 31.0)])
+	_key(KEY_V)
+	ok(is_equal_approx(p1.dimmer_at(32.0), 1.0) and is_equal_approx(p2.dimmer_at(32.0), 1.0)
+		and p1._dimmer_after(30.0) == 0.0 and p1.dimmer_at(29.0) == 1.0, "one copied track pastes into every selected track")
+	ok(sel.blocks.size() == 4, "each gets its dimmer and cues rows selected")
+	# Nothing selected: at the playhead, back into the source track.
+	sel.clear()
+	tl.wave().song_pos = 40.0
+	_key(KEY_V)
+	ok(is_equal_approx(m.dimmer_at(42.0), 1.0) and m.dimmer_at(40.0) == 0.0, "nothing selected: at the playhead, into the source track")
+	# Two copied tracks pair off with the selected tracks.
+	p1.dimmer_nodes = PackedVector2Array([Vector2(0, 0.3)])
+	p2.dimmer_nodes = PackedVector2Array([Vector2(0, 0.7)])
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["p1|%d" % R.DIMMER, "p1|%d" % R.CUES, "p2|%d" % R.DIMMER]), 0.0, 2.0)])
+	_key(KEY_C)
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["master|%d" % R.DIMMER]), 50.0, 51.0),
+		TimelineSelection.block(PackedStringArray(["p1|%d" % R.DIMMER]), 50.0, 51.0)])
+	_key(KEY_V)
+	ok(is_equal_approx(p1.dimmer_at(51.0), 0.3) and is_equal_approx(m.dimmer_at(51.0), 0.7),
+		"several copied tracks pair off in order (Par 1 -> Par 1, Par 2 -> master)")
+	# The copy survives opening another song.
+	tl.open("user://_paste_song_2.wav")
+	tl._set_analysis(a)
+	ok(not tl.clipboard().is_empty(), "the copy is kept when another song opens")
+	sel.clear()
+	_key(KEY_V, false)
+	ok(sel.is_empty(), "plain V doesn't paste")
+	tl._dirty = false
 	tl.queue_free()
 	await process_frame

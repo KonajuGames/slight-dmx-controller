@@ -190,9 +190,17 @@ technical reference.
   nodes inside each selected span go and the level drops to 0 across it,
   with a node at each edge keeping the level just outside as it was (a
   step down at the start, back up at the end; overlapping spans on a row
-  are merged first). The selection stays. So far the rows other than the
-  dimmer are empty (nothing to clear there yet), and nothing drives the
-  fixtures.
+  are merged first). The selection stays.
+  **Ctrl+C** copies the selected areas (kept when another song opens) and
+  **Ctrl+V** pastes them: at the start of the current selection, into
+  the tracks it touches — one copied track goes into each of them, so a
+  fixture's dimmer can be copied to several at once; several copied
+  tracks pair off in order — or, with nothing selected, at the playhead
+  back into the tracks they came from. Each row goes into the same kind
+  of row; a dimmer stretch replaces the line there, the level outside
+  kept (cut off at the song's end). The pasted areas become the
+  selection. So far the rows other than the dimmer are empty (nothing to
+  clear, copy or paste there yet), and nothing drives the fixtures.
 - `timeline_store.gd` — the `TimelineStore` class: a show's music
   timelines, in a folder beside the show file (`MyShow.slight` →
   `MyShow.timelines/`): one JSON file per song, named by the song's

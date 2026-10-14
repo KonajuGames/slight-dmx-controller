@@ -38,7 +38,9 @@ extends VBoxContainer
 ## (selection()): whole bars, beats, or exact times as the structure bar's
 ## snapping says, on every row the drag crosses — rows of several tracks
 ## included. A plain drag replaces the selection, Ctrl adds to it, and
-## Shift extends the last area to take in the new one.
+## Shift extends the last area to take in the new one. Delete clears the
+## selected areas; Ctrl+C copies them and Ctrl+V pastes (copy_selection(),
+## paste()).
 ## Above the bar ruler, the song's structure (Intro / Verse / Chorus / ...,
 ## from SongAnalyzer, run in the background when a track opens; with
 ## VirtualDJ's beat grid swapped in and the section borders snapped to its
@@ -90,6 +92,9 @@ var _selection := TimelineSelection.new()
 # where it started, the blocks to keep under it, and (Shift) the area it
 # extends; empty = not selecting.
 var _sel_drag := {}
+## What Ctrl+C copied (kept across songs): {length, tracks: [{key, rows:
+## {Row: [{t0, t1, nodes?}]}}]} — times relative to the copy's start.
+var _clip := {}
 var _dirty := false             # the open song's timelines changed since saved
 var _wave: WaveHeatmap
 var _ruler: BarRuler
@@ -689,6 +694,112 @@ func delete_selection() -> bool:
 	return changed
 
 
+## Copy what's in the selected areas (Ctrl+C), row by row, with times
+## relative to the start of the earliest area: the dimmer line in each
+## span; the other rows just their spans for now. Returns whether there
+## was anything to copy.
+func copy_selection() -> bool:
+	if _selection.is_empty():
+		return false
+	var start := INF
+	var finish := -INF
+	for b in _selection.blocks:
+		start = minf(start, b["t0"])
+		finish = maxf(finish, b["t1"])
+	var tracks: Array = []
+	for tr in Array(_fixture_tracks) + [_master]:      # top to bottom
+		var key := String(tr.get_meta("key"))
+		var rows := {}
+		for row in tr.rows:
+			var parts: Array = []
+			for span in _merged(_selection.spans_for(key, row)):
+				var part := {"t0": span.x - start, "t1": span.y - start}
+				match row:
+					TimelineTrack.Row.DIMMER:
+						part["nodes"] = tr.dimmer_segment(span.x, span.y)
+					_:
+						pass        # Position / Strobe / Cues / Colour: nothing to copy yet
+				parts.append(part)
+			if not parts.is_empty():
+				rows[row] = parts
+		if not rows.is_empty():
+			tracks.append({"key": key, "rows": rows})
+	_clip = {"length": finish - start, "tracks": tracks}
+	return true
+
+
+## What's been copied ({} = nothing).
+func clipboard() -> Dictionary:
+	return _clip
+
+
+## Paste what was copied (Ctrl+V). Where: at the start of the current
+## selection, into the tracks it touches (one copied track goes into each
+## of them; several pair off in order, repeating); with nothing selected,
+## at the playhead, back into the tracks it came from. Each copied row goes
+## into the same kind of row; a dimmer span replaces the line there
+## (TimelineTrack.replace_dimmer: the level outside kept). The pasted
+## areas become the selection. Returns whether anything was pasted.
+func paste() -> bool:
+	if _clip.is_empty() or _wave.analysis == null:
+		return false
+	var sources: Array = _clip["tracks"]
+	if sources.is_empty():
+		return false
+	var pairs: Array = []           # [[target track, source track]]
+	var at: float
+	if not _selection.is_empty():
+		at = INF
+		var keys := {}
+		for b in _selection.blocks:
+			at = minf(at, b["t0"])
+			for id in b["rows"]:
+				keys[id.get_slice("|", 0)] = true
+		var targets: Array = []
+		for tr in Array(_fixture_tracks) + [_master]:
+			if keys.has(String(tr.get_meta("key"))):
+				targets.append(tr)
+		for i in range(targets.size()):
+			pairs.append([targets[i], sources[i % sources.size()]])
+	else:
+		at = _wave.song_pos
+		for src in sources:
+			var tr := _track_for(String(src["key"]))
+			if tr != null:
+				pairs.append([tr, src])
+	var dur := _wave.duration()
+	var blocks: Array = []
+	var changed := false
+	for pair in pairs:
+		var tr: TimelineTrack = pair[0]
+		var src: Dictionary = pair[1]
+		var key := String(tr.get_meta("key"))
+		for row in src["rows"]:
+			if not tr.has_row(row):
+				continue
+			for part in src["rows"][row]:
+				var t0: float = at + part["t0"]
+				var t1: float = minf(at + part["t1"], dur)
+				if t1 <= t0:
+					continue
+				if row == TimelineTrack.Row.DIMMER and part.has("nodes"):
+					changed = tr.replace_dimmer(at + part["t0"], at + part["t1"], part["nodes"]) or changed
+				blocks.append(TimelineSelection.block(PackedStringArray([TimelineSelection.row_id(key, row)]), t0, t1))
+	if blocks.is_empty():
+		return false
+	_selection.set_blocks(blocks)
+	if changed:
+		_mark_dirty()
+	return true
+
+
+func _track_for(key: String) -> TimelineTrack:
+	for tr in [_master] + Array(_fixture_tracks):
+		if String(tr.get_meta("key")) == key:
+			return tr
+	return null
+
+
 ## Spans ([Vector2(t0, t1)]) sorted and with overlapping / touching ones
 ## joined.
 static func _merged(spans: Array) -> Array:
@@ -754,6 +865,13 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_DELETE and not _selection.is_empty():
 		delete_selection()
+		get_viewport().set_input_as_handled()
+	elif event is InputEventKey and event.pressed and not event.echo and event.is_command_or_control_pressed() \
+			and event.keycode in [KEY_C, KEY_V]:
+		if event.keycode == KEY_C:
+			copy_selection()
+		else:
+			paste()
 		get_viewport().set_input_as_handled()
 
 
