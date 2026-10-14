@@ -148,7 +148,15 @@ technical reference.
   Dimmer row with a node line, filled white underneath fading from
   transparent at the bottom to 50 % at the top. The master track (every
   row) sits above the song structure and follows the waveform's zoom;
-  beside each track, a name plate shows its target's name vertically.
+  beside each track, a name plate shows its target's name vertically
+  (in a smaller font if that's what fits). The space above the master is
+  a vertically scrolling panel with a timeline for every patched fixture
+  (rows for its channels), each followed — when it has more than one
+  head — by one per head (rows for that head's channels; a darker plate,
+  the fixture's name with "Head N" on a second line). They follow the
+  patch as it changes, keeping their dimmer nodes; the scroll bar's room
+  comes out of the name plates' column, so every track stays as wide as
+  the waveform.
   A fixture or head with colour channels but no DIMMER channel still gets
   a Dimmer row — its virtual dimmer.
   The dimmer line's nodes are edited with the mouse: drag a node to move

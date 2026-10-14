@@ -94,6 +94,7 @@ func _ready() -> void:
 	music_panel.visible = false
 	main_vbox.add_child(music_panel)
 	music_panel.timeline().generate_show_requested.connect(_generate_show_from_library)
+	music_panel.timeline().fixtures_provider = _timeline_fixtures
 
 	var playback_tabs := TabContainer.new()
 	playback_tabs.custom_minimum_size = Vector2(336, 0)
@@ -626,6 +627,19 @@ func _on_patch_changed() -> void:
 		groups_panel.sync_to_patch()
 	if viz_panel:
 		viz_panel.rebuild()
+	if music_panel:
+		music_panel.timeline().refresh_fixtures()
+
+
+## Every patched fixture, universe by universe, for the Music Library
+## timeline's per-fixture tracks.
+func _timeline_fixtures() -> Array:
+	var out: Array = []
+	for ui in range(_panels.size()):
+		for fx in _panels[ui].patched_fixtures:
+			out.append({"key": "%d/%d" % [ui, int(fx["id"])], "name": String(fx["name"]),
+				"profile": fx["profile"], "mode": int(fx.get("mode", 0))})
+	return out
 
 
 ## Groups saved with members as [universe, patch-index] so they survive a

@@ -25,9 +25,11 @@ extends VBoxContainer
 ## errors; it's empty once a track is shown. While the track's being read,
 ## the whole-track waveform's background is the progress bar.
 
-## At the top, the master lighting timeline (TimelineTrack: position,
-## strobe, cue and colour rows and a dimmer node line), which affects
-## every fixture.
+## Above it, in a vertically scrolling panel filling the space left, a
+## timeline for every patched fixture (fixtures_provider), followed by one
+## for each of its heads when it has more than one.
+## Then the master lighting timeline (TimelineTrack: position, strobe, cue
+## and colour rows and a dimmer node line), which affects every fixture.
 ## Above the bar ruler, the song's structure (Intro / Verse / Chorus / ...,
 ## from SongAnalyzer, run in the background when a track opens; with
 ## VirtualDJ's beat grid swapped in and the section borders snapped to its
@@ -58,7 +60,15 @@ const WAVE_HEIGHT_DEFAULT := 90.0
 var _status: Label
 var _wave_note := ""            # status line: waveform loading / errors
 var _play_note := ""            # status line: preparing / can't play the audio
-var _spacer: Control
+## Returns the patched fixtures, in order, as
+## [{key: String (stable for the session), name, profile: FixtureProfile,
+## mode: int}]; refresh_fixtures() reads it.
+var fixtures_provider := Callable()
+var _fixture_scroll: ScrollContainer
+var _fixture_list: VBoxContainer
+var _fixture_empty: Label
+var _fixture_tracks: Array[TimelineTrack] = []
+var _fixture_nodes := {}        # track key -> its dimmer nodes, kept across refreshes
 var _wave: WaveHeatmap
 var _ruler: BarRuler
 var _structure: StructureBar
@@ -105,10 +115,23 @@ func _ready() -> void:
 	_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	load_row.add_child(_status)
 
-	# Everything above stays at the top; the waveforms sit at the bottom.
-	_spacer = Control.new()
-	_spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	add_child(_spacer)
+	# The fixtures' (and heads') timelines fill the space above the master
+	# one, scrolling vertically. The scroll bar's space is always reserved,
+	# taken out of the name plates' column, so the tracks stay exactly as
+	# wide as the waveform below.
+	_fixture_scroll = ScrollContainer.new()
+	_fixture_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_fixture_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_fixture_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_RESERVE
+	add_child(_fixture_scroll)
+	_fixture_list = VBoxContainer.new()
+	_fixture_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_fixture_list.add_theme_constant_override("separation", 2)
+	_fixture_scroll.add_child(_fixture_list)
+	_fixture_empty = Label.new()
+	_fixture_empty.text = "No fixtures patched."
+	_fixture_empty.modulate = Color(1, 1, 1, 0.45)
+	_fixture_list.add_child(_fixture_empty)
 
 	# The zoomable waveform, with the transport buttons stacked to its right.
 	var wave_row := HBoxContainer.new()
@@ -237,6 +260,7 @@ func open(path: String, song: VirtualDjDatabase.Song = null) -> void:
 	_path = path
 	_song = song
 	_set_analysis(null)
+	refresh_fixtures()
 
 	if _cache.has(path):
 		_touch_cache(path)
@@ -619,6 +643,82 @@ func master_track() -> TimelineTrack:
 	return _master
 
 
+## The fixtures' and heads' timelines, in order (top to bottom).
+func fixture_tracks() -> Array[TimelineTrack]:
+	return _fixture_tracks
+
+
+func fixture_scroll() -> ScrollContainer:
+	return _fixture_scroll
+
+
+## The timelines for one fixture, as [{key, title, target, rows}]: the
+## fixture's own (rows for every channel it has), then — when it has more
+## than one head (RGB group) — one per head, with rows for that head's
+## channels, titled with the fixture's name and "Head N" on a second line.
+static func fixture_track_specs(key: String, fixture_name: String, profile: FixtureProfile, mode: int) -> Array:
+	var chans := profile.channels_for_mode(mode)
+	var roles := []
+	for ch in chans:
+		roles.append(String(ch["role"]))
+	var out := [{"key": key, "title": fixture_name, "target": TimelineTrack.Target.FIXTURE,
+		"rows": TimelineTrack.rows_for_roles(roles)}]
+	var heads := profile.head_groups(mode)
+	if heads.size() > 1:
+		for hi in range(heads.size()):
+			var g: Dictionary = heads[hi]
+			var hroles := []
+			for k in [g["r"], g["g"], g["b"]] + Array(g["extra"]):
+				if int(k) >= 0:
+					hroles.append(String(chans[int(k)]["role"]))
+			out.append({"key": "%s/h%d" % [key, hi], "title": "%s\nHead %d" % [fixture_name, hi + 1],
+				"target": TimelineTrack.Target.HEAD, "rows": TimelineTrack.rows_for_roles(hroles)})
+	return out
+
+
+## Rebuild the fixtures' timelines from fixtures_provider (call when the
+## patch changes). A track that's still there keeps its dimmer nodes.
+func refresh_fixtures() -> void:
+	if _fixture_list == null:
+		return
+	for tr in _fixture_tracks:
+		_fixture_nodes[tr.get_meta("key")] = tr.dimmer_nodes
+	for c in _fixture_list.get_children():
+		if c != _fixture_empty:
+			_fixture_list.remove_child(c)
+			c.queue_free()
+	_fixture_tracks.clear()
+	var fixtures: Array = fixtures_provider.call() if fixtures_provider.is_valid() else []
+	var plate_w := _fixture_plate_width()
+	for fx in fixtures:
+		for spec in fixture_track_specs(String(fx["key"]), String(fx["name"]), fx["profile"], int(fx.get("mode", 0))):
+			var row := HBoxContainer.new()
+			row.add_theme_constant_override("separation", 6)
+			var tr := TimelineTrack.new()
+			tr.target = spec["target"]
+			tr.title = spec["title"]
+			tr.rows = spec["rows"]
+			tr.wave = _wave
+			tr.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			tr.set_meta("key", spec["key"])
+			tr.dimmer_nodes = _fixture_nodes.get(spec["key"], PackedVector2Array())
+			row.add_child(tr)
+			var plate := TimelineTrack.NamePlate.new()
+			plate.track = tr
+			plate.custom_minimum_size = Vector2(plate_w, 0)
+			row.add_child(plate)
+			_fixture_list.add_child(row)
+			_fixture_tracks.append(tr)
+	_fixture_empty.visible = _fixture_tracks.is_empty()
+
+
+## The name plates beside the fixtures' timelines: the button column's
+## width less the scroll bar's (always reserved).
+func _fixture_plate_width() -> float:
+	var bar := _fixture_scroll.get_v_scroll_bar().get_combined_minimum_size().x
+	return maxf(_BUTTON_WIDTH - bar, 8.0)
+
+
 func master_plate() -> TimelineTrack.NamePlate:
 	return _master_plate
 
@@ -790,6 +890,8 @@ func _box_follow(start: float, length: float) -> void:
 	_ruler.queue_redraw()
 	_structure.set_view(start, length)
 	_master.queue_redraw()
+	for tr in _fixture_tracks:
+		tr.queue_redraw()
 
 
 ## The strip along the top of the zoomable waveform: bar numbers (from 1,

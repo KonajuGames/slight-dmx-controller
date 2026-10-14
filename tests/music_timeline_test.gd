@@ -230,7 +230,10 @@ func _test_timeline() -> void:
 	# title, track info, back button or time range — the only buttons are
 	# the two transport buttons.
 	var buttons := tl.find_children("*", "Button", true, false)
-	var shown := tl.find_children("*", "Label", true, false).filter(func(l): return l.visible and l.text != "")
+	# (Bar the fixture panel's "No fixtures patched.")
+	var fx_panel := tl.fixture_scroll()
+	var shown := tl.find_children("*", "Label", true, false).filter(
+		func(l): return l.visible and l.text != "" and not fx_panel.is_ancestor_of(l))
 	ok(buttons.size() == 4 and tl.play_button() in buttons and tl.reset_button() in buttons
 		and tl.lock_button() in buttons and tl.generate_button() in buttons and shown.is_empty(),
 		"no header or time label; only the transport and structure buttons (%d buttons, labels %s)" % [

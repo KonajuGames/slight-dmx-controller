@@ -449,9 +449,13 @@ class NamePlate:
 	extends Control
 
 	const FILL := Color(0.20, 0.20, 0.24)
+	## A head's plate is a shade darker than its fixture's.
+	const HEAD_FILL := Color(0.15, 0.15, 0.18)
 	const BORDER := Color(0, 0, 0, 0.6)
 	const TEXT := Color(0.85, 0.85, 0.9)
 	const FONT_SIZE := 12
+	## Shrinks to this to fit a long name before trimming it.
+	const MIN_FONT_SIZE := 9
 
 	var track: TimelineTrack:
 		set(v):
@@ -464,22 +468,45 @@ class NamePlate:
 	func title() -> String:
 		return track.title if track != null else ""
 
+	## The name's lines (a title can hold "\n" breaks).
+	func lines() -> PackedStringArray:
+		return title().split("\n", false)
+
+	## The font size the name's drawn at: FONT_SIZE, or the largest down
+	## to MIN_FONT_SIZE at which its longest line fits the plate's height.
+	func font_size() -> int:
+		var font := get_theme_default_font()
+		var room := maxf(size.y - 8.0, 0.0)
+		var fs := FONT_SIZE
+		while fs > MIN_FONT_SIZE and _longest(font, fs) > room:
+			fs -= 1
+		return fs
+
+	func _longest(font: Font, fs: int) -> float:
+		var w := 0.0
+		for line in lines():
+			w = maxf(w, font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x)
+		return w
+
 	func _draw() -> void:
-		draw_rect(Rect2(Vector2.ZERO, size), FILL)
+		var head := track != null and track.target == TimelineTrack.Target.HEAD
+		draw_rect(Rect2(Vector2.ZERO, size), HEAD_FILL if head else FILL)
 		draw_rect(Rect2(Vector2.ZERO, size), BORDER, false, 1.0)
-		var text := title()
-		if text == "":
+		var text := lines()
+		if text.is_empty():
 			return
 		var font := get_theme_default_font()
-		var sw := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE)
 		# Rotate a quarter turn anticlockwise about the plate's centre, then
-		# centre the text on it (its length runs up the plate). Trimmed to
-		# the plate's height if it's longer.
-		draw_set_transform(size * 0.5, -PI * 0.5)
+		# centre the text on it (its length runs up the plate; each further
+		# line sits to the right of the one before). A smaller font if that
+		# makes it fit the plate's height, else trimmed.
 		var room := maxf(size.y - 8.0, 0.0)
-		var w := minf(sw.x, room)
-		var ascent := font.get_ascent(FONT_SIZE)
-		var descent := font.get_descent(FONT_SIZE)
-		draw_string(font, Vector2(-w * 0.5, (ascent - descent) * 0.5), text,
-			HORIZONTAL_ALIGNMENT_LEFT, room, FONT_SIZE, TEXT)
+		var fs := font_size()
+		var line_h := font.get_height(fs)
+		var y := -line_h * text.size() * 0.5 + font.get_ascent(fs)
+		draw_set_transform(size * 0.5, -PI * 0.5)
+		for line in text:
+			var w := minf(font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x, room)
+			draw_string(font, Vector2(-w * 0.5, y), line, HORIZONTAL_ALIGNMENT_LEFT, room, fs, TEXT)
+			y += line_h
 		draw_set_transform(Vector2.ZERO)

@@ -31,6 +31,8 @@ func _run() -> void:
 	_test_editing()
 	_test_line_drag()
 	await _test_in_timeline()
+	_test_fixture_specs()
+	await _test_fixture_tracks()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
 
@@ -217,6 +219,90 @@ func _test_line_drag() -> void:
 	ok(is_equal_approx(tr.dimmer_nodes[0].x, 0.21), "without shift: both")
 	_click(tr, n0, MOUSE_BUTTON_LEFT, false)
 	tr.queue_free()
+
+
+func _par() -> FixtureProfile:
+	return FixtureProfile.new("par", "RGB par", [
+		{"name": "Dimmer", "role": "DIMMER"}, {"name": "Red", "role": "RED"},
+		{"name": "Green", "role": "GREEN"}, {"name": "Blue", "role": "BLUE"},
+	])
+
+
+func _bar() -> FixtureProfile:
+	var chans := [{"name": "Strobe", "role": "STROBE"}]
+	for h in range(3):
+		chans.append({"name": "Red %d" % (h + 1), "role": "RED"})
+		chans.append({"name": "Green %d" % (h + 1), "role": "GREEN"})
+		chans.append({"name": "Blue %d" % (h + 1), "role": "BLUE"})
+	chans.append({"name": "White 3", "role": "WHITE"})
+	return FixtureProfile.new("bar", "3-head LED bar", chans)
+
+
+func _test_fixture_specs() -> void:
+	print("- timelines for a fixture and its heads")
+	var R := TimelineTrack.Row
+	var T := TimelineTrack.Target
+	var par := MusicTimeline.fixture_track_specs("0/1", "Par", _par(), 0)
+	ok(par.size() == 1 and par[0]["title"] == "Par" and par[0]["target"] == T.FIXTURE
+		and par[0]["rows"] == [R.CUES, R.COLOUR, R.DIMMER], "a single-head fixture: one timeline")
+	var bar := MusicTimeline.fixture_track_specs("0/2", "Bar", _bar(), 0)
+	ok(bar.size() == 4, "a three-head fixture: its own timeline plus one per head (%d)" % bar.size())
+	ok(bar[0]["target"] == T.FIXTURE and bar[0]["rows"] == [R.STROBE, R.CUES, R.COLOUR, R.DIMMER],
+		"the fixture's covers all its channels")
+	ok(bar[1]["target"] == T.HEAD and bar[1]["title"] == "Bar\nHead 1" and bar[3]["title"] == "Bar\nHead 3",
+		"heads titled in order, \"Head N\" on a second line")
+	ok(bar[1]["rows"] == [R.CUES, R.COLOUR, R.DIMMER], "a head's rows are its own channels' (no strobe)")
+	ok(bar[1]["key"] != bar[2]["key"] and bar[0]["key"] == "0/2", "each with its own key")
+
+
+func _test_fixture_tracks() -> void:
+	print("- the fixtures' timelines in the track timeline")
+	var fixtures := [{"key": "0/1", "name": "Par", "profile": _par(), "mode": 0}]
+	var tl := MusicTimeline.new()
+	tl.fixtures_provider = func(): return fixtures
+	root.add_child(tl)
+	tl.position = Vector2.ZERO
+	tl.size = Vector2(1100, 700)
+	await process_frame
+	ok(tl.fixture_tracks().is_empty(), "nothing until refreshed / a track opens")
+	tl.refresh_fixtures()
+	await process_frame
+	await process_frame
+	ok(tl.fixture_tracks().size() == 1 and tl.fixture_tracks()[0].title == "Par", "one per fixture")
+	var sc := tl.fixture_scroll().get_global_rect()
+	var mr := tl.master_track().get_global_rect()
+	ok(sc.end.y <= mr.position.y + 0.5 and sc.position.y < 60.0, "the scroll panel fills the space above the master")
+	var fr := tl.fixture_tracks()[0].get_global_rect()
+	ok(is_equal_approx(fr.position.x, mr.position.x) and is_equal_approx(fr.size.x, mr.size.x),
+		"exactly as wide as the master (and waveform) (%.0f vs %.0f)" % [fr.size.x, mr.size.x])
+	ok(fr.position.y >= sc.position.y - 0.5, "at the top of the panel")
+	var plate := tl.fixture_tracks()[0].get_parent().get_child(1) as Control
+	var vbar := tl.fixture_scroll().get_v_scroll_bar().get_global_rect()
+	ok(plate is TimelineTrack.NamePlate and is_equal_approx(plate.get_global_rect().size.y, fr.size.y)
+		and plate.get_global_rect().end.x <= vbar.position.x + 0.5, "a name plate beside it, clear of the scroll bar")
+	ok(tl.fixture_tracks()[0].wave == tl.wave(), "follows the waveform's zoom")
+	# Edits survive a refresh; a three-head bar adds four timelines and scrolls.
+	tl.fixture_tracks()[0].dimmer_nodes = PackedVector2Array([Vector2(1, 0.5)])
+	for i in range(3):
+		fixtures.append({"key": "0/%d" % (i + 2), "name": "LED Bar %d" % (i + 1), "profile": _bar(), "mode": 0})
+	tl.refresh_fixtures()
+	await process_frame
+	await process_frame
+	ok(tl.fixture_tracks().size() == 13, "1 par + 3 bars × (1 + 3 heads) = 13 (%d)" % tl.fixture_tracks().size())
+	ok(tl.fixture_tracks()[0].dimmer_nodes == PackedVector2Array([Vector2(1, 0.5)]), "a kept fixture keeps its dimmer nodes")
+	ok(tl.fixture_tracks()[2].target == TimelineTrack.Target.HEAD, "heads follow their fixture")
+	var hp := tl.fixture_tracks()[2].get_parent().get_child(1) as TimelineTrack.NamePlate
+	ok(hp.lines() == PackedStringArray(["LED Bar 1", "Head 1"]), "a head's plate: two lines")
+	ok(hp.font_size() == TimelineTrack.NamePlate.FONT_SIZE, "each short enough for the full size")
+	ok((tl.master_plate() as TimelineTrack.NamePlate).font_size() == TimelineTrack.NamePlate.FONT_SIZE,
+		"a short name keeps the full size")
+	var bar := tl.fixture_scroll().get_v_scroll_bar()
+	ok(bar.max_value > bar.page, "more than fits: it scrolls")
+	ok(is_equal_approx(tl.fixture_scroll().get_global_rect().end.y, sc.end.y), "without pushing the master down")
+	fixtures.clear()
+	tl.refresh_fixtures()
+	ok(tl.fixture_tracks().is_empty(), "no fixtures: none")
+	tl.queue_free()
 
 
 func _test_in_timeline() -> void:
