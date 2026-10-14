@@ -409,6 +409,22 @@ func _test_new_show() -> void:
 	ok(main.show_path == "" and "New show" in main.status_label.text, "untitled: %s" % main.status_label.text)
 	ok(main.remembered_show() == path, "the last saved show is still the one reopened at start")
 	ok(main.music_panel.timeline().timeline_store == null, "no music timelines")
+	# Ctrl+Shift+N adds a universe (no confirmation), up to the limit.
+	var ku := InputEventKey.new()
+	ku.keycode = KEY_N
+	ku.ctrl_pressed = true
+	ku.shift_pressed = true
+	ku.pressed = true
+	var dlg_count: int = main.find_children("*", "ConfirmationDialog", false, false).size()
+	root.push_input(ku)
+	ok(main._panels.size() == 2 and _artnet_count() == 2 and "Added universe 2" in main.status_label.text
+		and main.find_children("*", "ConfirmationDialog", false, false).size() == dlg_count,
+		"Ctrl+Shift+N adds a universe: %s" % main.status_label.text)
+	for i in range(10):
+		root.push_input(ku)
+	ok(main._panels.size() == 8 and "limit" in main.status_label.text, "...up to the limit: %s" % main.status_label.text)
+	main.new_show()
+	ok(main._panels.size() == 1, "(back to one)")
 	# Saving an untitled show asks where (it doesn't overwrite the default file).
 	var before: int = main.find_children("*", "FileDialog", false, false).size()
 	main._on_save_show()
@@ -422,3 +438,7 @@ func _test_new_show() -> void:
 	if DirAccess.dir_exists_absolute("user://_new_show_test.timelines"):
 		DirAccess.remove_absolute("user://_new_show_test.timelines")
 	fx.effects.clear()
+
+
+func _artnet_count() -> int:
+	return root.get_node("ArtNet").universe_count()

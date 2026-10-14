@@ -441,6 +441,7 @@ func _build_top_bar() -> Control:
 
 	add_uni_btn = Button.new()
 	add_uni_btn.text = "Add Universe"
+	add_uni_btn.tooltip_text = "Add another universe (Ctrl+Shift+N)"
 	add_uni_btn.pressed.connect(_on_add_universe)
 	row.add_child(add_uni_btn)
 
@@ -847,9 +848,12 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			else:
 				_on_save_show()
 			get_viewport().set_input_as_handled()
-		elif event.keycode == KEY_N and event.is_command_or_control_pressed() and not event.shift_pressed:
-			# Ctrl+N: New Show, from either view.
-			_on_new_show()
+		elif event.keycode == KEY_N and event.is_command_or_control_pressed():
+			# Ctrl+N: New Show; Ctrl+Shift+N: Add Universe — from either view.
+			if event.shift_pressed:
+				_on_add_universe()
+			else:
+				_on_new_show()
 			get_viewport().set_input_as_handled()
 		elif event.keycode == KEY_O and event.is_command_or_control_pressed() and not event.shift_pressed:
 			# Ctrl+O: Load Show…, from either view.
