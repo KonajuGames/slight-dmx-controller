@@ -1,5 +1,5 @@
 extends SceneTree
-## Tests for MusicBrowserPanel — the "Music Library" view — and switching
+## Tests for MusicBrowserPanel — DJ Edit Mode — and switching
 ## to it in the main shell.
 ##
 ##   godot --headless --script tests/music_browser_test.gd
@@ -34,7 +34,7 @@ func _initialize() -> void:
 
 
 func _run() -> void:
-	print("== Music Library view ==")
+	print("== DJ Edit Mode (music library) ==")
 	_test_folder_listing()
 	_test_panel()
 	await _test_timeline_icons()
@@ -213,13 +213,24 @@ func _test_main_scene() -> void:
 	print("- main scene view switch")
 	var main: Control = load("res://main.tscn").instantiate()
 	root.add_child(main)
-	ok(main.view_option.item_count == 2 and main.view_option.selected == 0, "View selector, Console first")
-	ok(main._console_view.visible and not main.music_panel.visible, "starts in the Console view")
-	ok(not main.music_panel._loaded, "Music Library not loaded until shown")
+	ok(main.view_option.item_count == 3 and main.view_option.selected == 0
+		and main.view_option.get_item_text(1) == "DJ Edit Mode" and main.view_option.get_item_text(2) == "DJ Perform Mode",
+		"View selector: Console, DJ Edit Mode, DJ Perform Mode")
+	ok(main._console_view.visible and not main.music_panel.visible and not main.perform_panel.visible, "starts in the Console view")
+	ok(not main.music_panel._loaded, "DJ Edit Mode not loaded until shown")
 	main.view_option.select(1)
 	main.view_option.item_selected.emit(1)
-	ok(not main._console_view.visible and main.music_panel.visible, "switches to the Music Library")
+	ok(not main._console_view.visible and main.music_panel.visible, "switches to DJ Edit Mode")
 	ok(main.music_panel._loaded, "loads on first show")
+	ok(not main.performer.is_active(), "no OS2L listener outside DJ Perform Mode")
+	main.performer.advertise = false
+	main.performer.port = 19961
+	main.set_view(2)
+	ok(main.perform_panel.visible and not main.music_panel.visible and not main._console_view.visible,
+		"switches to DJ Perform Mode")
+	ok(main.performer.is_listening() and main.performer.os2l.get_port() == 19961, "which starts the OS2L listener")
+	main.set_view(1)
+	ok(not main.performer.is_active() and not main.performer.is_listening(), "leaving it stops the listener")
 	main.set_view(0)
 	ok(main._console_view.visible and not main.music_panel.visible and main.view_option.selected == 0,
 		"and back to the Console")

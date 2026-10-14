@@ -52,13 +52,13 @@ technical reference.
 - `structure_bar.gd` / `wave_heatmap.gd` — the analysed-song structure
   strip and a whole-song colour-coded waveform (loudness height, spectral
   hue), stacked on the Auto Show tab. The waveform can also show part of
-  a song and zoom with the mouse wheel (the Music Library's timeline
+  a song and zoom with the mouse wheel (DJ Edit Mode's timeline
   uses that). The structure strip is editable:
   drag a section border (snapped to the nearest bar — or beat, or not at
   all: right-click > Snapping) to fix a boundary the analyser placed
   slightly wrong, or right-click a section to relabel, split, or delete
   it. It can be locked against editing and can follow
-  a zoomed view too (both used by the Music Library's timeline).
+  a zoomed view too (both used by DJ Edit Mode's timeline).
 - `triggers_engine.gd` — the `Triggers` autoload: listens for MIDI
   (Godot's `InputEventMIDI`) and OSC (a UDP listener), fires console
   actions, and sends feedback (LED updates) when a binding's target is
@@ -106,11 +106,11 @@ technical reference.
   master, run mode, Sending, add/remove universe, whole-show + preset
   save/load, MIDI/OSC triggers) above either the console — a split view
   of playback tabs (Cues / Chases / Effects / Sound / Auto Show / Groups)
-  on the left, one universe tab each on the right — or the Music Library
-  view; plus the shared fixture-profile list and the profile
+  on the left, one universe tab each on the right — or DJ Edit Mode or
+  DJ Perform Mode; plus the shared fixture-profile list and the profile
   new/edit/delete flow.
-- `music_browser_panel.gd` — the `MusicBrowserPanel` class: the Music
-  Library view. A narrow tree of this machine's drives and folders
+- `music_browser_panel.gd` — the `MusicBrowserPanel` class: DJ Edit
+  Mode (the music library). A narrow tree of this machine's drives and folders
   (loaded as they're expanded) followed by VirtualDJ's Virtual Folders;
   selecting one lists its music on the right — title, artist, BPM, key,
   length, album, genre, file — from VirtualDJ's database where it knows
@@ -123,6 +123,16 @@ technical reference.
   as an indexed song that isn't at its path — it may have been moved —
   is fingerprinted, in the background. The icons update when a song's
   timelines are first saved and when another show is loaded.
+- `dj_performer.gd` — the `DjPerformer` class: DJ Perform Mode's engine.
+  Runs an `Os2lServer` (subscribed to four decks), follows each deck's
+  song, play state, volume fader and position, loads a new song's
+  timelines from the show's `TimelineStore` on a worker thread, and
+  every refresh mixes the live decks' timelines (`song_output()`, then
+  `mix()`: HTP, pan / tilt averaged) into an `ArtNet.layer_providers`
+  layer.
+- `dj_perform_panel.gd` — the `DjPerformPanel` class: DJ Perform Mode's
+  view — the OS2L connection and, per deck, song, state, position and
+  timelines.
 - `music_timeline.gd` — the `MusicTimeline` class: a track's timeline —
   the zoomable colour waveform along the bottom (a song opens fully
   zoomed out, showing the whole track; mouse wheel zooms,
@@ -341,11 +351,35 @@ then it's greyed out. See
 Global controls live in the top bar:
 
 - **View** — switches the area below the top bar between the
-  **Console** (everything described here) and the **Music Library**: a
-  tree of drives and folders plus VirtualDJ's Virtual Folders, and the
-  music in whichever is selected (details from VirtualDJ's database;
-  click a column title to sort). The console keeps running while the
-  Music Library is showing; the spacebar GO only works in the Console.
+  **Console** (everything described here), **DJ Edit Mode** — a tree of
+  drives and folders plus VirtualDJ's Virtual Folders, the music in
+  whichever is selected (details from VirtualDJ's database; click a
+  column title to sort), and a song's lighting timelines to edit — and
+  **DJ Perform Mode**, where VirtualDJ plays those timelines (below). The
+  console keeps running underneath either; the spacebar GO only works in
+  the Console.
+- **DJ Perform Mode** — while it's showing, sLight listens for VirtualDJ
+  over OS2L (advertised on the network as "sLight", port 9960; or point
+  VirtualDJ's `os2lDirectIp` at this machine) and plays the lighting
+  timelines of the songs on its decks into the lights. The panel shows
+  the connection and, for each of up to four decks, the song, whether
+  it's playing, its position and its timelines' state. When a deck gets
+  a new song, its timelines (from DJ Edit Mode, in the show's timelines
+  folder) load in the background, so nothing stalls. A deck drives the
+  lights while it's playing with its volume fader up — a deck being
+  cued in the headphones with its fader down doesn't — following
+  VirtualDJ's position (reported every 100 ms, run on smoothly between
+  reports, at the deck's pitched speed). Decks playing together are
+  mixed per channel: colour, dimmer and strobe (and anything else)
+  highest-takes-precedence, pan / tilt averaged. A song's master dimmer
+  line scales every fixture, a fixture's its own, a head's that head's:
+  on a fixture with a DIMMER channel that channel is set; on one without,
+  its colour (from the console) is scaled, like its virtual dimmer. Only
+  what a song's timelines cover is driven; everything else stays as the
+  console has it. The timelines go into the frame under chases and
+  effects and over Auto Show. Leaving DJ Perform Mode stops the OS2L
+  listener and the timeline playback. So far only the dimmer rows have
+  content, so the dimmers are all that's driven.
 
 - **Grand Master** — one 0–255 fader that scales *every* universe's
   output on send (non-destructive: the per-channel values you dialed

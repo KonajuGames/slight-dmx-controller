@@ -5,7 +5,7 @@ extends Control
 ## Layout: a top bar (view selector, grand master, Sending, add/remove
 ## universe, whole-show + preset save/load) above either the console —
 ## playback tabs beside a TabContainer with one UniversePanel per Art-Net
-## universe — or the Music Library view (MusicBrowserPanel). Each panel owns its own ArtNetUniverse sender and
+## universe — or DJ Edit Mode (MusicBrowserPanel) / DJ Perform Mode (DjPerformPanel). Each panel owns its own ArtNetUniverse sender and
 ## fixture patch; this shell owns the shared fixture-profile list and the
 ## refresh loop.
 
@@ -34,12 +34,17 @@ var auto_show_panel: AutoShowPanel
 var groups_panel: GroupsPanel
 var viz_panel: VisualizerPanel
 var dmx_output_panel: DmxOutputPanel
-## The alternate "Music Library" view, swapped in for the console area
+## DJ Edit Mode (the music library and its songs' lighting timelines),
+## swapped in for the console area
 ## (`_console_view`) by the top bar's View selector.
 var music_panel: MusicBrowserPanel
 var _console_view: Control
 var view_option: OptionButton
-const VIEWS := ["Console", "Music Library"]
+const VIEWS := ["Console", "DJ Edit Mode", "DJ Perform Mode"]
+## DJ Perform Mode: VirtualDJ over OS2L playing the songs' timelines
+## (running only while that view is showing), and its panel.
+var performer: DjPerformer
+var perform_panel: DjPerformPanel
 ## The right-hand tabs (Patch + 3D Visualizer) and, while the visualizer
 ## is popped out, its own window.
 var _right_tabs: TabContainer
@@ -96,6 +101,19 @@ func _ready() -> void:
 	music_panel.timeline().generate_show_requested.connect(_generate_show_from_library)
 	music_panel.timeline().fixtures_provider = _timeline_fixtures
 	music_panel.timeline().set_timeline_store(TimelineStore.new(TimelineStore.folder_for_show(show_path)))
+
+	# DJ Perform Mode: started / stopped with its view.
+	performer = DjPerformer.new()
+	performer.fixtures_provider = _perform_fixtures
+	performer.store_provider = func(): return music_panel.timeline().timeline_store
+	add_child(performer)
+	music_panel.timeline().timeline_store_changed.connect(func():
+		if performer.is_active():
+			performer.reload_all())
+	perform_panel = DjPerformPanel.new()
+	perform_panel.performer = performer
+	perform_panel.visible = false
+	main_vbox.add_child(perform_panel)
 
 	var playback_tabs := TabContainer.new()
 	playback_tabs.custom_minimum_size = Vector2(336, 0)
@@ -266,7 +284,7 @@ func _pop_out_viz(rect := Rect2i()) -> void:
 	# (dialogs, tooltips, menus) is embedded in the main window
 	# (display/window/subwindows/embed_subwindows): a native tooltip window
 	# stalls the whole app ~140 ms each time it opens — a playhead jump in
-	# the Music Library, a hiccup in DMX output. (Only settable while the
+	# DJ Edit Mode, a hiccup in DMX output. (Only settable while the
 	# window is hidden, so it's shown once it's in the tree.)
 	w.visible = false
 	w.force_native = true
@@ -500,14 +518,28 @@ func _build_top_bar() -> Control:
 
 
 ## Switch the main area: 0 = the console (playback tabs + patch /
-## visualizer / DMX output), 1 = the Music Library. The top bar stays, and
-## the console keeps running underneath either way.
+## visualizer / DMX output), 1 = DJ Edit Mode (the music library and song
+## timelines), 2 = DJ Perform Mode (VirtualDJ over OS2L playing the
+## timelines: its listener and timeline playback run only while it's
+## showing). The top bar stays, and the console keeps running underneath.
 func set_view(idx: int) -> void:
 	idx = clampi(idx, 0, VIEWS.size() - 1)
 	_console_view.visible = idx == 0
-	music_panel.visible = idx == 1
+	music_panel.visible = idx == 1           # leaving it saves the open song's timelines
+	perform_panel.visible = idx == 2
+	if idx == 2 and not performer.is_active():
+		var err := performer.start()
+		status_label.text = "DJ Perform Mode: " + ("listening for VirtualDJ (OS2L)." if err == OK else performer.status())
+	elif idx != 2 and performer.is_active():
+		performer.stop()
+		status_label.text = "DJ Perform Mode stopped."
 	if view_option.selected != idx:
 		view_option.selected = idx
+
+
+## The view showing (index into VIEWS).
+func current_view() -> int:
+	return view_option.selected
 
 
 # ------------------------------------------------------------- UNIVERSES --
@@ -665,7 +697,17 @@ func _on_patch_changed() -> void:
 		music_panel.timeline().refresh_fixtures()
 
 
-## Every patched fixture, universe by universe, for the Music Library
+## Every patched fixture for DJ Perform Mode's timeline playback.
+func _perform_fixtures() -> Array:
+	var out: Array = []
+	for ui in range(_panels.size()):
+		for fx in _panels[ui].patched_fixtures:
+			out.append({"uid": String(fx["uid"]), "u": ui, "start": int(fx["start"]),
+				"profile": fx["profile"], "mode": int(fx.get("mode", 0))})
+	return out
+
+
+## Every patched fixture, universe by universe, for the DJ Edit Mode
 ## timeline's per-fixture tracks — keyed by its uid, which the show's saved
 ## timelines use.
 func _timeline_fixtures() -> Array:
@@ -791,7 +833,7 @@ func _apply_auto_show(res: Dictionary) -> void:
 		res["looks"].size(), res["chases"].size(), res["effects"].size()]
 
 
-## The Music Library timeline's "generate light show": make `path` Auto
+## The DJ Edit Mode timeline's "generate light show": make `path` Auto
 ## Show's song, with `a` (the timeline's analysed, possibly edited,
 ## structure) as its analysis, and build + install a show from it — what
 ## the Auto Show tab's Build Light Show does. Run it with the Auto Show
@@ -1810,7 +1852,7 @@ func apply_show_dict(parsed) -> void:
 	AutoShow.from_dict(doc.get("auto_show", {}))
 	auto_show_panel.reload()
 	_set_run_mode(int(doc.get("run_mode", 0)))
-	_on_patch_changed()                       # groups, visualizer, Music Library timelines
+	_on_patch_changed()                       # groups, visualizer, DJ Edit Mode timelines
 	viz_panel.from_dict(doc.get("viz", {}))
 	_apply_viz_window(doc.get("viz_window", {}))
 

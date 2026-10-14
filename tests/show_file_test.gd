@@ -119,7 +119,7 @@ func _test_round_trip() -> void:
 		"the group and its members (by fixture uid)")
 	ok(fx.effects.size() == 1 and fx.effects[0].name == "Test wave" and fx.effects[0].group == "Front", "the effect")
 	var tracks: Array = main.music_panel.timeline().fixture_tracks()
-	ok(tracks.size() == 4, "the Music Library timeline follows: par, bar + 2 heads (%d)" % tracks.size())
+	ok(tracks.size() == 4, "the DJ Edit Mode timeline follows: par, bar + 2 heads (%d)" % tracks.size())
 
 	# Bad files leave the show alone.
 	var bad := "user://_show_file_bad.json"
@@ -156,7 +156,7 @@ func _test_round_trip() -> void:
 	ks.pressed = true
 	root.push_input(ks)
 	ok(FileAccess.file_exists(bad) and "Show saved" in main.status_label.text,
-		"Ctrl+S saves the show (from the Music Library view): %s" % main.status_label.text)
+		"Ctrl+S saves the show (from DJ Edit Mode): %s" % main.status_label.text)
 	var dialogs_before: int = main.find_children("*", "FileDialog", false, false).size()
 	var saved_text: String = main.status_label.text
 	ks = InputEventKey.new()

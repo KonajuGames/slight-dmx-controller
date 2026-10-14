@@ -19,7 +19,7 @@ extends Control
 ##
 ## `editable` = false locks that editing (clicks just seek). It can also
 ## show only part of the song — `view_start` / `view_len` seconds, set by
-## whoever owns the zoom (the Music Library timeline follows its
+## whoever owns the zoom (the DJ Edit Mode timeline follows its
 ## waveform); by default it shows the whole song.
 
 signal seek_requested(seconds: float)

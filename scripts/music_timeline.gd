@@ -1,6 +1,6 @@
 class_name MusicTimeline
 extends VBoxContainer
-## The Music Library's track timeline, shown when a track is
+## DJ Edit Mode's track timeline, shown when a track is
 ## double-clicked: the track's colour-coded waveform (the Auto Show
 ## panel's WaveHeatmap) sitting at the bottom of the view, zoomable with
 ## the mouse wheel, and under it a slimmer copy that always shows the

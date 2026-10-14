@@ -1,5 +1,5 @@
 extends SceneTree
-## Tests for the Music Library's track timeline: WaveHeatmap's zoomable
+## Tests for DJ Edit Mode's track timeline: WaveHeatmap's zoomable
 ## view, the overview's view rectangle, MusicTimeline loading a track
 ## through the native extension, and the track list <-> timeline switch.
 ##

@@ -1,6 +1,6 @@
 extends SceneTree
 ## Tests for TimelineStore (a show's folder of per-song lighting timelines)
-## and the Music Library timeline saving into it when a song is left.
+## and the DJ Edit Mode timeline saving into it when a song is left.
 ##
 ##   godot --headless --script tests/timeline_store_test.gd
 

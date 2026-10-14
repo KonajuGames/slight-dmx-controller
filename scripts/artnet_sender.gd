@@ -26,6 +26,11 @@ var sacn_cid := Sacn.random_cid()
 
 var universes: Array[ArtNetUniverse] = []
 
+## More playback layers for tick(): Callables func(n: int) -> Array of n
+## {channel: value} dictionaries, applied under the chase / effect layer
+## and over Auto Show (the first listed wins where they overlap).
+var layer_providers: Array[Callable] = []
+
 ## Emitted when a running crossfade reaches all its targets.
 signal fade_finished
 
@@ -93,7 +98,8 @@ func set_universe_count(n: int) -> void:
 
 
 ## Recompute every universe's `output` (operator base -> Auto Show section
-## layer -> effect/chase layer -> grand master). When `transmit` is true,
+## layer -> layer_providers (DJ Perform Mode) -> effect/chase layer ->
+## grand master). When `transmit` is true,
 ## also put it on the wire. Call this every refresh tick — computing
 ## always keeps the 3D visualizer live even while "Sending" is off.
 func tick(transmit: bool = true) -> void:
@@ -101,6 +107,16 @@ func tick(transmit: bool = true) -> void:
 	for u in universes:
 		bases.append(u.dmx_data)
 	var layers: Array = Fx.compose(universes.size(), bases)
+	# Other playback layers (DJ Perform Mode's song timelines), in order:
+	# under the chase / effect layer, over Auto Show.
+	for provider in layer_providers:
+		if not provider.is_valid():
+			continue
+		var pl: Array = provider.call(universes.size())
+		for i in range(mini(universes.size(), pl.size())):
+			for ch in pl[i]:
+				if not layers[i].has(ch):
+					layers[i][ch] = pl[i][ch]
 	if AutoShow.active:
 		# the Auto Show section look sits under the chase / effect layer,
 		# over the operator's cue playback.

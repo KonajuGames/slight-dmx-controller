@@ -1,6 +1,6 @@
 extends SceneTree
 ## Tests for TimelineTrack — a lighting timeline (master / fixture / head)
-## in the Music Library's track timeline — and the master track's place
+## in DJ Edit Mode's track timeline — and the master track's place
 ## above the song structure.
 ##
 ##   godot --headless --script tests/timeline_track_test.gd

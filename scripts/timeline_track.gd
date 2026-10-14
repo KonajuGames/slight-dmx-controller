@@ -1,6 +1,6 @@
 class_name TimelineTrack
 extends Control
-## One lighting timeline in the Music Library's track timeline: the
+## One lighting timeline in DJ Edit Mode's track timeline: the
 ## master (affects every fixture), one fixture, or one head of a fixture.
 ## It's a stack of rows, one per kind of thing its target supports, from
 ## the bottom up:
@@ -162,17 +162,24 @@ func _fit_height() -> void:
 
 ## The dimmer level at `t` seconds (linear between nodes).
 func dimmer_at(t: float) -> float:
-	var n := dimmer_nodes.size()
+	return level_at(dimmer_nodes, t)
+
+
+## A node line's level at `t` seconds: linear between nodes, holding the
+## first / last level outside them, 1.0 with no nodes. Where two nodes
+## share a time (a step), the earlier's level.
+static func level_at(nodes: PackedVector2Array, t: float) -> float:
+	var n := nodes.size()
 	if n == 0:
 		return 1.0
-	if t <= dimmer_nodes[0].x:
-		return dimmer_nodes[0].y
+	if t <= nodes[0].x:
+		return nodes[0].y
 	for i in range(1, n):
-		if t <= dimmer_nodes[i].x:
-			var a := dimmer_nodes[i - 1]
-			var b := dimmer_nodes[i]
+		if t <= nodes[i].x:
+			var a := nodes[i - 1]
+			var b := nodes[i]
 			return lerpf(a.y, b.y, (t - a.x) / maxf(b.x - a.x, 1e-6))
-	return dimmer_nodes[n - 1].y
+	return nodes[n - 1].y
 
 
 ## The index of the dimmer node within _GRAB px of `pos` (the nearest), or -1.

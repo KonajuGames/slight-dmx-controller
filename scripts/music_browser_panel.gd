@@ -1,6 +1,6 @@
 class_name MusicBrowserPanel
 extends HSplitContainer
-## The "Music Library" view: a narrow tree on the left — this machine's
+## DJ Edit Mode: a narrow tree on the left — this machine's
 ## drives and folders, then VirtualDJ's Virtual Folders — and, filling the
 ## rest, the music in whatever's selected there.
 ##
