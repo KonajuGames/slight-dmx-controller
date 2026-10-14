@@ -688,6 +688,11 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 			d_slider.set_value_no_signal(255)
 			set_vdim.call(255)
 		)
+		# Set it (and its slider) to a level, 0..1 — a loaded show's.
+		fixture["_set_vdim"] = func(level: float):
+			var v := clampi(roundi(level * 255.0), 0, 255)
+			d_slider.set_value_no_signal(v)
+			set_vdim.call(v)
 
 	# One colour picker per head (RGB triplet). Multi-head fixtures — LED
 	# bars, spiders — get "Colour 1", "Colour 2", …
@@ -1137,8 +1142,7 @@ static func _arr_to_v3(a, fallback: Vector3) -> Vector3:
 
 
 ## Connection settings + patched fixtures for this universe (part of a
-## whole-show file). Does not include the live DMX buffer — that's a
-## preset, saved separately.
+## whole-show file). The live levels are separate: live_dict().
 func patch_dict() -> Dictionary:
 	var fixtures: Array = []
 	for fixture in patched_fixtures:
@@ -1209,6 +1213,38 @@ func apply_patch_dict(d: Dictionary) -> void:
 		_next_fixture_id += 1
 		i += 1
 	_refresh_fixtures_vbox()
+
+
+## The fixtures' live state, for a show file: the universe's buffer
+## (non-zero channels) and each fixture's virtual dimmer level, by patch
+## index (null where it has none).
+func live_dict() -> Dictionary:
+	var vdims: Array = []
+	for fixture in patched_fixtures:
+		var id := int(fixture["id"])
+		vdims.append(sender.virtual_dimmer_level(id) if sender.has_virtual_dimmer(id) else null)
+	var d := buffer_dict()
+	d["virtual_dimmers"] = vdims
+	return d
+
+
+## Restore live_dict() after the patch is in place: the levels go into the
+## buffer and the fixture controls (like Load to Patch), then the virtual
+## dimmers are set.
+func apply_live_dict(d: Dictionary) -> void:
+	var buf := PackedByteArray()
+	buf.resize(ArtNetUniverse.DMX_UNIVERSE_SIZE)
+	var channels: Dictionary = d.get("channels", {})
+	for key in channels:
+		var c := int(key)
+		if c >= 0 and c < buf.size():
+			buf[c] = clampi(int(channels[key]), 0, 255)
+	load_look(buf)
+	var vdims: Array = d.get("virtual_dimmers", [])
+	for i in range(mini(vdims.size(), patched_fixtures.size())):
+		var setter = patched_fixtures[i].get("_set_vdim", null)
+		if vdims[i] != null and setter is Callable and (setter as Callable).is_valid():
+			setter.call(float(vdims[i]))
 
 
 ## Non-zero channels of this universe's live buffer (part of a preset).

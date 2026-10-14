@@ -295,9 +295,22 @@ Global controls live in the top bar:
   aren't lost when you pull it down and back up).
 - **Sending** — toggles the ~30 Hz refresh stream for all universes.
 - **Blackout All** — zeroes every universe.
-- **Save/Load Show** — one `user://dmx_show.json` covering every
-  universe's connection settings and fixture patch. A legacy
-  single-universe patch file (a bare fixtures array) still loads, as
+- **Save Show / Save Show As… / Load Show…** — the whole show in one
+  JSON file (`.slight`) you pick: every universe's connection settings
+  and fixture patch (each fixture's profile — embedded, so the file is
+  portable — address, mode, and position / rotation in the visualizer),
+  the fixtures' live levels and virtual dimmer settings, the cue list,
+  chases, effects, fixture groups, sound reactions, triggers, Auto Show,
+  run mode and the visualizer's stage. **Save Show** writes to the
+  current show file (the last saved or loaded; `user://dmx_show.json`
+  until you pick one), **Save Show As…** picks a new one and **Load
+  Show…** opens one. The current show file is remembered
+  (`user://last_show.json`) and reopened when the app next starts; if
+  it's been moved or won't load, the app starts empty and the status
+  line says why. Files are tagged with a format version: one from a
+  newer sLight, or a file that isn't a show, is refused and the current
+  show left alone. Older show files (without live levels) still load, as
+  does a legacy single-universe patch file (a bare fixtures array), as
   universe 1.
 - **Save/Load Preset** — one `user://dmx_preset.json` with every
   universe's live DMX buffer (non-zero channels only). A legacy flat

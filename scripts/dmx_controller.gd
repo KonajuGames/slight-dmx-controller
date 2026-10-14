@@ -202,6 +202,13 @@ func _ready() -> void:
 	_refresh_timer.timeout.connect(_on_refresh_timeout)
 	_refresh_timer.start()
 
+	# Reopen the show that was current last time — only when running as
+	# the app (a test that adds this scene itself loads nothing).
+	(func():
+		if get_tree().current_scene == self:
+			restore_last_show()
+	).call_deferred()
+
 
 # ---------------------------------------------------------------- UI BUILD --
 
@@ -446,8 +453,13 @@ func _build_top_bar() -> Control:
 	save_show.pressed.connect(_on_save_show)
 	row.add_child(save_show)
 
+	var save_show_as := Button.new()
+	save_show_as.text = "Save Show As…"
+	save_show_as.pressed.connect(_on_save_show_as)
+	row.add_child(save_show_as)
+
 	var load_show := Button.new()
-	load_show.text = "Load Show"
+	load_show.text = "Load Show…"
 	load_show.pressed.connect(_on_load_show)
 	row.add_child(load_show)
 
@@ -1592,11 +1604,58 @@ func _refresh_all_profile_options(select_new: bool) -> void:
 
 # ------------------------------------------------------------ SHOW FILES --
 
-## A show file is every universe's connection settings + fixture patch,
-## plus the cue list, chases, effects and fixture groups.
-func _on_save_show() -> void:
+## A show file is everything about the rig and how it's played: every
+## universe's connection settings and fixture patch (each fixture's
+## profile, address, mode, and position / rotation in the visualizer),
+## the fixtures' live levels and virtual dimmers, the cue list, chases,
+## effects, fixture groups, sound reactions, triggers, Auto Show, run mode
+## and the visualizer's stage. JSON; saved to any file (SHOW_EXT), or the
+## default user:// one.
+const SHOW_EXT := "slight"
+const SHOW_FORMAT := "sLight show"
+const SHOW_VERSION := 1
+
+## The show file Save Show writes to (the last one saved / loaded).
+var show_path := SHOW_PATH
+## Where the current show file's path is remembered between runs, so it's
+## reopened at the next start (restore_last_show()).
+var last_show_store := "user://last_show.json"
+
+
+## The show file remembered from last time ("" if none).
+func remembered_show() -> String:
+	if not FileAccess.file_exists(last_show_store):
+		return ""
+	var parsed = JSON.parse_string(FileAccess.get_file_as_string(last_show_store))
+	return String(parsed.get("path", "")) if parsed is Dictionary else ""
+
+
+func _remember_show(path: String) -> void:
+	var f := FileAccess.open(last_show_store, FileAccess.WRITE)
+	if f != null:
+		f.store_string(JSON.stringify({"path": path}))
+		f.close()
+
+
+## At startup: reopen the remembered show file, if there is one. If it's
+## gone or won't load, the app starts empty and says why.
+func restore_last_show() -> void:
+	var path := remembered_show()
+	if path == "":
+		return
+	var err := load_show_from(path)
+	if err != "":
+		status_label.text = "Couldn't reopen the last show: " + err
+		return
+	status_label.text = "Reopened the last show, %s." % path.get_file()
+
+
+func show_dict() -> Dictionary:
 	var data := {
+		"format": SHOW_FORMAT,
+		"version": SHOW_VERSION,
 		"universes": [],
+		"live": [],
 		"run_mode": run_mode,
 		"cues": cue_panel.to_dict(),
 		"chases": chase_panel.to_dict(),
@@ -1611,35 +1670,46 @@ func _on_save_show() -> void:
 	}
 	for p in _panels:
 		data["universes"].append(p.patch_dict())
+		data["live"].append(p.live_dict())
+	return data
 
-	var f := FileAccess.open(SHOW_PATH, FileAccess.WRITE)
+
+## Write the show to `path`. Returns "" or what went wrong.
+func save_show_to(path: String) -> String:
+	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:
-		status_label.text = "Show save failed."
-		return
-	f.store_string(JSON.stringify(data))
+		return "Couldn't write %s (%s)." % [path.get_file(), error_string(FileAccess.get_open_error())]
+	f.store_string(JSON.stringify(show_dict(), "\t"))
 	f.close()
-	status_label.text = "Show saved (%d universes, %d cues, %d chases, %d effects)." % [
-		_panels.size(), cue_panel.cues.size(), Fx.chases.size(), Fx.effects.size()]
+	show_path = path
+	_remember_show(path)
+	return ""
 
 
-func _on_load_show() -> void:
-	if not FileAccess.file_exists(SHOW_PATH):
-		status_label.text = "No show file found."
-		return
-
-	var f := FileAccess.open(SHOW_PATH, FileAccess.READ)
+## Read the show at `path` and replace the current one with it. Returns
+## "" or what went wrong (the current show is left alone then).
+func load_show_from(path: String) -> String:
+	if not FileAccess.file_exists(path):
+		return "No show file at %s." % path
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return "Couldn't read %s (%s)." % [path.get_file(), error_string(FileAccess.get_open_error())]
 	var parsed = JSON.parse_string(f.get_as_text())
 	f.close()
+	if not (parsed is Dictionary and parsed.has("universes")) and not parsed is Array:
+		return "%s isn't a show file." % path.get_file()
+	if parsed is Dictionary and int(parsed.get("version", 1)) > SHOW_VERSION:
+		return "%s was saved by a newer sLight." % path.get_file()
+	apply_show_dict(parsed)
+	show_path = path
+	_remember_show(path)
+	return ""
 
-	var uni_list: Array
-	if parsed is Dictionary and parsed.has("universes"):
-		uni_list = parsed["universes"]
-	elif parsed is Array:
-		# Legacy single-universe patch: a bare fixtures array.
-		uni_list = [{"fixtures": parsed}]
-	else:
-		status_label.text = "Show file corrupt."
-		return
+
+## Replace the current show with a parsed show file (a Dictionary, or a
+## legacy single-universe patch: a bare fixtures array).
+func apply_show_dict(parsed) -> void:
+	var uni_list: Array = parsed["universes"] if parsed is Dictionary else [{"fixtures": parsed}]
 
 	ArtNet.stop_fade()
 	Fx.stop_all()
@@ -1653,9 +1723,15 @@ func _on_load_show() -> void:
 	ArtNet.set_universe_count(n)
 	_sync_tabs_to_universes()
 	for i in range(n):
-		_panels[i].apply_patch_dict(uni_list[i])
+		_panels[i].apply_patch_dict(uni_list[i] if i < uni_list.size() else {})
 
 	var doc: Dictionary = parsed if parsed is Dictionary else {}
+	# The fixtures' live levels (older files have none: the patch's
+	# defaults stand).
+	var live: Array = doc.get("live", [])
+	for i in range(mini(live.size(), n)):
+		if live[i] is Dictionary:
+			_panels[i].apply_live_dict(live[i])
 	cue_panel.from_dict(doc.get("cues", {}))
 	chase_panel.from_dict(doc.get("chases", {}))
 	_groups_from_dict(doc.get("groups", {}))   # fills the shared `groups`
@@ -1668,11 +1744,61 @@ func _on_load_show() -> void:
 	AutoShow.from_dict(doc.get("auto_show", {}))
 	auto_show_panel.reload()
 	_set_run_mode(int(doc.get("run_mode", 0)))
-	viz_panel.rebuild()
+	_on_patch_changed()                       # groups, visualizer, Music Library timelines
 	viz_panel.from_dict(doc.get("viz", {}))
 	_apply_viz_window(doc.get("viz_window", {}))
-	status_label.text = "Show loaded (%d universes, %d cues, %d chases, %d effects, %d groups)." % [
-		n, cue_panel.cues.size(), Fx.chases.size(), Fx.effects.size(), groups.size()]
+
+
+## Save Show: to the current show file.
+func _on_save_show() -> void:
+	var err := save_show_to(show_path)
+	if err != "":
+		status_label.text = "Show save failed: " + err
+		return
+	status_label.text = "Show saved to %s (%d universes, %d cues, %d chases, %d effects)." % [
+		show_path.get_file(), _panels.size(), cue_panel.cues.size(), Fx.chases.size(), Fx.effects.size()]
+
+
+## Save Show As…: pick the file, then save to it (it becomes the current one).
+func _on_save_show_as() -> void:
+	_show_file_dialog(FileDialog.FILE_MODE_SAVE_FILE, "Save Show As", func(path: String):
+		if path.get_extension() == "":
+			path += "." + SHOW_EXT
+		show_path = path
+		_on_save_show()
+	)
+
+
+## Load Show…: pick a show file and load it.
+func _on_load_show() -> void:
+	_show_file_dialog(FileDialog.FILE_MODE_OPEN_FILE, "Load Show", func(path: String):
+		var err := load_show_from(path)
+		if err != "":
+			status_label.text = "Show load failed: " + err
+			return
+		status_label.text = "Show loaded from %s (%d universes, %d cues, %d chases, %d effects, %d groups)." % [
+			path.get_file(), _panels.size(), cue_panel.cues.size(), Fx.chases.size(), Fx.effects.size(), groups.size()]
+	)
+
+
+func _show_file_dialog(mode: FileDialog.FileMode, title: String, on_pick: Callable) -> void:
+	var fd := FileDialog.new()
+	fd.title = title
+	fd.file_mode = mode
+	fd.access = FileDialog.ACCESS_FILESYSTEM
+	fd.add_filter("*." + SHOW_EXT, "sLight show")
+	fd.add_filter("*.json", "Show (JSON)")
+	fd.use_native_dialog = true
+	RecentDirs.track(fd, "show")
+	if show_path != SHOW_PATH:
+		fd.current_file = show_path.get_file()
+	add_child(fd)
+	fd.file_selected.connect(func(path: String):
+		fd.queue_free()
+		on_pick.call(path)
+	)
+	fd.canceled.connect(func(): fd.queue_free())
+	fd.popup_centered_ratio(0.6)
 
 
 # ---------------------------------------------------------------- PRESETS --
