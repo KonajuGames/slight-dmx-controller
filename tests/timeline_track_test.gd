@@ -42,6 +42,8 @@ func _run() -> void:
 	_test_dimmer_shapes()
 	await _test_context_menu()
 	await _test_drag_selection()
+	_test_strobe_model()
+	await _test_strobe_editing()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
 
@@ -1061,6 +1063,103 @@ func _test_drag_selection() -> void:
 		"stopped by the next segment along (%.1f)" % p1.colour_segments[1]["t1"])
 	tl.undo()
 	ok(is_equal_approx(p1.colour_segments[1]["t1"], 10.0), "undoable")
+	tl._dirty = false
+	tl.queue_free()
+	await process_frame
+
+
+func _test_strobe_model() -> void:
+	print("- strobe segments")
+	var tr := TimelineTrack.new()
+	ok(not tr.strobe_at(1.0), "off by default")
+	ok(tr.replace_strobe(2.0, 4.0, [{"t0": 0.0, "t1": 2.0}]) and tr.strobe_at(3.0) and not tr.strobe_at(5.0), "turned on across a span")
+	ok(not tr.replace_strobe(2.0, 4.0, [{"t0": 0.0, "t1": 2.0}]), "again: no change")
+	tr.replace_strobe(4.0, 6.0, [{"t0": 0.0, "t1": 2.0}])
+	ok(tr.strobe_segments == [{"t0": 2.0, "t1": 6.0, "speed": 1}], "touching segments join (%s)" % str(tr.strobe_segments))
+	tr.replace_strobe(3.0, 4.0, [])
+	ok(tr.strobe_segments == [{"t0": 2.0, "t1": 3.0, "speed": 1}, {"t0": 4.0, "t1": 6.0, "speed": 1}], "off in the middle: a gap")
+	var S := TimelineTrack.Strobe
+	tr.replace_strobe(6.0, 8.0, [{"t0": 0.0, "t1": 2.0, "speed": S.FAST}])
+	ok(tr.strobe_segments.size() == 3 and tr.strobe_speed_at(7.0) == S.FAST and tr.strobe_speed_at(5.0) == S.MEDIUM,
+		"a different speed next to it: kept separate")
+	ok(tr.strobe_speed_at(3.5) == -1, "off: -1")
+	var r := Rect2(0, 0, 100, 10)
+	ok(TimelineTrack.strobe_line_y(r, S.SLOW) > TimelineTrack.strobe_line_y(r, S.MEDIUM)
+		and TimelineTrack.strobe_line_y(r, S.MEDIUM) > TimelineTrack.strobe_line_y(r, S.FAST),
+		"the dashed line: low for slow, middle for medium, high for fast")
+	ok(tr.strobe_segment(2.5, 5.0) == [{"t0": 0.0, "t1": 0.5, "speed": 1}, {"t0": 1.5, "t1": 2.5, "speed": 1}], "a stretch copied, relative to its start (with its speed)")
+	tr.free()
+
+
+func _test_strobe_editing() -> void:
+	print("- the strobe row in the timeline")
+	var R := TimelineTrack.Row
+	var mover := FixtureProfile.new("mv", "Mover", [{"name": "Pan", "role": "PAN"}, {"name": "Tilt", "role": "TILT"},
+		{"name": "Shutter", "role": "STROBE"}, {"name": "Dimmer", "role": "DIMMER"}])
+	var fixtures := [{"key": "mv", "name": "Mover", "profile": mover, "mode": 0}]
+	var tl := MusicTimeline.new()
+	tl.fixtures_provider = func(): return fixtures
+	root.add_child(tl)
+	tl.position = Vector2.ZERO
+	tl.size = Vector2(1100, 700)
+	tl.open("user://_strobe_song.wav")
+	var a := SongAnalysis.new()
+	a.duration = 60.0
+	for arr in [a.wave_lo, a.wave_mid, a.wave_hi, a.wave_peak]:
+		arr.resize(6000)
+	tl._set_analysis(a)
+	var beats := PackedFloat32Array()
+	for i in range(120):
+		beats.append(i * 0.5)
+	tl.wave().set_beat_grid(beats, 4, 0)
+	await process_frame
+	await process_frame
+	tl.wave().set_view(0.0, 20.0)
+	var mv := tl.fixture_tracks()[0]
+	var m := tl.master_track()
+	var sel := tl.selection()
+	ok(mv.has_row(R.STROBE), "a fixture with a strobe channel has a strobe row")
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["mv|%d" % R.STROBE, "master|%d" % R.STROBE]), 4.0, 8.0)])
+	var items := _menu_ids(tl.context_items(true))
+	ok(items.has("Strobe") and not items.has("Colour") and not items.has("Dimmer"), "a strobe selection: a Strobe submenu (%s)" % str(items))
+	ok(_menu_ids(tl._strobe_menu) == ["Strobe Slow", "Strobe Medium", "Strobe Fast", "Strobe Off"], "Strobe Slow / Medium / Fast / Off")
+	tl._strobe_menu.id_pressed.emit(TimelineTrack.Strobe.FAST)
+	ok(mv.strobe_speed_at(6.0) == TimelineTrack.Strobe.FAST and m.strobe_at(6.0) and not mv.strobe_at(9.0),
+		"Strobe Fast: on, fast, across the selected rows")
+	tl._strobe_menu.id_pressed.emit(TimelineTrack.Strobe.MEDIUM)
+	ok(mv.strobe_speed_at(6.0) == TimelineTrack.Strobe.MEDIUM and mv.strobe_segments.size() == 1, "Strobe Medium: the speed changed")
+	tl.undo()
+	ok(mv.strobe_speed_at(6.0) == TimelineTrack.Strobe.FAST, "undo: back to fast")
+	tl.undo()
+	ok(not mv.strobe_at(6.0), "again: off")
+	tl.redo()
+	tl.redo()
+	# Saved, and read back.
+	tl._collect()
+	ok(tl.song_data()["tracks"]["mv"]["strobe"] == [[4.0, 8.0, 1]], "saved as [[t0, t1, speed]]")
+	ok(MusicTimeline._spans_from([[4.0, 8.0, 2]]) == [{"t0": 4.0, "t1": 8.0, "speed": 2}], "and read back")
+	ok(MusicTimeline._spans_from([[4.0, 8.0]]) == [{"t0": 4.0, "t1": 8.0, "speed": 1}], "saved without a speed: medium")
+	# Copy / paste, Delete.
+	tl.copy_selection()
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["mv|%d" % R.STROBE]), 20.0, 21.0)])
+	tl.paste()
+	ok(mv.strobe_at(22.0) and not m.strobe_at(22.0), "copies and pastes")
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["mv|%d" % R.STROBE]), 5.0, 6.0)])
+	tl.delete_selection()
+	ok(mv.strobe_at(4.5) and not mv.strobe_at(5.5) and mv.strobe_at(7.0), "Delete turns it off there")
+	tl._strobe_menu.id_pressed.emit(TimelineTrack.Strobe.MEDIUM)
+	ok(mv.strobe_segments[0] == {"t0": 4.0, "t1": 8.0, "speed": 1}, "on again: rejoined")
+	# Edge drag: the boundary on the edge goes with it.
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["mv|%d" % R.STROBE]), 4.0, 8.0)])
+	await process_frame
+	_sel_drag(tl, _at(tl, mv, R.STROBE, 8.0), _at(tl, mv, R.STROBE, 9.8))
+	ok(is_equal_approx(mv.strobe_segments[0]["t1"], 10.0), "dragging the edge moves the strobe's end (%.1f)" % mv.strobe_segments[0]["t1"])
+	# Move the selection: the strobe goes with it.
+	tl.move_selection(sel.blocks.duplicate(true), 10.0)
+	ok(not mv.strobe_at(6.0) and mv.strobe_at(16.0) and mv.strobe_at(19.9), "moving the selection moves the strobe")
+	ok(_menu_ids(tl.context_items(true)).has("Strobe"), "(still selected)")
+	tl._strobe_menu.id_pressed.emit(100)            # Strobe Off
+	ok(not mv.strobe_at(16.0), "Strobe Off")
 	tl._dirty = false
 	tl.queue_free()
 	await process_frame

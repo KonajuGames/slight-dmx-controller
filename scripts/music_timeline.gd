@@ -734,8 +734,11 @@ func delete_selection() -> bool:
 					TimelineTrack.Row.COLOUR:
 						if tr.replace_colour(span.x, span.y, []):
 							changed = true
+					TimelineTrack.Row.STROBE:
+						if tr.replace_strobe(span.x, span.y, []):
+							changed = true
 					_:
-						pass        # Position / Strobe / Cues: nothing to clear yet
+						pass        # Position / Cues: nothing to clear yet
 	if changed:
 		_mark_dirty()
 	return changed
@@ -773,8 +776,10 @@ func _copy_clip() -> Dictionary:
 						part["nodes"] = tr.dimmer_segment(span.x, span.y)
 					TimelineTrack.Row.COLOUR:
 						part["segments"] = tr.colour_segment(span.x, span.y)
+					TimelineTrack.Row.STROBE:
+						part["strobes"] = tr.strobe_segment(span.x, span.y)
 					_:
-						pass        # Position / Strobe / Cues: nothing to copy yet
+						pass        # Position / Cues: nothing to copy yet
 				parts.append(part)
 			if not parts.is_empty():
 				rows[row] = parts
@@ -867,6 +872,8 @@ func _paste_into(pairs: Array, at: float) -> Dictionary:
 					changed = tr.replace_dimmer(at + part["t0"], at + part["t1"], part["nodes"]) or changed
 				elif row == TimelineTrack.Row.COLOUR and part.has("segments"):
 					changed = tr.replace_colour(at + part["t0"], at + part["t1"], part["segments"]) or changed
+				elif row == TimelineTrack.Row.STROBE and part.has("strobes"):
+					changed = tr.replace_strobe(at + part["t0"], at + part["t1"], part["strobes"]) or changed
 				blocks.append(TimelineSelection.block(PackedStringArray([TimelineSelection.row_id(key, row)]), t0, t1))
 	return {"blocks": blocks, "changed": changed}
 
@@ -886,6 +893,8 @@ const DIM_LABELS := {Dim.BLACK: "Black (0%)", Dim.HALF: "Half (50%)", Dim.FULL: 
 	Dim.FADE_IN: "Fade In", Dim.FADE_OUT: "Fade Out", Dim.PULSE_IN: "Pulse In", Dim.PULSE_OUT: "Pulse Out",
 	Dim.SMOOTH: "Smooth (ramp across)", Dim.BEAT_PULSES: "Pulse on Every Beat", Dim.BAR_PULSES: "Pulse on Every Bar"}
 enum Col { STATIC, GRADIENT, RAINBOW, CLEAR, PRESET = 100 }
+## The Strobe submenu: a speed (TimelineTrack.Strobe), or off.
+const STROBE_OFF := -1
 const COLOUR_PRESETS := [["Red", Color(1, 0, 0)], ["Orange", Color(1, 0.5, 0)], ["Yellow", Color(1, 1, 0)],
 	["Green", Color(0, 1, 0)], ["Cyan", Color(0, 1, 1)], ["Blue", Color(0, 0, 1)], ["Purple", Color(0.5, 0, 1)],
 	["Magenta", Color(1, 0, 1)], ["White", Color(1, 1, 1)]]
@@ -893,12 +902,13 @@ const COLOUR_PRESETS := [["Red", Color(1, 0, 0)], ["Orange", Color(1, 0.5, 0)], 
 var _menu: PopupMenu
 var _dimmer_menu: PopupMenu
 var _colour_menu: PopupMenu
+var _strobe_menu: PopupMenu
 var _ctx := {}                  # the right-click: {track, row, time}
 
 
 ## A right-click on a timeline: the actions that fit where it was — on
 ## the selection: Delete, Undo / Redo, Cut / Copy / Paste and, for the
-## kinds of row selected, a Dimmer and a Colour submenu; elsewhere: Undo /
+## kinds of row selected, a Dimmer, Colour and Strobe submenu; elsewhere: Undo /
 ## Redo, Paste Here, Select All.
 func _on_context(track: TimelineTrack, row: int, gpos: Vector2, time: float) -> void:
 	if _wave.analysis == null:
@@ -933,7 +943,7 @@ func context_items(on_selection: bool) -> PopupMenu:
 			_menu.add_item("Paste Here", M_PASTE_HERE)
 	if on_selection:
 		var kinds := selected_row_kinds()
-		if kinds.has(TimelineTrack.Row.DIMMER) or kinds.has(TimelineTrack.Row.COLOUR):
+		if kinds.has(TimelineTrack.Row.DIMMER) or kinds.has(TimelineTrack.Row.COLOUR) or kinds.has(TimelineTrack.Row.STROBE):
 			_menu.add_separator()
 		if kinds.has(TimelineTrack.Row.DIMMER):
 			_fill_dimmer_menu()
@@ -941,6 +951,13 @@ func context_items(on_selection: bool) -> PopupMenu:
 		if kinds.has(TimelineTrack.Row.COLOUR):
 			_fill_colour_menu()
 			_menu.add_submenu_node_item("Colour", _colour_menu)
+		if kinds.has(TimelineTrack.Row.STROBE):
+			_strobe_menu.clear()
+			for sp in [TimelineTrack.Strobe.SLOW, TimelineTrack.Strobe.MEDIUM, TimelineTrack.Strobe.FAST]:
+				_strobe_menu.add_item("Strobe " + TimelineTrack.STROBE_NAMES[sp], sp)
+			_strobe_menu.add_separator()
+			_strobe_menu.add_item("Strobe Off", 100)
+			_menu.add_submenu_node_item("Strobe", _strobe_menu)
 	_menu.add_separator()
 	_menu.add_item("Select All", M_SELECT_ALL, ctrl | KEY_A)
 	if not _selection.is_empty():
@@ -969,6 +986,9 @@ func _ensure_menus() -> void:
 	_colour_menu = PopupMenu.new()
 	_colour_menu.id_pressed.connect(_on_colour_menu)
 	_menu.add_child(_colour_menu)
+	_strobe_menu = PopupMenu.new()
+	_strobe_menu.id_pressed.connect(func(id: int): apply_strobe(STROBE_OFF if id == 100 else id))
+	_menu.add_child(_strobe_menu)
 
 
 func _fill_dimmer_menu() -> void:
@@ -1164,6 +1184,23 @@ func apply_colour_segments(make: Callable) -> bool:
 	return changed
 
 
+## Turn the strobe on at `speed` (TimelineTrack.Strobe), or off
+## (STROBE_OFF), across every selected strobe span. Returns whether
+## anything changed.
+func apply_strobe(speed: int) -> bool:
+	var changed := false
+	for tr in [_master] + Array(_fixture_tracks):
+		var key := String(tr.get_meta("key"))
+		if not tr.has_row(TimelineTrack.Row.STROBE):
+			continue
+		for span in _merged(_selection.spans_for(key, TimelineTrack.Row.STROBE)):
+			if tr.replace_strobe(span.x, span.y, [] if speed == STROBE_OFF else [{"t0": 0.0, "t1": span.y - span.x, "speed": speed}]):
+				changed = true
+	if changed:
+		_mark_dirty()
+	return changed
+
+
 ## One colour across every selected colour span.
 func apply_static_colour(c: Color) -> bool:
 	return apply_colour_segments(func(t0, t1): return [{"t0": 0.0, "t1": t1 - t0, "c0": c, "c1": c}])
@@ -1237,12 +1274,15 @@ func _edge_at(track: TimelineTrack, gpos: Vector2) -> Dictionary:
 				var tr := _track_for(rid.get_slice("|", 0))
 				if tr == null:
 					continue
-				if kind == TimelineTrack.Row.COLOUR:
-					# Colour segment boundaries on the edge move with it; the
-					# segments' other ends (and their neighbours) limit it.
+				if kind == TimelineTrack.Row.COLOUR or kind == TimelineTrack.Row.STROBE:
+					# Colour / strobe segment boundaries on the edge move with
+					# it; the segments' other ends (and their neighbours)
+					# limit it.
+					var prop := "colour_segments" if kind == TimelineTrack.Row.COLOUR else "strobe_segments"
+					var segs_now: Array = tr.get(prop)
 					var ends: Array = []
-					for k in range(tr.colour_segments.size()):
-						var sg: Dictionary = tr.colour_segments[k]
+					for k in range(segs_now.size()):
+						var sg: Dictionary = segs_now[k]
 						if absf(sg["t0"] - et) < 0.001:
 							ends.append([k, "t0"])
 							hi = minf(hi, sg["t1"] - 0.001)
@@ -1254,7 +1294,7 @@ func _edge_at(track: TimelineTrack, gpos: Vector2) -> Dictionary:
 						elif sg["t0"] > et:
 							hi = minf(hi, sg["t0"])
 					if not ends.is_empty():
-						stretching.append({"track": tr, "segs": tr.colour_segments, "ends": ends})
+						stretching.append({"track": tr, "prop": prop, "segs": segs_now, "ends": ends})
 					continue
 				if kind != TimelineTrack.Row.DIMMER:
 					continue
@@ -1300,8 +1340,8 @@ func _drag_edge(phase: int, gpos: Vector2) -> void:
 		var segs: Array = (c["segs"] as Array).duplicate(true)
 		for e in c["ends"]:
 			segs[e[0]][e[1]] = t
-		c["track"].colour_segments = segs
-		moved = moved or not TimelineTrack._same_segments(segs, c["segs"])
+		c["track"].set(c["prop"], segs)
+		moved = moved or segs != c["segs"]
 	if phase == TimelineTrack.SELECT_RELEASE:
 		_sel_drag = {}
 		if moved:
@@ -1655,6 +1695,7 @@ func _rebuild_fixture_tracks() -> void:
 			tr.set_meta("key", spec["key"])
 			tr.dimmer_nodes = _nodes_from(saved.get(spec["key"], {}).get("dimmer", []))
 			tr.colour_segments = _segs_from(saved.get(spec["key"], {}).get("colour", []))
+			tr.strobe_segments = _spans_from(saved.get(spec["key"], {}).get("strobe", []))
 			tr.dimmer_edited.connect(_mark_dirty)
 			tr.selection = _selection
 			tr.select_drag.connect(_on_select_drag)
@@ -1734,6 +1775,10 @@ func _collect() -> void:
 			entry.erase("colour")
 		else:
 			entry["colour"] = _segs_to(tr.colour_segments)
+		if tr.strobe_segments.is_empty():
+			entry.erase("strobe")
+		else:
+			entry["strobe"] = _spans_to(tr.strobe_segments)
 		if entry.is_empty():
 			tracks.erase(key)
 		else:
@@ -1747,6 +1792,7 @@ func _show_song_data() -> void:
 	if _master != null:
 		_master.dimmer_nodes = _nodes_from(tracks.get("master", {}).get("dimmer", []))
 		_master.colour_segments = _segs_from(tracks.get("master", {}).get("colour", []))
+		_master.strobe_segments = _spans_from(tracks.get("master", {}).get("strobe", []))
 	_rebuild_fixture_tracks()
 	if _path != "" and _struct_cache.has(_path):
 		_apply_saved_structure(_path, _struct_cache[_path])
@@ -1848,6 +1894,7 @@ func _restore(snap: Dictionary) -> void:
 	for tr in [_master] + Array(_fixture_tracks):
 		tr.dimmer_nodes = _nodes_from(tracks.get(String(tr.get_meta("key")), {}).get("dimmer", []))
 		tr.colour_segments = _segs_from(tracks.get(String(tr.get_meta("key")), {}).get("colour", []))
+		tr.strobe_segments = _spans_from(tracks.get(String(tr.get_meta("key")), {}).get("strobe", []))
 	if _struct_cache.has(_path):
 		_apply_saved_structure(_path, _struct_cache[_path])
 		_set_structure(_struct_cache[_path])
@@ -1880,6 +1927,26 @@ static func _segs_to(segs: Array) -> Array:
 	for sg in segs:
 		out.append([snappedf(sg["t0"], 0.001), snappedf(sg["t1"], 0.001),
 			(sg["c0"] as Color).to_html(false), (sg["c1"] as Color).to_html(false)])
+	return out
+
+
+## Strobe segments to / from their saved form: [[t0, t1, speed], ...]
+## (speed: 0 slow, 1 medium, 2 fast; medium when it's missing).
+static func _spans_to(spans: Array) -> Array:
+	var out := []
+	for sg in spans:
+		out.append([snappedf(sg["t0"], 0.001), snappedf(sg["t1"], 0.001), int(sg.get("speed", TimelineTrack.Strobe.MEDIUM))])
+	return out
+
+
+static func _spans_from(arr) -> Array:
+	var out: Array = []
+	if arr is Array:
+		for e in arr:
+			if e is Array and e.size() >= 2 and float(e[1]) > float(e[0]):
+				var speed := clampi(int(e[2]) if e.size() >= 3 else TimelineTrack.Strobe.MEDIUM,
+					TimelineTrack.Strobe.SLOW, TimelineTrack.Strobe.FAST)
+				out.append({"t0": float(e[0]), "t1": float(e[1]), "speed": speed})
 	return out
 
 

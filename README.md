@@ -253,7 +253,17 @@ technical reference.
   every selected row of its kind; then Select All / Deselect. Off the
   selection: Undo / Redo, **Paste Here** (at the clicked time, into the
   clicked track) and Select All. Ctrl+right-click on a dimmer node still
-  removes it. So far the Position, Strobe and Cues rows are empty.
+  removes it.
+  The **Strobe** row holds strobe segments: spans where the strobe's on
+  at a speed — Slow, Medium or Fast — (off everywhere else), each drawn
+  as a line up the row at either end with a dashed line between: along
+  the bottom of the row for slow, the middle for medium, the top for
+  fast. Its right-click submenu has **Strobe Slow / Medium / Fast** and
+  **Strobe Off** (strobes saved before speeds read as Medium); Delete, cut / copy / paste, moving the selection
+  (with its ghost), dragging a selection edge (a strobe's start / end on
+  it moves too), undo and saving cover it like the colour row. Touching
+  strobe segments of the same speed join into one. So far the Position and Cues rows are
+  empty.
 - `timeline_store.gd` — the `TimelineStore` class: a show's music
   timelines, in a folder beside the show file (`MyShow.slight` →
   `MyShow.timelines/`): one JSON file per song, named by the song's
@@ -414,8 +424,13 @@ Global controls live in the top bar:
   stands. Only what a song's timelines cover is driven; everything else
   stays as the console has it. The timelines go into the frame under
   chases and effects and over Auto Show. Leaving DJ Perform Mode stops
-  the OS2L listener and the timeline playback. So far the dimmer and
-  colour rows are the ones with content.
+  the OS2L listener and the timeline playback. Where a fixture's strobe
+  row, or the master's, is on, its STROBE channel goes to a strobing
+  value for the speed (the faster of the two) — a fifth of the way up a
+  range labelled strobe / pulse for slow, just over half way for
+  medium, its fast end for fast; without such a range, the same through
+  20–240 — and is otherwise left as the console has it. So far the dimmer, colour
+  and strobe rows are the ones with content.
 
 - **Grand Master** — one 0–255 fader that scales *every* universe's
   output on send (non-destructive: the per-channel values you dialed

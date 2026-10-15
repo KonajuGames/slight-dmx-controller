@@ -42,7 +42,7 @@ class Deck:
 	var ticks := 0                  # Time.get_ticks_msec() of that report
 	var rate := 1.0                 # song seconds per real second, from the reports
 	var load_state := Load.NONE
-	var tracks := {}                # track key -> {dimmer: PackedVector2Array, colour: [segments]}
+	var tracks := {}                # track key -> {dimmer: PackedVector2Array, colour: [segments], strobe: [spans]}
 	var load_id := 0
 
 	## Seconds into the song now.
@@ -234,8 +234,9 @@ func _loaded(num: int, id: int, data: Dictionary) -> void:
 				continue
 			var nodes := MusicTimeline._nodes_from(saved[key].get("dimmer", []))
 			var segs := MusicTimeline._segs_from(saved[key].get("colour", []))
-			if not nodes.is_empty() or not segs.is_empty():
-				tracks[String(key)] = {"dimmer": nodes, "colour": segs}
+			var strobes := MusicTimeline._spans_from(saved[key].get("strobe", []))
+			if not nodes.is_empty() or not segs.is_empty() or not strobes.is_empty():
+				tracks[String(key)] = {"dimmer": nodes, "colour": segs, "strobe": strobes}
 	d.tracks = tracks
 	d.load_state = Load.LOADED if not tracks.is_empty() else Load.NO_TIMELINES
 	state_changed.emit()
@@ -278,6 +279,9 @@ func layer(n: int) -> Array:
 ##     a head's that head
 ##   colour: a head's colour row, else its fixture's, else the master's,
 ##     sets that head's red / green / blue (where a segment covers `t`)
+##   strobe: where the fixture's strobe row or the master's is on, its
+##     STROBE channel(s) go to a strobing value (from the channel's
+##     ranges); off, they're left as the console has them
 ## On a fixture with a DIMMER channel the dimmer lines set that channel
 ## (full x master x fixture) and a head's line scales the head's colour;
 ## on one without, the colour channels — the timeline's colour, or the
@@ -291,6 +295,7 @@ static func song_output(tracks: Dictionary, t: float, fixtures: Array, bases: Ar
 	var master_line: PackedVector2Array = master.get("dimmer", PackedVector2Array())
 	var lm := TimelineTrack.level_at(master_line, t)
 	var master_colour = TimelineTrack.segment_colour_at(master.get("colour", []), t)
+	var master_strobe := TimelineTrack.speed_at(master.get("strobe", []), t)
 	for fx in fixtures:
 		var u: int = fx["u"]
 		if u < 0 or u >= n:
@@ -314,6 +319,11 @@ static func song_output(tracks: Dictionary, t: float, fixtures: Array, bases: Ar
 				break
 		if dim >= 0 and fixture_dimmed:
 			out[u][start + dim] = int(round(255.0 * clampf(lf, 0.0, 1.0)))
+		var strobe := maxi(master_strobe, TimelineTrack.speed_at(own.get("strobe", []), t))
+		if strobe >= 0:                     # the faster of the master's and its own
+			for k in range(chans.size()):
+				if String(chans[k]["role"]) == "STROBE":
+					out[u][start + k] = strobe_value(chans[k], strobe)
 		# Per head: its level and colour; its channels from them.
 		var groups := profile.head_groups(mode)
 		var in_head := {}
@@ -345,6 +355,26 @@ static func song_output(tracks: Dictionary, t: float, fixtures: Array, bases: Ar
 				if not in_head.has(k):
 					out[u][start + k] = _scaled(base, start + k, lf)
 	return out
+
+
+## How far through a strobe range each speed goes (slow / medium / fast).
+const STROBE_SPEED_FRACTION := [0.2, 0.55, 1.0]
+
+## The value that makes a STROBE channel strobe at `speed`
+## (TimelineTrack.Strobe): that far through a range labelled strobe /
+## pulse (slow to fast), or through 20-240 — strobing on a plain 0-255
+## channel, as the visualizer reads one — without such a range.
+static func strobe_value(ch: Dictionary, speed: int = TimelineTrack.Strobe.FAST) -> int:
+	var lo := 20
+	var hi := 240
+	for r in ch.get("ranges", []):
+		var lbl := String(r.get("label", "")).to_lower()
+		if "strob" in lbl or "puls" in lbl:
+			lo = int(r["lo"])
+			hi = int(r["hi"])
+			break
+	var f: float = STROBE_SPEED_FRACTION[clampi(speed, 0, 2)]
+	return int(round(lerpf(lo, hi, f)))
 
 
 static func _byte(base: PackedByteArray, ch: int) -> int:

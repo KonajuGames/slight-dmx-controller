@@ -25,7 +25,12 @@ extends Control
 ##   Ctrl + right-click     remove the node under the pointer
 ## The colour row holds colour segments (colour_segments): a span with a
 ## colour at each end — the same for a static colour, two for a gradient;
-## outside its segments the row sets nothing. Right-click asks the owner
+## outside its segments the row sets nothing. The strobe row holds strobe
+## segments (strobe_segments): spans where the strobe's on, at a speed
+## (Strobe: slow / medium / fast) — drawn as a line up at each end and a
+## dashed line between, low / middle / high in the row by speed; off
+## elsewhere.
+## Right-click asks the owner
 ## for a context menu (context_requested).
 ## A plain left-button drag on a selected area's start / end resizes it,
 ## and inside it moves it (the owner does both, through select_drag); a
@@ -67,6 +72,7 @@ const _GHOST_LINE := Color(1, 1, 1, 0.55)
 const _GHOST_FILL_ALPHA := 0.18
 const _GHOST_COLOUR_ALPHA := 0.6
 const _GHOST_DIM := Color(0, 0, 0, 0.35)
+const _STROBE := Color(1, 1, 1, 0.9)
 ## How close (px) the pointer must be to a selected area's start / end to
 ## grab it.
 const EDGE_GRAB := 5.0
@@ -100,6 +106,15 @@ var dimmer_nodes := PackedVector2Array():
 var colour_segments: Array = []:
 	set(v):
 		colour_segments = v
+		queue_redraw()
+## Strobe speeds; a segment without one (saved before speeds) is MEDIUM.
+enum Strobe { SLOW, MEDIUM, FAST }
+const STROBE_NAMES := {Strobe.SLOW: "Slow", Strobe.MEDIUM: "Medium", Strobe.FAST: "Fast"}
+## The strobe row's segments (strobe on), in time order, not overlapping:
+## [{t0, t1, speed: Strobe}].
+var strobe_segments: Array = []:
+	set(v):
+		strobe_segments = v
 		queue_redraw()
 ## While the selection's being moved: its content, drawn translucent where
 ## it would land — {rows: {Row: [parts — {t0, t1, nodes? / segments?},
@@ -497,6 +512,85 @@ static func _same_segments(a: Array, b: Array) -> bool:
 	return true
 
 
+# ---------------------------------------------------------------- STROBE --
+
+## Whether the strobe's on at `t` seconds.
+func strobe_at(t: float) -> bool:
+	return span_at(strobe_segments, t)
+
+
+## The strobe's speed at `t` seconds (Strobe), or -1 where it's off.
+func strobe_speed_at(t: float) -> int:
+	return speed_at(strobe_segments, t)
+
+
+static func speed_at(spans: Array, t: float) -> int:
+	for sg in spans:
+		if t >= sg["t0"] and t <= sg["t1"]:
+			return int(sg.get("speed", Strobe.MEDIUM))
+	return -1
+
+
+static func span_at(spans: Array, t: float) -> bool:
+	for sg in spans:
+		if t >= sg["t0"] and t <= sg["t1"]:
+			return true
+	return false
+
+
+## The strobe segments from `t0` to `t1` (for copying), cut to that span
+## and made relative to t0.
+func strobe_segment(t0: float, t1: float) -> Array:
+	var out: Array = []
+	for sg in strobe_segments:
+		if sg["t1"] <= t0 or sg["t0"] >= t1:
+			continue
+		out.append({"t0": maxf(sg["t0"], t0) - t0, "t1": minf(sg["t1"], t1) - t0,
+			"speed": int(sg.get("speed", Strobe.MEDIUM))})
+	return out
+
+
+## Replace the strobe row from `t0` to `t1` with `segments` (relative to
+## t0; [] turns it off there): segments overlapping the span are cut back
+## to its edges; touching segments of the same speed are joined. Cut off
+## at the song's end. Returns whether anything changed.
+func replace_strobe(t0: float, t1: float, segments: Array) -> bool:
+	var end := wave.duration() if wave != null and wave.analysis != null else INF
+	var shift := t0
+	t0 = maxf(t0, 0.0)
+	t1 = minf(t1, end)
+	if t1 <= t0:
+		return false
+	var out: Array = []
+	for sg in strobe_segments:
+		if sg["t1"] <= t0 or sg["t0"] >= t1:
+			out.append(sg.duplicate())
+			continue
+		var speed := int(sg.get("speed", Strobe.MEDIUM))
+		if sg["t0"] < t0:
+			out.append({"t0": sg["t0"], "t1": t0, "speed": speed})
+		if sg["t1"] > t1:
+			out.append({"t0": t1, "t1": sg["t1"], "speed": speed})
+	for sg in segments:
+		var a := maxf(sg["t0"] + shift, t0)
+		var b := minf(sg["t1"] + shift, t1)
+		if b > a:
+			out.append({"t0": a, "t1": b, "speed": int(sg.get("speed", Strobe.MEDIUM))})
+	out.sort_custom(func(x, y): return x["t0"] < y["t0"])
+	var joined: Array = []
+	for sg in out:
+		if not sg.has("speed"):
+			sg["speed"] = Strobe.MEDIUM
+		if not joined.is_empty() and sg["t0"] <= joined[-1]["t1"] + 0.0005 and sg["speed"] == joined[-1]["speed"]:
+			joined[-1]["t1"] = maxf(joined[-1]["t1"], sg["t1"])
+		else:
+			joined.append(sg)
+	if joined == strobe_segments:
+		return false
+	strobe_segments = joined
+	return true
+
+
 func _gui_input(event: InputEvent) -> void:
 	# An area selection under way: follow it to the release.
 	if _selecting:
@@ -699,6 +793,8 @@ func _draw() -> void:
 			_draw_dimmer(r)
 		elif row == Row.COLOUR:
 			_draw_colour(r)
+		elif row == Row.STROBE:
+			_draw_strobe(r, strobe_segments, 0.0, _STROBE)
 		# The name, sized to fit the row (8 px in the 10 px rows), at the top
 		# of the dimmer row.
 		var fs := 10 if row == Row.DIMMER else 8
@@ -736,6 +832,8 @@ func _draw_ghost(row: Row, r: Rect2) -> void:
 				draw_colored_polygon(fill, Color(1, 1, 1, _GHOST_FILL_ALPHA))
 				for k in range(line.size() - 1):
 					draw_dashed_line(line[k], line[k + 1], _GHOST_LINE, 1.5, 4.0)
+		if part.has("strobes"):
+			_draw_strobe(r, part["strobes"], start, _GHOST_LINE)
 		if part.has("segments"):
 			for sg in part["segments"]:
 				var a := _t2x(start + sg["t0"])
@@ -792,6 +890,38 @@ func _draw_colour(r: Rect2) -> void:
 			idx.append(base + t)
 	if not pts.is_empty():
 		RenderingServer.canvas_item_add_triangle_array(get_canvas_item(), idx, pts, cols)
+
+
+## Strobe segments (offset by `shift` seconds): a line up the row at each
+## end, a dashed line between them — at the bottom of the row for slow,
+## the middle for medium, the top for fast.
+func _draw_strobe(r: Rect2, segs: Array, shift: float, col: Color) -> void:
+	var v := _view()
+	for sg in segs:
+		var mid := strobe_line_y(r, int(sg.get("speed", Strobe.MEDIUM)))
+		var a: float = sg["t0"] + shift
+		var b: float = sg["t1"] + shift
+		if b < v.x or a > v.x + v.y:
+			continue
+		var x0 := _t2x(a)
+		var x1 := _t2x(b)
+		for x in [x0, x1]:
+			if x >= 0.0 and x <= size.x:
+				draw_line(Vector2(x, r.position.y + 1), Vector2(x, r.end.y), col, 1.5)
+		var d0 := clampf(x0, 0.0, size.x)
+		var d1 := clampf(x1, 0.0, size.x)
+		if d1 > d0:
+			draw_dashed_line(Vector2(d0, mid), Vector2(d1, mid), col, 1.0, 3.0)
+
+
+## The height of a strobe segment's dashed line in the row `r`, by speed.
+static func strobe_line_y(r: Rect2, speed: int) -> float:
+	match speed:
+		Strobe.SLOW:
+			return r.end.y - 1.5
+		Strobe.FAST:
+			return r.position.y + 2.0
+	return r.position.y + r.size.y * 0.5
 
 
 func _draw_dimmer(r: Rect2) -> void:

@@ -142,6 +142,25 @@ func _test_song_output() -> void:
 	o = P.song_output(t2, 5.0, fx, bases, 1)[0]
 	ok(o.get(10) == 128 and o.get(11) == 128, "no dimmer channel: the timeline's colour, dimmed (%s)" % o.get(10))
 	ok(o.get(0) == 128 and o.get(1) == null, "with one: colour and dimmer separate (the par's colour untouched)")
+	# Strobe.
+	var strober := {"uid": "s", "u": 0, "start": 80, "mode": 0, "profile": FixtureProfile.new("st", "st", [
+		{"name": "Shutter", "role": "STROBE", "ranges": [{"lo": 0, "hi": 9, "label": "Closed"}, {"lo": 10, "hi": 19, "label": "Open"},
+			{"lo": 20, "hi": 240, "label": "Strobe slow-fast"}]}, {"name": "Dimmer", "role": "DIMMER"}])}
+	var plain := {"uid": "q", "u": 0, "start": 90, "mode": 0, "profile": _profile("plainstrobe", ["STROBE", "DIMMER"])}
+	var on := {"strobe": [{"t0": 0.0, "t1": 10.0, "speed": 2}]}
+	o = P.song_output({"s": on, "q": on}, 5.0, [strober, plain], bases, 1)[0]
+	ok(o.get(80) == 240 and o.get(90) == 240, "strobe fast: the fast end of its strobe range (or of 20-240) (%s / %s)" % [o.get(80), o.get(90)])
+	var slow := {"strobe": [{"t0": 0.0, "t1": 10.0, "speed": 0}]}
+	var medium := {"strobe": [{"t0": 0.0, "t1": 10.0, "speed": 1}]}
+	ok(P.song_output({"s": slow}, 5.0, [strober], bases, 1)[0].get(80) == 64
+		and P.song_output({"s": medium}, 5.0, [strober], bases, 1)[0].get(80) == 141, "slow / medium: a fifth / just over half way up the range")
+	ok(P.song_output({"s": slow, "master": medium}, 5.0, [strober], bases, 1)[0].get(80) == 141, "its own and the master's: the faster")
+	ok(P.mix([P.song_output({"s": slow}, 5.0, [strober], bases, 1), P.song_output({"s": on}, 5.0, [strober], bases, 1)], [{}], 1)[0][80] == 240,
+		"two decks strobing: the faster wins (HTP)")
+	ok(not o.has(81), "...and nothing else")
+	ok(P.song_output({"s": on}, 12.0, [strober], bases, 1)[0].is_empty(), "outside a strobe segment: left alone")
+	o = P.song_output({"master": on}, 5.0, [strober, plain] + fx, bases, 1)[0]
+	ok(o.get(80) == 240 and o.get(90) == 240 and not o.has(0), "the master's strobe: every fixture with a strobe channel")
 
 
 func _test_mix() -> void:
