@@ -46,8 +46,9 @@ var grid_beats := PackedFloat32Array()
 var beats_per_bar := 4
 ## Index into grid_beats of a bar's first beat (bars count from there).
 var bar_phase := 0
-const _BEAT_LINE := Color(1, 1, 1, 0.16)
-const _BAR_LINE := Color(1, 1, 1, 0.5)
+## The beat grid's lines (shared with the timelines drawn over it).
+const BEAT_LINE := Color(1, 1, 1, 0.16)
+const BAR_LINE := Color(1, 1, 1, 0.5)
 ## Closest lines are drawn, in pixels.
 const _GRID_MIN_PX := 5.0
 ## Mouse wheel zooms (and pans) the view.
@@ -223,9 +224,9 @@ func _draw_grid(h: float, t0: float, t1: float) -> void:
 	for line in grid_lines(t0, t1):
 		var x: float = line[0]
 		if line[1]:
-			draw_line(Vector2(x, 0), Vector2(x, h), _BAR_LINE, 2.0)
+			draw_line(Vector2(x, 0), Vector2(x, h), BAR_LINE, 2.0)
 		else:
-			draw_line(Vector2(x, 0), Vector2(x, h), _BEAT_LINE, 1.0)
+			draw_line(Vector2(x, 0), Vector2(x, h), BEAT_LINE, 1.0)
 
 
 ## The beat grid lines between t0 and t1 as [[x, is_bar], ...]. Beats are

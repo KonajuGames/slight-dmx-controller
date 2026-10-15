@@ -987,6 +987,9 @@ func _draw() -> void:
 		draw_rect(r, _BG[i % 2])
 		draw_line(Vector2(0, r.position.y), Vector2(size.x, r.position.y), _SEPARATOR, 1.0)
 		i += 1
+	_draw_grid()
+	for row in rows:
+		var r := row_rect(row)
 		if row == Row.DIMMER:
 			_draw_dimmer(r)
 		elif row == Row.COLOUR:
@@ -1053,6 +1056,22 @@ func _draw_ghost(row: Row, r: Rect2) -> void:
 		var gx0 := _t2x(start)
 		var gx1 := _t2x(at + part["t1"])
 		draw_rect(Rect2(gx0, r.position.y, maxf(gx1 - gx0, 1.0), r.size.y), _GHOST_LINE, false, 1.0)
+
+
+## The waveform's beat grid behind the rows: the same beat and bar lines
+## (thinned out the same way when zoomed out), but quieter than on the
+## waveform — thin, and fainter — so they don't compete with the content.
+const _GRID_BAR := Color(1, 1, 1, 0.22)
+const _GRID_BEAT := Color(1, 1, 1, 0.07)
+
+
+func _draw_grid() -> void:
+	if wave == null or wave.analysis == null:
+		return
+	var v := _view()
+	for line in wave.grid_lines(v.x, v.x + v.y):
+		var x: float = line[0]
+		draw_line(Vector2(x, 0), Vector2(x, size.y), _GRID_BAR if line[1] else _GRID_BEAT, 1.0)
 
 
 ## This row's selected spans: a translucent blue fill, edged at each end.

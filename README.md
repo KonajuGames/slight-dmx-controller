@@ -202,7 +202,9 @@ technical reference.
   Position (moving heads), Strobe, Movement (moving heads), Colour (10 px each) and an 80 px
   Dimmer row with a node line, filled white underneath fading from
   transparent at the bottom to 50 % at the top. The master track (every
-  row) sits above the song structure and follows the waveform's zoom;
+  row) sits above the song structure and follows the waveform's zoom,
+  with the waveform's beat and (bolder) bar lines drawn behind its rows —
+  thin and fainter than on the waveform, so they don't compete with the content;
   beside each track, a name plate shows its target's name vertically
   (in a smaller font if that's what fits). The space above the master is
   a vertically scrolling panel with a timeline for every patched fixture
