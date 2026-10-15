@@ -1014,8 +1014,12 @@ func _test_drag_selection() -> void:
 	_move(tl, _at(tl, m, R.CUES, 13.0))
 	ok(is_equal_approx(sel.blocks[0]["t0"], 12.0) and m.dimmer_nodes == before,
 		"while dragging: the selection moves (snapped), the content not yet (%.1f)" % sel.blocks[0]["t0"])
+	ok(m.ghost.get("at") == 12.0 and m.ghost.get("from") == 4.0 and m.ghost["rows"].has(R.DIMMER)
+		and m.ghost["rows"][R.DIMMER][0]["nodes"] is PackedVector2Array and p1.ghost.is_empty(),
+		"...with a ghost of its content where it would land (only on the tracks it covers)")
 	_press(tl, _at(tl, m, R.CUES, 13.0), false)
 	ok(is_equal_approx(sel.blocks[0]["t0"], 12.0) and is_equal_approx(sel.blocks[0]["t1"], 18.0), "on release: moved to 12–18 s")
+	ok(m.ghost.is_empty(), "the ghost goes on release")
 	ok(m._dimmer_after(12.0) == 0.0 and m.dimmer_at(17.9) == 0.0 and is_equal_approx(m._dimmer_after(18.0), 0.5),
 		"the dark span went with it, overwriting what was there")
 	ok(m._dimmer_after(4.0) == 0.0 and m.dimmer_at(9.0) == 0.0 and m.dimmer_at(3.0) == 0.5, "where it was is cleared (as Delete does)")
@@ -1025,6 +1029,8 @@ func _test_drag_selection() -> void:
 	# A click inside the selection without dragging: a plain click there.
 	sel.set_blocks([TimelineSelection.block(PackedStringArray(["master|%d" % R.CUES]), 4.0, 10.0)])
 	_press(tl, _at(tl, m, R.CUES, 6.5), true)
+	_move(tl, _at(tl, m, R.CUES, 6.6))
+	ok(m.ghost.is_empty(), "no ghost until the selection has actually moved")
 	_press(tl, _at(tl, m, R.CUES, 6.5), false)
 	ok(sel.blocks.size() == 1 and is_equal_approx(sel.blocks[0]["t0"], 6.0) and is_equal_approx(sel.blocks[0]["t1"], 8.0),
 		"a click inside the selection selects the bar under it")

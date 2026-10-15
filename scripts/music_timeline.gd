@@ -676,7 +676,7 @@ func _on_select_drag(_track: TimelineTrack, phase: int, gpos: Vector2, ctrl: boo
 		var row := _track.row_at(_track.get_global_transform().affine_inverse() * gpos)
 		if _selection.has(key, row, _time_at(gpos.x)):
 			_sel_drag = {"mode": "move", "from": _time_at(gpos.x), "blocks": _selection.blocks.duplicate(true),
-				"gpos": gpos, "track": _track}
+				"gpos": gpos, "track": _track, "clip": _copy_clip()}
 			return
 	if not _sel_drag.is_empty() and _sel_drag.get("mode") == "edge":
 		_drag_edge(phase, gpos)
@@ -1325,8 +1325,10 @@ func _drag_move(phase: int, gpos: Vector2) -> void:
 	var delta := new_start - start
 	if phase != TimelineTrack.SELECT_RELEASE:
 		_selection.set_blocks(_shifted(orig, delta))
+		_show_ghosts(d["clip"], start, new_start if not is_zero_approx(delta) else NAN)
 		return
 	_sel_drag = {}
+	_show_ghosts({}, 0.0, NAN)
 	if is_zero_approx(delta):
 		# Just a click inside the selection: as a plain click anywhere — it
 		# replaces the selection with what's under it (cleared first, so
@@ -1336,6 +1338,20 @@ func _drag_move(phase: int, gpos: Vector2) -> void:
 		_on_select_drag(d["track"], TimelineTrack.SELECT_RELEASE, d["gpos"], false, false)
 		return
 	move_selection(orig, delta)
+
+
+## Show `clip` (its content from `from`) as a ghost on each track it has
+## content for, landing at `at`; NAN or an empty clip clears them.
+func _show_ghosts(clip: Dictionary, from: float, at: float) -> void:
+	var by_key := {}
+	if not clip.is_empty() and not is_nan(at):
+		for src in clip["tracks"]:
+			by_key[String(src["key"])] = src["rows"]
+	for tr in [_master] + Array(_fixture_tracks):
+		var rows = by_key.get(String(tr.get_meta("key")))
+		var g: Dictionary = {} if rows == null else {"rows": rows, "at": at, "from": from}
+		if g != tr.ghost:
+			tr.ghost = g
 
 
 ## Move the content of the areas `blocks` by `delta` seconds into the

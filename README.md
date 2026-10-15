@@ -225,7 +225,10 @@ technical reference.
   moves with it (a segment stretching or shrinking, keeping its colours)
   — kept between its neighbours, and the edge can't pass the other end. A plain drag
   **inside** the selection moves the whole selection (its start snapped,
-  kept within the song): while dragging only the selection moves; on
+  kept within the song): while dragging only the selection moves — with
+  a ghost of its content (the dimmer line dashed over a faint fill, the
+  colour bands paler) where it would land, and the spot it's leaving
+  dimmed; on
   release its content is cut from where it was (cleared as Delete does)
   and put down at the new place, overwriting what's there — one undo
   step, and the clipboard's left alone. A click inside the selection

@@ -63,6 +63,10 @@ const _LABEL := Color(1, 1, 1, 0.28)
 const _LINE := Color(1, 1, 1, 0.9)
 const _FILL_TOP_ALPHA := 0.5
 const _NODE_RADIUS := 3.0
+const _GHOST_LINE := Color(1, 1, 1, 0.55)
+const _GHOST_FILL_ALPHA := 0.18
+const _GHOST_COLOUR_ALPHA := 0.6
+const _GHOST_DIM := Color(0, 0, 0, 0.35)
 ## How close (px) the pointer must be to a selected area's start / end to
 ## grab it.
 const EDGE_GRAB := 5.0
@@ -96,6 +100,14 @@ var dimmer_nodes := PackedVector2Array():
 var colour_segments: Array = []:
 	set(v):
 		colour_segments = v
+		queue_redraw()
+## While the selection's being moved: its content, drawn translucent where
+## it would land — {rows: {Row: [parts — {t0, t1, nodes? / segments?},
+## relative to the clip's start]}, at: where the clip would start, from:
+## where it starts now (that spot is dimmed)}. {} = none.
+var ghost := {}:
+	set(v):
+		ghost = v
 		queue_redraw()
 ## Supplies the view (zoom / scroll) — the timeline's zoomable waveform.
 var wave: WaveHeatmap
@@ -694,6 +706,49 @@ func _draw() -> void:
 		draw_string(font, Vector2(4.0, r.position.y + band * 0.5 + fs * 0.35),
 			ROW_NAMES[row], HORIZONTAL_ALIGNMENT_LEFT, -1, fs, _LABEL)
 		_draw_selection(row, r)
+		if not ghost.is_empty():
+			_draw_ghost(row, r)
+
+
+## The moving selection's ghost on this row: the spot it's leaving
+## dimmed, and its content drawn faintly where it would land.
+func _draw_ghost(row: Row, r: Rect2) -> void:
+	var parts: Array = ghost.get("rows", {}).get(row, [])
+	if parts.is_empty():
+		return
+	var at: float = ghost["at"]
+	var from: float = ghost["from"]
+	for part in parts:
+		var x0 := clampf(_t2x(from + part["t0"]), 0.0, size.x)
+		var x1 := clampf(_t2x(from + part["t1"]), 0.0, size.x)
+		if x1 > x0:
+			draw_rect(Rect2(x0, r.position.y, x1 - x0, r.size.y), _GHOST_DIM)
+	for part in parts:
+		var start: float = at + part["t0"]
+		if part.has("nodes"):
+			var line := PackedVector2Array()
+			for p in part["nodes"]:
+				line.append(Vector2(_t2x(start + p.x), _level_y(r, p.y)))
+			if line.size() >= 2:
+				var fill := PackedVector2Array(line)
+				fill.append(Vector2(line[-1].x, r.end.y))
+				fill.append(Vector2(line[0].x, r.end.y))
+				draw_colored_polygon(fill, Color(1, 1, 1, _GHOST_FILL_ALPHA))
+				for k in range(line.size() - 1):
+					draw_dashed_line(line[k], line[k + 1], _GHOST_LINE, 1.5, 4.0)
+		if part.has("segments"):
+			for sg in part["segments"]:
+				var a := _t2x(start + sg["t0"])
+				var b := maxf(_t2x(start + sg["t1"]), a + 1.0)
+				var pts := PackedVector2Array([Vector2(a, r.position.y + 1), Vector2(b, r.position.y + 1), Vector2(b, r.end.y), Vector2(a, r.end.y)])
+				var c0: Color = sg["c0"]
+				var c1: Color = sg["c1"]
+				c0.a = _GHOST_COLOUR_ALPHA
+				c1.a = _GHOST_COLOUR_ALPHA
+				draw_polygon(pts, PackedColorArray([c0, c1, c1, c0]))
+		var gx0 := _t2x(start)
+		var gx1 := _t2x(at + part["t1"])
+		draw_rect(Rect2(gx0, r.position.y, maxf(gx1 - gx0, 1.0), r.size.y), _GHOST_LINE, false, 1.0)
 
 
 ## This row's selected spans: a translucent blue fill, edged at each end.
