@@ -108,9 +108,14 @@ func _test_song_output() -> void:
 	ok(not o.has(40) and not o.has(41), "pan / tilt untouched")
 	# A fixture's own line times the master.
 	out = P.song_output({"master": _nodes([[0, 0.5]]), "a": _nodes([[0, 0.2], [10, 1.0]])}, 5.0, fx, bases, 1)
-	ok(out[0].get(0) == int(round(255 * 0.5 * 0.6)), "fixture x master (%s)" % out[0].get(0))
+	ok(out[0].get(0) == int(round(255 * 0.6)) and out[0].get(42) == 128,
+		"a fixture's line overrides the master's (others keep the master's) (%s)" % out[0].get(0))
+	out = P.song_output({"master": _nodes([[0, 0.5]]), "a": _nodes([[2, 0.2], [4, 0.2]])}, 5.0, fx, bases, 1)
+	ok(out[0].get(0) == 128, "outside its first-to-last node: the master's again")
+	out = P.song_output({"a": _nodes([[3, 0.9]])}, 5.0, fx, bases, 1)
+	ok(out[0].is_empty(), "a single node: no stretch, nothing driven")
 	# Only a head of the bar.
-	out = P.song_output({"c/h1": _nodes([[0, 0.0]])}, 5.0, fx, bases, 1)
+	out = P.song_output({"c/h1": _nodes([[0, 0.0], [10, 0.0]])}, 5.0, fx, bases, 1)
 	o = out[0]
 	ok(o.get(23) == 0 and o.get(25) == 0 and not o.has(20) and not o.has(10), "a head's line: only that head")
 	# A head line on a fixture with a dimmer channel leaves the dimmer alone.
@@ -119,8 +124,15 @@ func _test_song_output() -> void:
 	var b2: Array = _bases()
 	for i in range(61, 67):
 		b2[0][i] = 180
-	out = P.song_output({"e/h0": _nodes([[0, 0.5]])}, 5.0, [mover2], b2, 1)
-	ok(not out[0].has(60) and out[0].get(61) == 90 and not out[0].has(64), "head line with a dimmer channel: that head's colour, dimmer untouched")
+	b2[0][60] = 204                               # its console dimmer: 80 %
+	out = P.song_output({"e/h0": _nodes([[0, 0.5], [10, 0.5]])}, 5.0, [mover2], b2, 1)
+	ok(out[0].get(60) == 204 and out[0].get(61) == 113 and out[0].get(64) == 180,
+		"a head's line with a shared dimmer: the dimmer at the brightest head (the other's 80 %%), that head's colour scaled to 50 %% (%s / %s / %s)" % [out[0].get(60), out[0].get(61), out[0].get(64)])
+	out = P.song_output({"master": _nodes([[0, 0.2]]), "e": _nodes([[0, 0.4], [10, 0.4]]), "e/h1": _nodes([[0, 1.0], [10, 1.0]])}, 5.0, [mover2], b2, 1)
+	ok(out[0].get(60) == 255 and out[0].get(61) == 72 and out[0].get(64) == 180,
+		"a head overrides its fixture, which overrides the master (head 2 full, head 1 at the fixture's 40 %%)")
+	out = P.song_output({"master": _nodes([[0, 0.5]]), "c/h0": _nodes([[0, 1.0], [10, 1.0]])}, 5.0, fx, bases, 1)
+	ok(out[0].get(20) == 100 and out[0].get(23) == 50, "no dimmer channel: a head's line over the master's, the other head the master's")
 	# Off the end of the universes / other universes.
 	out = P.song_output({"master": _nodes([[0, 1.0]])}, 5.0, [{"uid": "z", "u": 3, "start": 0, "mode": 0, "profile": _profile("dpar", ["DIMMER"])}], bases, 1)
 	ok(out[0].is_empty(), "a fixture on a universe that isn't there: skipped")
@@ -272,7 +284,7 @@ func _test_performer() -> void:
 	_song_file(song3, 7)
 	var store := TimelineStore.new(DIR + "/show.timelines")
 	store.save_song(song1, {"tracks": {"master": {"dimmer": [[0.0, 0.25], [20.0, 0.25]]}}})
-	store.save_song(song2, {"tracks": {"a": {"dimmer": [[0.0, 0.8]]}}})
+	store.save_song(song2, {"tracks": {"a": {"dimmer": [[0.0, 0.8], [100.0, 0.8]]}}})
 	var fx := _fixtures()
 	var artnet: Node = root.get_node("ArtNet")
 	var u0 = artnet.get_universe(0)

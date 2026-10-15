@@ -46,6 +46,7 @@ func _run() -> void:
 	await _test_strobe_editing()
 	await _test_position_row()
 	await _test_movement_row()
+	await _test_dimmer_inheritance()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
 
@@ -550,8 +551,8 @@ func _test_delete_selection() -> void:
 		and mn[5] == Vector2(30, 0.5), "the master's dimmer: one dark span over the merged 4–12 s (%s)" % str(mn))
 	ok(is_equal_approx(m.dimmer_at(4.0), 0.875) and is_equal_approx(m.dimmer_at(20.0), 0.7)
 		and is_equal_approx(m._dimmer_after(12.0), 0.86), "levels either side kept")
-	ok(par.dimmer_nodes.size() == 5 and par.dimmer_at(15.0) == 0.0 and is_equal_approx(par.dimmer_at(5.0), 0.8)
-		and is_equal_approx(par.dimmer_at(25.0), 0.8), "the fixture's dimmer too")
+	ok(par.dimmer_nodes.size() == 4 and par.dimmer_at(15.0) == 0.0 and is_equal_approx(par.dimmer_at(5.0), 0.8)
+		and not par.dimmer_defined_at(25.0), "the fixture's dimmer too (and no edge node past its line's end)")
 	ok(tl.has_unsaved_timelines(), "marked as changed (saved on leaving the song)")
 	ok(sel.blocks.size() == 3, "the selection stays")
 	sel.clear()
@@ -645,7 +646,8 @@ func _test_copy_paste() -> void:
 	sel.set_blocks([TimelineSelection.block(PackedStringArray(["p1|%d" % R.COLOUR, "p1|%d" % R.MOVEMENT, "p2|%d" % R.DIMMER]), 30.0, 31.0)])
 	_key(KEY_V)
 	ok(is_equal_approx(p1.dimmer_at(32.0), 1.0) and is_equal_approx(p2.dimmer_at(32.0), 1.0)
-		and p1._dimmer_after(30.0) == 0.0 and p1.dimmer_at(29.0) == 1.0, "one copied track pastes into every selected track")
+		and p1._dimmer_after(30.0) == 0.0 and not p1.dimmer_defined_at(29.0) and p1.dimmer_nodes.size() == 3,
+		"one copied track pastes into every selected track (an empty fixture row: just the pasted stretch)")
 	ok(sel.blocks.size() == 2, "each gets its dimmer row selected (pars have no movement row)")
 	# Nothing selected: at the playhead, back into the source track.
 	sel.clear()
@@ -653,8 +655,8 @@ func _test_copy_paste() -> void:
 	_key(KEY_V)
 	ok(is_equal_approx(m.dimmer_at(42.0), 1.0) and m.dimmer_at(40.0) == 0.0, "nothing selected: at the playhead, into the source track")
 	# Two copied tracks pair off with the selected tracks.
-	p1.dimmer_nodes = PackedVector2Array([Vector2(0, 0.3)])
-	p2.dimmer_nodes = PackedVector2Array([Vector2(0, 0.7)])
+	p1.dimmer_nodes = PackedVector2Array([Vector2(0, 0.3), Vector2(60, 0.3)])
+	p2.dimmer_nodes = PackedVector2Array([Vector2(0, 0.7), Vector2(60, 0.7)])
 	sel.set_blocks([TimelineSelection.block(PackedStringArray(["p1|%d" % R.DIMMER, "p1|%d" % R.MOVEMENT, "p2|%d" % R.DIMMER]), 0.0, 2.0)])
 	_key(KEY_C)
 	sel.set_blocks([TimelineSelection.block(PackedStringArray(["master|%d" % R.DIMMER]), 50.0, 51.0),
@@ -716,6 +718,9 @@ func _test_undo_redo() -> void:
 	var m := tl.master_track()
 	var p1 := tl.fixture_tracks()[0]
 	ok(not tl.can_undo() and not tl.can_redo(), "a freshly opened song: nothing to undo")
+	ok(m.dimmer_nodes == PackedVector2Array([Vector2(0, 1), Vector2(60, 1)]),
+		"the master's dimmer starts with a node at the start and the end, at 100 %")
+	ok(not tl.has_unsaved_timelines(), "...which isn't an edit")
 	# Edit 1: a node added on the master (as the mouse does: change, then report).
 	m.dimmer_nodes = PackedVector2Array([Vector2(10, 0.5)])
 	m.dimmer_edited.emit()
@@ -732,7 +737,8 @@ func _test_undo_redo() -> void:
 	_key(KEY_Z)
 	ok(p1.dimmer_nodes.is_empty() and m.dimmer_nodes.size() == 1, "again: the fixture's edit")
 	_key(KEY_Z)
-	ok(m.dimmer_nodes.is_empty() and not tl.can_undo(), "again: back to how the song opened")
+	ok(m.dimmer_nodes == PackedVector2Array([Vector2(0, 1), Vector2(60, 1)]) and not tl.can_undo(),
+		"again: back to how the song opened (the master's default start / end nodes)")
 	ok(not tl.undo(), "nothing more to undo")
 	_key(KEY_Y)
 	ok(m.dimmer_nodes == PackedVector2Array([Vector2(10, 0.5)]) and p1.dimmer_nodes.is_empty(), "Ctrl+Y redoes")
@@ -885,7 +891,8 @@ func _test_context_menu() -> void:
 	dm.id_pressed.emit(MusicTimeline.Dim.PULSE_IN)
 	ok(is_equal_approx(m.dimmer_at(12.0), 1.0) and is_equal_approx(m.dimmer_at(10.0), 0.4) and is_equal_approx(m._dimmer_after(14.0), 0.4),
 		"Dimmer > Pulse In: up to 100% mid-span, the edges at the level outside")
-	ok(is_equal_approx(p1.dimmer_at(12.0), 1.0) and is_equal_approx(p1.dimmer_at(10.0), 1.0), "...on every selected dimmer row")
+	ok(is_equal_approx(p1.dimmer_at(12.0), 1.0) and is_equal_approx(p1.dimmer_at(10.0), 0.4) and not p1.dimmer_defined_at(9.0),
+		"...on every selected dimmer row (an empty fixture row: from / to the level it inherits — the master's)")
 	ok(_menu_ids(tl.context_items(true)).has("Undo"), "now Undo is offered")
 	tl._menu.id_pressed.emit(MusicTimeline.M_UNDO)
 	ok(is_equal_approx(m.dimmer_at(12.0), 0.4) and _menu_ids(tl.context_items(true)).has("Redo"), "Undo from the menu; then Redo is offered")
@@ -1355,6 +1362,64 @@ func _test_movement_row() -> void:
 		"...and leaves the gaps, and movements outside the selection, alone")
 	tl.undo()
 	ok(is_equal_approx(mv.movement_at(4.0)["period"], 0.9), "undoable")
+	tl._dirty = false
+	tl.queue_free()
+	await process_frame
+
+
+func _test_dimmer_inheritance() -> void:
+	print("- fixture / head dimmer rows inherit")
+	var R := TimelineTrack.Row
+	var fixtures := [{"key": "bar", "name": "Bar", "profile": _bar(), "mode": 0}]
+	var tl := MusicTimeline.new()
+	tl.fixtures_provider = func(): return fixtures
+	root.add_child(tl)
+	tl.position = Vector2.ZERO
+	tl.size = Vector2(1100, 700)
+	tl.open("user://_inherit_song.wav")
+	var a := SongAnalysis.new()
+	a.duration = 60.0
+	for arr in [a.wave_lo, a.wave_mid, a.wave_hi, a.wave_peak]:
+		arr.resize(6000)
+	tl._set_analysis(a)
+	await process_frame
+	await process_frame
+	tl.wave().set_view(0.0, 20.0)
+	var m := tl.master_track()
+	var bar := tl.fixture_tracks()[0]
+	var head := tl.fixture_tracks()[1]
+	var sel := tl.selection()
+	ok(m.dimmer_polyline().size() == 2, "the master: a flat 100 % line by default")
+	ok(bar.inherits() and head.inherits() and not m.inherits(), "fixtures and heads inherit; the master doesn't")
+	ok(bar.dimmer_polyline().is_empty() and head.dimmer_polyline().is_empty() and not bar.dimmer_defined_at(5.0),
+		"a fixture's / head's dimmer row: no values, nothing drawn, by default")
+	ok(not bar.on_line(Vector2(300, bar.row_rect(R.DIMMER).position.y + 4)), "no line to grab or Ctrl+click")
+	# Values via the Dimmer submenu: only over the selected stretch.
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["bar|%d" % R.DIMMER]), 4.0, 8.0)])
+	tl.apply_dimmer(MusicTimeline.Dim.HALF)
+	ok(bar.dimmer_nodes == PackedVector2Array([Vector2(4, 0.5), Vector2(8, 0.5)]), "Half: values over the stretch only (%s)" % str(bar.dimmer_nodes))
+	ok(bar.dimmer_defined_at(6.0) and not bar.dimmer_defined_at(3.0) and not bar.dimmer_defined_at(9.0), "defined first node to last")
+	var line := bar.dimmer_polyline()
+	ok(line.size() == 2 and is_equal_approx(line[0].x, bar._t2x(4.0)) and is_equal_approx(line[1].x, bar._t2x(8.0)),
+		"drawn only across that stretch")
+	# Effective levels: head -> fixture -> master.
+	m.dimmer_nodes = PackedVector2Array([Vector2(0, 0.25)])
+	ok(is_equal_approx(tl.effective_dimmer(head, 6.0, false), 0.5) and is_equal_approx(tl.effective_dimmer(head, 2.0, false), 0.25)
+		and is_equal_approx(tl.effective_dimmer(bar, 10.0, false), 0.25), "a head inherits its fixture's, which inherits the master's")
+	# A pulse on the empty head starts / ends at what it inherits.
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["bar/h0|%d" % R.DIMMER]), 6.0, 10.0)])
+	tl.apply_dimmer(MusicTimeline.Dim.PULSE_IN)
+	ok(head.dimmer_nodes == PackedVector2Array([Vector2(6, 0.5), Vector2(8, 1.0), Vector2(10, 0.25)]),
+		"Pulse In on an empty head: from the fixture's 50 %% to the master's 25 %% (%s)" % str(head.dimmer_nodes))
+	# Copying an empty row copies nothing; a partly-defined one, its stretch.
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["bar|%d" % R.DIMMER]), 0.0, 20.0)])
+	tl.copy_selection()
+	var part: Dictionary = tl.clipboard()["tracks"][0]["rows"][R.DIMMER][0]
+	ok(is_equal_approx(part["t0"], 4.0) and is_equal_approx(part["t1"], 8.0), "copying a fixture row: just where it has values")
+	head.dimmer_nodes = PackedVector2Array()
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["bar/h0|%d" % R.DIMMER]), 0.0, 20.0)])
+	tl.copy_selection()
+	ok(not tl.clipboard()["tracks"][0]["rows"][R.DIMMER][0].has("nodes"), "copying an empty row: nothing to paste")
 	tl._dirty = false
 	tl.queue_free()
 	await process_frame

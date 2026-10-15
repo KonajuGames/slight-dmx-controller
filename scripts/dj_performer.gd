@@ -281,8 +281,9 @@ func layer(n: int) -> Array:
 ## dictionaries (only the channels it drives). From its timelines
 ## (`tracks`: key -> {dimmer: nodes, colour: segments}, keys "master",
 ## a fixture uid, "<uid>/h<n>"):
-##   dimmer: the master's line scales every fixture, a fixture's its own,
-##     a head's that head
+##   dimmer: a head's line where it has values (its first node to its
+##     last), else its fixture's, else the master's — overriding, not
+##     multiplying
 ##   colour: a head's colour row, else its fixture's, else the master's,
 ##     sets that head's red / green / blue (where a segment covers `t`)
 ##   position: the fixture's position row, else the master's, names a
@@ -295,11 +296,12 @@ func layer(n: int) -> Array:
 ##   strobe: where the fixture's strobe row or the master's is on, its
 ##     STROBE channel(s) go to a strobing value (from the channel's
 ##     ranges); off, they're left as the console has them
-## On a fixture with a DIMMER channel the dimmer lines set that channel
-## (full x master x fixture) and a head's line scales the head's colour;
-## on one without, the colour channels — the timeline's colour, or the
-## console's (`bases`) — are scaled by master x fixture x head (its
-## virtual dimmer). Only what the timelines cover is driven.
+## On a fixture with a DIMMER channel that channel is set to the level (to
+## the brightest head's where heads have lines of their own, each head's
+## colour scaled down to its own level); on one without, the colour
+## channels — the timeline's colour, or the console's (`bases`) — are
+## scaled by the level (its virtual dimmer). Only what the timelines cover
+## is driven.
 static func song_output(tracks: Dictionary, t: float, fixtures: Array, bases: Array, n: int,
 		positions: PositionLibrary = null) -> Array:
 	var out: Array = []
@@ -324,8 +326,10 @@ static func song_output(tracks: Dictionary, t: float, fixtures: Array, bases: Ar
 		var own_line: PackedVector2Array = own.get("dimmer", PackedVector2Array())
 		var own_colour = TimelineTrack.segment_colour_at(own.get("colour", []), t)
 		var fixture_colour = own_colour if own_colour != null else master_colour
-		var fixture_dimmed := not master_line.is_empty() or not own_line.is_empty()
-		var lf := lm * TimelineTrack.level_at(own_line, t)
+		# Its own line where that has values, else the master's.
+		var own_defined := TimelineTrack.line_defined_at(own_line, t)
+		var fixture_dimmed := own_defined or not master_line.is_empty()
+		var lf := TimelineTrack.level_at(own_line, t) if own_defined else lm
 		var base: PackedByteArray = bases[u] if u < bases.size() else PackedByteArray()
 		var chans := profile.channels_for_mode(mode)
 		var dim := -1
@@ -333,8 +337,9 @@ static func song_output(tracks: Dictionary, t: float, fixtures: Array, bases: Ar
 			if String(chans[k]["role"]) == "DIMMER":
 				dim = k
 				break
-		if dim >= 0 and fixture_dimmed:
-			out[u][start + dim] = int(round(255.0 * clampf(lf, 0.0, 1.0)))
+		# What a head without a line of its own gets: the fixture's level —
+		# or, with no lines at all, the console's dimmer.
+		var inherited := lf if fixture_dimmed else (_byte(base, start + dim) / 255.0 if dim >= 0 else 1.0)
 		var place := TimelineTrack.position_id_at(own.get("position", []), t)
 		if place == "":
 			place = master_place
@@ -357,19 +362,43 @@ static func song_output(tracks: Dictionary, t: float, fixtures: Array, bases: Ar
 			for k in range(chans.size()):
 				if String(chans[k]["role"]) == "STROBE":
 					out[u][start + k] = strobe_value(chans[k], strobe)
-		# Per head: its level and colour; its channels from them.
+		# Per head: its level (its own line where that has values, else
+		# inherited) and colour.
 		var groups := profile.head_groups(mode)
+		var heads: Array = []
+		var any_head := false
+		for h in range(groups.size()):
+			var head: Dictionary = tracks.get("%s/h%d" % [uid, h], {})
+			var head_line: PackedVector2Array = head.get("dimmer", PackedVector2Array())
+			var own_head := TimelineTrack.line_defined_at(head_line, t)
+			any_head = any_head or own_head
+			var head_colour = TimelineTrack.segment_colour_at(head.get("colour", []), t)
+			heads.append({"own": own_head, "level": TimelineTrack.level_at(head_line, t) if own_head else inherited,
+				"colour": head_colour if head_colour != null else fixture_colour})
+		# A DIMMER channel serves every head: the brightest head's level,
+		# each head's colour then scaled down to its own.
+		var dim_level := inherited
+		if dim >= 0 and any_head:
+			dim_level = 0.0
+			for hd in heads:
+				dim_level = maxf(dim_level, hd["level"])
+		if dim >= 0 and (fixture_dimmed or any_head):
+			out[u][start + dim] = int(round(255.0 * clampf(dim_level, 0.0, 1.0)))
 		var in_head := {}
 		for h in range(groups.size()):
 			var g: Dictionary = groups[h]
-			var head: Dictionary = tracks.get("%s/h%d" % [uid, h], {})
-			var head_line: PackedVector2Array = head.get("dimmer", PackedVector2Array())
-			var head_colour = TimelineTrack.segment_colour_at(head.get("colour", []), t)
-			var colour = head_colour if head_colour != null else fixture_colour
-			var lh := TimelineTrack.level_at(head_line, t)
-			# Without a DIMMER channel, the fixture's lines dim the colour too.
-			var level := lh * (lf if dim < 0 else 1.0)
-			var dimmed := not head_line.is_empty() or (dim < 0 and fixture_dimmed)
+			var hd: Dictionary = heads[h]
+			var colour = hd["colour"]
+			var level: float
+			var dimmed: bool
+			if dim >= 0:
+				# Heads with lines of their own: scaled to theirs under the
+				# shared dimmer; otherwise the dimmer channel does it all.
+				level = (float(hd["level"]) / dim_level if dim_level > 0.0 else 0.0) if any_head else 1.0
+				dimmed = any_head
+			else:
+				level = hd["level"]
+				dimmed = hd["own"] or fixture_dimmed
 			var rgb := {int(g["r"]): 0, int(g["g"]): 1, int(g["b"]): 2}
 			for k in [g["r"], g["g"], g["b"]] + Array(g["extra"]):
 				k = int(k)

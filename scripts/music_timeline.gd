@@ -790,7 +790,11 @@ func _copy_clip() -> Dictionary:
 				var part := {"t0": span.x - start, "t1": span.y - start}
 				match row:
 					TimelineTrack.Row.DIMMER:
-						part["nodes"] = tr.dimmer_segment(span.x, span.y)
+						# Only where the line has values (a fixture / head may
+						# have none there: nothing to copy).
+						var d: Vector2 = tr.dimmer_defined_span(span.x, span.y)
+						if d.x >= 0.0:
+							part = {"t0": d.x - start, "t1": d.y - start, "nodes": tr.dimmer_segment(d.x, d.y)}
 					TimelineTrack.Row.COLOUR:
 						part["segments"] = tr.colour_segment(span.x, span.y)
 					TimelineTrack.Row.STROBE:
@@ -1164,12 +1168,26 @@ func apply_dimmer(kind: int) -> bool:
 		if not tr.has_row(TimelineTrack.Row.DIMMER):
 			continue
 		for span in _merged(_selection.spans_for(key, TimelineTrack.Row.DIMMER)):
-			var shape := dimmer_shape(kind, span.x, span.y, tr.dimmer_at(span.x), tr._dimmer_after(span.y), _beat_grid_for(kind))
+			var shape := dimmer_shape(kind, span.x, span.y, effective_dimmer(tr, span.x, false),
+				effective_dimmer(tr, span.y, true), _beat_grid_for(kind))
 			if not shape.is_empty() and tr.replace_dimmer(span.x, span.y, shape):
 				changed = true
 	if changed:
 		_mark_dirty()
 	return changed
+
+
+## The dimmer level that applies on `tr` at `t` (just after it, with
+## `after`): its own line where it has values, else what it inherits — a
+## head its fixture's, a fixture the master's.
+func effective_dimmer(tr: TimelineTrack, t: float, after: bool) -> float:
+	if tr.dimmer_defined_at(t) or not tr.inherits():
+		return tr._dimmer_after(t) if after else tr.dimmer_at(t)
+	var key := String(tr.get_meta("key"))
+	var parent: TimelineTrack = _track_for(key.get_slice("/", 0)) if "/" in key else _master
+	if parent == null or parent == tr:
+		return 1.0
+	return effective_dimmer(parent, t, after)
 
 
 func _beat_grid_for(kind: int) -> PackedFloat32Array:
@@ -1827,6 +1845,7 @@ func _set_analysis(a: SongAnalysis) -> void:
 	_wave.set_view(0.0, 0.0)            # a song opens fully zoomed out
 	_box_follow(_wave.view_start, _wave.visible_length())
 	_update_cursor()
+	_default_master_line()
 
 
 ## VirtualDJ's beat grid for the track (variable-tempo grids included),
@@ -2027,8 +2046,22 @@ func _show_song_data() -> void:
 	if _path != "" and _struct_cache.has(_path):
 		_apply_saved_structure(_path, _struct_cache[_path])
 		_set_structure(_struct_cache[_path])
+	_default_master_line()
 	if _path != "" and _hist()["state"] == null:
 		_hist()["state"] = _snapshot()       # where undo stops
+
+
+## A song whose master has no dimmer line yet gets one: a node at its
+## start and one at its end, at 100 %. Not an edit (nothing to save, no
+## undo step) — it's where the song starts.
+func _default_master_line() -> void:
+	if _path == "" or _master == null or _wave.analysis == null or not _master.dimmer_nodes.is_empty():
+		return
+	_master.dimmer_nodes = PackedVector2Array([Vector2(0.0, 1.0), Vector2(_wave.duration(), 1.0)])
+	_collect()
+	var h := _hist()
+	if h["state"] != null:
+		h["state"] = _snapshot()        # undo stops here, with the default line
 
 
 ## An edit's been made: the song's timelines are unsaved, and the state

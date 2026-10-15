@@ -11,7 +11,11 @@ extends Control
 ##   Colour   — 10 px
 ##   Dimmer   — 80 px: a node line for the intensity, filled underneath
 ##              with white fading from transparent at the bottom of the
-##              row to 50 % at its top
+##              row to 50 % at its top. The master's runs the whole song
+##              (a flat 100 % with no nodes); a fixture's or head's starts
+##              empty and covers only from its first node to its last —
+##              where it has one it overrides the fixture's / master's,
+##              elsewhere it inherits (inherits())
 ## The master has every row; a fixture or head only those its channels
 ## support (rows_for_roles()). Rows follow `wave`'s zoom, so they line up
 ## with the waveform and everything else in the timeline.
@@ -237,6 +241,34 @@ func dimmer_at(t: float) -> float:
 	return level_at(dimmer_nodes, t)
 
 
+## Whether this track's dimmer line inherits where it has no values (a
+## fixture's or head's — the master's runs the whole song).
+func inherits() -> bool:
+	return target != Target.MASTER
+
+
+## Whether the dimmer line has a value at `t`: anywhere on the master; on
+## a fixture / head, from its first node to its last.
+func dimmer_defined_at(t: float) -> bool:
+	return not inherits() or line_defined_at(dimmer_nodes, t)
+
+
+static func line_defined_at(nodes: PackedVector2Array, t: float) -> bool:
+	return nodes.size() > 0 and t >= nodes[0].x and t <= nodes[nodes.size() - 1].x
+
+
+## The part of `t0`..`t1` the dimmer line has values over (all of it on
+## the master), or Vector2(-1, -1) where it has none.
+func dimmer_defined_span(t0: float, t1: float) -> Vector2:
+	if not inherits():
+		return Vector2(t0, t1)
+	if dimmer_nodes.is_empty():
+		return Vector2(-1, -1)
+	var a := maxf(t0, dimmer_nodes[0].x)
+	var b := minf(t1, dimmer_nodes[dimmer_nodes.size() - 1].x)
+	return Vector2(a, b) if b > a else Vector2(-1, -1)
+
+
 ## A node line's level at `t` seconds: linear between nodes, holding the
 ## first / last level outside them, 1.0 with no nodes. Where two nodes
 ## share a time (a step), the earlier's level.
@@ -276,6 +308,8 @@ func on_line(pos: Vector2) -> bool:
 	var r := row_rect(Row.DIMMER)
 	if r.size.y <= 0.0 or not r.has_point(pos):
 		return false
+	if not dimmer_defined_at(_x2t(pos.x)):
+		return false                    # no line there (a fixture / head inheriting)
 	return absf(pos.y - _level_y(r, dimmer_at(_x2t(pos.x)))) <= _GRAB
 
 
@@ -377,10 +411,15 @@ func replace_dimmer(t0: float, t1: float, segment: PackedVector2Array) -> bool:
 	while i < dimmer_nodes.size() and dimmer_nodes[i].x < t0:
 		nodes.append(dimmer_nodes[i])
 		i += 1
-	if t0 > 0.0 and not is_equal_approx(before, seg[0].y):
+	# Edge nodes keep the line outside as it was — only where it has values
+	# there (a fixture's / head's line doesn't spread past its ends).
+	var n := dimmer_nodes.size()
+	var line_before := not inherits() or (n > 0 and t0 > dimmer_nodes[0].x)
+	var line_after := not inherits() or (n > 0 and t1 < dimmer_nodes[n - 1].x)
+	if t0 > 0.0 and line_before and not is_equal_approx(before, seg[0].y):
 		nodes.append(Vector2(t0, before))
 	nodes.append_array(seg)
-	if t1 < end and not is_equal_approx(after, seg[-1].y):
+	if t1 < end and line_after and not is_equal_approx(after, seg[-1].y):
 		nodes.append(Vector2(t1, after))
 	while i < dimmer_nodes.size() and dimmer_nodes[i].x <= t1:
 		i += 1                          # inside the span: replaced
@@ -925,13 +964,18 @@ func dimmer_polyline() -> PackedVector2Array:
 	if r.size.y <= 0.0:
 		return out
 	var v := _view()
-	var t0 := v.x
-	var t1 := v.x + v.y
-	out.append(Vector2(0.0, _level_y(r, dimmer_at(t0))))
+	# Only where the line has values: on a fixture / head, its first node
+	# to its last.
+	var span := dimmer_defined_span(v.x, v.x + v.y)
+	if span.x < 0.0:
+		return out
+	var t0 := span.x
+	var t1 := span.y
+	out.append(Vector2(_t2x(t0) if inherits() else 0.0, _level_y(r, _dimmer_after(t0) if inherits() else dimmer_at(t0))))
 	for p in dimmer_nodes:
 		if p.x > t0 and p.x < t1:
 			out.append(Vector2(_t2x(p.x), _level_y(r, p.y)))
-	out.append(Vector2(size.x, _level_y(r, dimmer_at(t1))))
+	out.append(Vector2(_t2x(t1) if inherits() else size.x, _level_y(r, dimmer_at(t1))))
 	return out
 
 

@@ -211,7 +211,16 @@ technical reference.
   the fixture's name with "Head N" on a second line). They follow the
   patch as it changes, keeping their dimmer nodes; the scroll bar's room
   comes out of the name plates' column, so every track stays as wide as
-  the waveform.
+  the waveform. A fixture's or head's dimmer row starts empty — no line,
+  no values — and inherits: a head its fixture's, a fixture the
+  master's. Giving it values (the Dimmer submenu, a paste) overrides
+  what it inherits, from its line's first node to its last; outside that
+  it inherits again, and it's drawn only across that stretch. Edits there
+  add no edge nodes beyond the line's ends, and the pulses / Smooth on an
+  empty row start and end at the level it inherits. The master's line
+  runs the whole song: a song without one starts with a node at its
+  start and one at its end, both at 100 % (not counted as an edit — no
+  undo step, nothing to save until something else changes).
   A fixture or head with colour channels but no DIMMER channel still gets
   a Dimmer row — its virtual dimmer.
   The dimmer line's nodes are edited with the mouse: drag a node to move
@@ -472,10 +481,13 @@ Global controls live in the top bar:
   VirtualDJ's position (reported every 100 ms, run on smoothly between
   reports, at the deck's pitched speed). Decks playing together are
   mixed per channel: colour, dimmer and strobe (and anything else)
-  highest-takes-precedence, pan / tilt averaged. A song's master dimmer
-  line scales every fixture, a fixture's its own, a head's that head's:
-  on a fixture with a DIMMER channel that channel is set; on one without,
-  its colour is scaled, like its virtual dimmer. A colour segment sets a
+  highest-takes-precedence, pan / tilt averaged. A song's dimmer comes
+  from a head's line where it has values, else its fixture's, else the
+  master's — each overriding, not scaling, the one above: on a fixture
+  with a DIMMER channel that channel is set (to its brightest head's
+  level where heads have lines of their own, each head's colour then
+  scaled to its own level); on one without, its colour is scaled, like
+  its virtual dimmer. A colour segment sets a
   head's red / green / blue — the head's own colour row first, else its
   fixture's, else the master's — and otherwise the console's colour
   stands. Only what a song's timelines cover is driven; everything else
