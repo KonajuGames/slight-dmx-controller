@@ -43,6 +43,29 @@ func find(id: String) -> Dictionary:
 	return {}
 
 
+## A copy of position `id` — its points, "<name> copy", the next colour —
+## added after it. Returns the copy ({} if there's no such position).
+func duplicate_position(id: String) -> Dictionary:
+	var src := find(id)
+	if src.is_empty():
+		return {}
+	_next += 1
+	var p := {"id": "p%d_%08x" % [_next, randi()], "name": "%s copy" % src["name"],
+		"colour": colour_for(_next - 1), "points": (src["points"] as Dictionary).duplicate()}
+	positions.insert(positions.find(src) + 1, p)
+	changed.emit()
+	return p
+
+
+## Delete position `id`.
+func remove(id: String) -> void:
+	for i in range(positions.size()):
+		if positions[i]["id"] == id:
+			positions.remove_at(i)
+			changed.emit()
+			return
+
+
 func rename(id: String, new_name: String) -> void:
 	var p := find(id)
 	new_name = new_name.strip_edges()

@@ -79,7 +79,7 @@ func _test_panel() -> void:
 	var top := tree.get_root().get_children()
 	var drives := DirAccess.get_drive_count()
 	ok(top.size() == drives + 1, "one item per drive + Virtual Folders (%d)" % top.size())
-	ok(top[-1].get_text(0) == "VirtualDJ Virtual Folders", "Virtual Folders after the drives")
+	ok(top[-1].get_text(0) == "VirtualDJ Lists", "VirtualDJ Lists (its Virtual Folders) after the drives")
 	ok(top[0].collapsed and top[0].get_child_count() == 1, "drives start collapsed with a placeholder")
 
 	# Lazy expansion, on a synthetic folder item.

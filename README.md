@@ -111,7 +111,7 @@ technical reference.
   new/edit/delete flow.
 - `music_browser_panel.gd` — the `MusicBrowserPanel` class: DJ Edit
   Mode (the music library). A narrow tree of this machine's drives and folders
-  (loaded as they're expanded) followed by VirtualDJ's Virtual Folders;
+  (loaded as they're expanded) followed by **VirtualDJ Lists** (its Virtual Folders);
   selecting one lists its music on the right — title, artist, BPM, key,
   length, album, genre, file — from VirtualDJ's database where it knows
   the track, sortable by any column, with missing files flagged.
@@ -123,11 +123,21 @@ technical reference.
   as an indexed song that isn't at its path — it may have been moved —
   is fingerprinted, in the background. The icons update when a song's
   timelines are first saved and when another show is loaded.
-  Below the folders, a **Positions** header lists the show's named
-  positions for moving fixtures, each after a right-facing triangle in
-  its own colour, with **+** last to add one ("Position N", the next
-  colour — hues stepped round by the golden ratio, so no two match).
-  Picking one opens the position editor in place of the track list.
+  The folders sit under a **Folders** header. Below them, a
+  **Positions** header lists the show's named positions for moving
+  fixtures, each after a right-facing triangle in its own colour; the
+  **+** at the header's right adds one ("Position N", the next colour —
+  hues stepped round by the golden ratio, so no two match — selected and
+  opened straight away). Picking
+  one opens the position editor in place of the track list; its name is
+  edited there. Hovering a position shows an **✕** at its right, which
+  asks before deleting it; right-clicking one gives **Rename** (opens it
+  with the name selected to type over), **Duplicate** (a copy with its
+  points, "… copy", the next colour, opened) and **Delete…**. Deleting
+  the open position goes back to the track list.
+- `position_list.gd` — the `PositionList` class: that list — a row per
+  position (triangle, name, hover ✕, right-click) — styled from the theme as a standard list (ItemList): its panel, item
+  hover / selected boxes, font colours, size and padding.
 - `position_library.gd` — the `PositionLibrary` class: a show's named
   positions — each an id, a name, a colour and a pan / tilt per fixture
   (by fixture uid, normalised 0..1 over each axis' range, tilt
@@ -415,7 +425,7 @@ Global controls live in the top bar:
 
 - **View** — switches the area below the top bar between the
   **Console** (everything described here), **DJ Edit Mode** — a tree of
-  drives and folders plus VirtualDJ's Virtual Folders, the music in
+  drives and folders plus **VirtualDJ Lists** (its Virtual Folders), the music in
   whichever is selected (details from VirtualDJ's database; click a
   column title to sort), and a song's lighting timelines to edit — and
   **DJ Perform Mode**, where VirtualDJ plays those timelines (below). The

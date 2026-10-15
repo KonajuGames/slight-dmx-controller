@@ -10,9 +10,10 @@ extends HSplitContainer
 ## its decks use), falling back to the file name. The database and lists
 ## load the first time the view is shown, not at app start.
 ##
-## Below the folders, the show's named positions (a PositionLibrary): each
-## with its colour's triangle, then a "+" to add one. Picking a position
-## replaces the right side with its PositionEditor.
+## The left column has a "Folders" header over the folders, and below them
+## a "Positions" header (with a "+" to add one) over the show's named
+## positions (a PositionLibrary), each with its colour's triangle. Picking
+## a position replaces the right side with its PositionEditor.
 ##
 ## A track with saved lighting timelines in the current show gets a small
 ## node-line icon (timeline_icon()) before its title. Most are told from
@@ -45,8 +46,11 @@ var _heading: Label
 var _list_view: Control         # the heading + track list
 var _timeline: MusicTimeline    # replaces _list_view while a track is open
 var _editor: PositionEditor     # replaces it while a position is open
-var _positions: ItemList        # the named positions, then "+"
-const ADD_POSITION := "+"
+var _positions: PositionList    # the named positions
+var _add_position: Button       # the "+" on the Positions header
+var _position_menu: PopupMenu   # a position's right-click menu
+var _menu_position := ""        # ...and the position it's for
+enum { PM_RENAME, PM_DUPLICATE, PM_DELETE }
 ## The show's named positions (set by the shell).
 var positions: PositionLibrary:
 	set(v):
@@ -79,6 +83,7 @@ func _ready() -> void:
 	var left := VBoxContainer.new()
 	left.custom_minimum_size = Vector2(220, 0)
 	left.add_theme_constant_override("separation", 4)
+	left.add_child(_section_header("Folders"))
 	_tree = Tree.new()
 	_tree.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_tree.size_flags_stretch_ratio = 3.0
@@ -90,16 +95,31 @@ func _ready() -> void:
 	# should still leave a track's timeline for the list.
 	_tree.item_mouse_selected.connect(func(_pos: Vector2, _button: int): _on_folder_clicked())
 	left.add_child(_tree)
-	var head := Label.new()
-	head.text = "Positions"
-	head.add_theme_font_size_override("font_size", 15)
+	var head := _section_header("Positions")
+	_add_position = Button.new()
+	_add_position.text = "+"
+	_add_position.flat = true
+	_add_position.focus_mode = Control.FOCUS_NONE
+	_add_position.tooltip_text = "Add a new position"
+	_add_position.custom_minimum_size = Vector2(26, 0)
+	_add_position.pressed.connect(add_position)
+	head.add_child(_add_position)
 	left.add_child(head)
-	_positions = ItemList.new()
+	_positions = PositionList.new()
 	_positions.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_positions.size_flags_stretch_ratio = 1.0
 	_positions.custom_minimum_size = Vector2(0, 110)
-	_positions.item_selected.connect(_on_position_selected)
+	_positions.position_picked.connect(open_position)
+	_positions.delete_requested.connect(confirm_delete_position)
+	_positions.context_requested.connect(_on_position_context)
 	left.add_child(_positions)
+	_position_menu = PopupMenu.new()
+	_position_menu.add_item("Rename", PM_RENAME)
+	_position_menu.add_item("Duplicate", PM_DUPLICATE)
+	_position_menu.add_separator()
+	_position_menu.add_item("Delete…", PM_DELETE)
+	_position_menu.id_pressed.connect(position_menu_action)
+	add_child(_position_menu)
 	add_child(left)
 
 	# The right side shows either the track list or a track's timeline.
@@ -129,7 +149,7 @@ func _ready() -> void:
 	set_process(false)
 
 	_heading = Label.new()
-	_heading.text = "Select a folder or a VirtualDJ Virtual Folder."
+	_heading.text = "Select a folder or a VirtualDJ list."
 	_heading.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	right.add_child(_heading)
 
@@ -197,7 +217,7 @@ func _build_tree() -> void:
 		item.collapsed = true
 
 	var vdj := _tree.create_item(root)
-	vdj.set_text(0, "VirtualDJ Virtual Folders")
+	vdj.set_text(0, "VirtualDJ Lists")
 	vdj.set_selectable(0, false)
 	vdj.set_custom_color(0, get_theme_color("font_disabled_color", "Tree"))
 	if _lists.is_empty():
@@ -325,7 +345,7 @@ func open_track(row: Dictionary) -> void:
 func show_track_list() -> void:
 	_timeline.visible = false
 	_editor.visible = false
-	_positions.deselect_all()
+	_positions.select("")
 	_list_view.visible = true
 
 
@@ -340,40 +360,93 @@ func timeline() -> MusicTimeline:
 
 # ------------------------------------------------------------- POSITIONS --
 
+## A header over a section of the left column: its title, and room on the
+## right for buttons.
+func _section_header(title: String) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	var l := Label.new()
+	l.text = title
+	l.add_theme_font_size_override("font_size", 15)
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(l)
+	return row
+
+
+## The "+" on the Positions header.
+func add_position_button() -> Button:
+	return _add_position
+
+
 func position_editor() -> PositionEditor:
 	return _editor
 
 
-func positions_list() -> ItemList:
+func positions_list() -> PositionList:
 	return _positions
 
 
-## List the named positions (each after its colour's triangle), then "+".
+## List the named positions (each after its colour's triangle), then
+## "Add new position".
 func refresh_positions() -> void:
 	if _positions == null:
 		return
-	_positions.clear()
-	if positions != null:
-		for pos in positions.positions:
-			var i := _positions.add_item(String(pos["name"]), PositionEditor.triangle_icon(pos["colour"]))
-			_positions.set_item_metadata(i, String(pos["id"]))
-			if _editor.visible and _editor.position_id == pos["id"]:
-				_positions.select(i)
-	var add := _positions.add_item(ADD_POSITION)
-	_positions.set_item_metadata(add, ADD_POSITION)
-	_positions.set_item_tooltip(add, "Add a position")
+	_positions.refresh(positions, _editor.position_id if _editor.visible else "")
 	if _editor.visible and positions != null and positions.find(_editor.position_id).is_empty():
-		show_track_list()                   # its position's gone (another show loaded)
+		show_track_list()                   # its position's gone (deleted, another show loaded)
 
 
-## Picking a position opens it in the editor; "+" adds one first.
-func _on_position_selected(i: int) -> void:
-	var id := String(_positions.get_item_metadata(i))
-	if id == ADD_POSITION:
-		if positions == null:
-			return
-		id = positions.add()["id"]           # refreshes the list
-	open_position(id)
+## The Positions header's "+": add one, select it and open it in the editor.
+func add_position() -> void:
+	if positions != null:
+		open_position(positions.add()["id"])
+
+
+## A right-click on a position: Rename / Duplicate / Delete….
+func _on_position_context(id: String, screen_pos: Vector2) -> void:
+	_menu_position = id
+	_position_menu.popup(Rect2i(Vector2i(screen_pos), Vector2i.ZERO))
+
+
+func position_menu() -> PopupMenu:
+	return _position_menu
+
+
+## A position's right-click menu item, for the position it was opened on
+## (or `id`): Rename opens it with its name selected to type over;
+## Duplicate adds a copy and opens that; Delete asks first.
+func position_menu_action(action: int, id := "") -> void:
+	if id == "":
+		id = _menu_position
+	if positions == null or positions.find(id).is_empty():
+		return
+	match action:
+		PM_RENAME:
+			open_position(id)
+			var field := _editor.name_edit()
+			field.grab_focus()
+			field.select_all()
+		PM_DUPLICATE:
+			open_position(positions.duplicate_position(id)["id"])
+		PM_DELETE:
+			confirm_delete_position(id)
+
+
+## A position's ✕: ask, then delete it. Returns the dialog (for tests).
+func confirm_delete_position(id: String) -> ConfirmationDialog:
+	var pos := positions.find(id) if positions != null else {}
+	if pos.is_empty():
+		return null
+	var dlg := ConfirmationDialog.new()
+	dlg.title = "Delete Position"
+	dlg.dialog_text = "Delete the position \"%s\"?" % pos["name"]
+	dlg.ok_button_text = "Delete"
+	add_child(dlg)
+	dlg.confirmed.connect(func():
+		dlg.queue_free()
+		positions.remove(id))
+	dlg.canceled.connect(func(): dlg.queue_free())
+	dlg.popup_centered()
+	return dlg
 
 
 ## Show position `id` in the editor, in place of the track list / timeline.
@@ -382,9 +455,7 @@ func open_position(id: String) -> void:
 	_timeline.visible = false
 	_editor.visible = true
 	_editor.open(id)
-	for i in range(_positions.item_count):
-		if String(_positions.get_item_metadata(i)) == id:
-			_positions.select(i)
+	_positions.select(id)
 
 
 func is_position_shown() -> bool:
@@ -416,7 +487,7 @@ func show_list(list: VirtualDjList) -> void:
 	for i in range(list.entries.size()):
 		var e: VirtualDjList.Entry = list.entries[i]
 		_rows.append(_row(i + 1, e.path, _db.find_song(e.path), e, e.path))
-	_set_heading("%s  (VirtualDJ Virtual Folder)" % list.name, _rows)
+	_set_heading("%s  (VirtualDJ list)" % list.name, _rows)
 	_sort_col = Col.NUM
 	_sort_asc = true
 	_fill_list()

@@ -163,6 +163,15 @@ func _test_editor() -> void:
 	await process_frame
 
 
+## The mouse moving onto / off a control: a headless run tracks no mouse,
+## so send what the engine sends then.
+func _hover(c: Control, inside := true) -> void:
+	if inside:
+		c.mouse_entered.emit()
+	else:
+		c.mouse_exited.emit()
+
+
 func _test_browser() -> void:
 	print("- the Positions list in DJ Edit Mode")
 	var lib := PositionLibrary.new()
@@ -180,24 +189,114 @@ func _test_browser() -> void:
 		"a list below the folders")
 	var heads := panel.find_children("*", "Label", true, false).filter(func(l): return l.text == "Positions")
 	ok(heads.size() == 1 and heads[0].get_global_rect().position.y < list.get_global_rect().position.y, "under a \"Positions\" header")
-	ok(list.item_count == 1 and list.get_item_text(0) == "+", "no positions: just \"+\"")
-	list.select(0)
-	list.item_selected.emit(0)
-	ok(lib.positions.size() == 1 and list.item_count == 2 and list.get_item_text(0) == "Position 1" and list.get_item_text(1) == "+",
-		"\"+\" adds a position (and stays last)")
-	ok(list.get_item_icon(0) == PositionEditor.triangle_icon(lib.positions[0]["colour"]), "listed with its colour's triangle")
-	ok(panel.is_position_shown() and panel.position_editor().position_id == lib.positions[0]["id"]
-		and not panel._list_view.visible and list.is_selected(0), "and opens it in the editor")
-	lib.rename(lib.positions[0]["id"], "Crowd")
-	ok(list.get_item_text(0) == "Crowd" and list.is_selected(0), "renaming updates the list")
-	list.select(1)
-	list.item_selected.emit(1)
+	var folders := panel.find_children("*", "Label", true, false).filter(func(l): return l.text == "Folders")
+	ok(folders.size() == 1 and folders[0].get_global_rect().end.y <= tree.get_global_rect().position.y + 1.0, "the folders under a \"Folders\" header")
+	var add := panel.add_position_button()
+	ok(add.text == "+" and add.get_parent() == heads[0].get_parent() and add.get_global_rect().position.x > heads[0].get_global_rect().position.x
+		and absf(add.get_global_rect().end.x - list.get_global_rect().end.x) < 2.0, "a \"+\" at the right of the Positions header")
+	ok(list.ids().is_empty() and list.find_children("*", "Button", true, false).is_empty(), "no positions: an empty list (no button in it)")
+	add.pressed.emit()
+	await process_frame
+	var id1: String = lib.positions[0]["id"]
+	ok(lib.positions.size() == 1 and list.ids() == [id1] and list.row(id1).text == "Position 1", "it adds a position")
+	await process_frame
+	var lr := list.get_global_rect()
+	var pad := list.get_theme_stylebox("panel")
+	ok(absf(list.row(id1).size.x - (lr.size.x - pad.get_margin(SIDE_LEFT) - pad.get_margin(SIDE_RIGHT))) < 1.0,
+		"rows fill the list inside its padding")
+	ok(list.row(id1).get_theme_font_size("font_size") == list.get_theme_font_size("font_size", "ItemList")
+		and list.row(id1).get_theme_color("font_color") == list.get_theme_color("font_color", "ItemList")
+		and list.get_theme_stylebox("panel") == list.get_theme_stylebox("panel", "ItemList"),
+		"styled as a standard list: its panel, font size and colours")
+	ok(list.row(id1).icon == PositionEditor.triangle_icon(lib.positions[0]["colour"]), "listed with its colour's triangle")
+	ok(panel.is_position_shown() and panel.position_editor().position_id == id1 and list.selected_id() == id1
+		and not panel._list_view.visible, "the new position is selected and open in the editor")
+	add.pressed.emit()
+	await process_frame
+	var id2: String = lib.positions[1]["id"]
+	ok(list.ids() == [id1, id2] and list.selected_id() == id2 and panel.position_editor().position_id == id2, "another: it's selected instead")
+	list.row(id1).pressed.emit()
+	ok(panel.position_editor().position_id == id1, "picking a position opens it")
+	# Renaming in the editor's name field.
+	panel.position_editor().name_edit().text = "Crowd"
+	panel.position_editor().name_edit().text_submitted.emit("Crowd")
+	await process_frame
+	ok(lib.find(id1)["name"] == "Crowd" and list.row(id1).text == "Crowd" and list.selected_id() == id1,
+		"renamed in the main panel: the list follows")
+	# Hovering shows the ✕; it asks before deleting.
+	var x := list.delete_button(id2)
+	ok(not x.visible, "no ✕ until the mouse is over a row")
+	_hover(list.row(id2))
+	await process_frame
+	ok(x.visible and not list.delete_button(id1).visible, "hovering a row shows its ✕")
+	ok(x.get_global_rect().end.x >= list.row(id2).get_global_rect().end.x - 1.0, "at the row's right")
+	_hover(list.row(id2), false)
+	await process_frame
+	ok(not x.visible, "and hides it again when the mouse leaves")
+	var dlg := panel.confirm_delete_position(id2)
+	ok(dlg != null and dlg.visible and dlg.dialog_text == "Delete the position \"Position 2\"?", "the ✕ asks first: %s" % dlg.dialog_text)
+	dlg.canceled.emit()
+	await process_frame
+	ok(lib.positions.size() == 2, "cancelled: kept")
+	var asked := [0]
+	panel.child_entered_tree.connect(func(n): if n is ConfirmationDialog: asked[0] += 1)
+	x.pressed.emit()
+	ok(asked[0] == 1, "clicking the ✕ opens that dialog")
+	var dlgs := panel.find_children("*", "ConfirmationDialog", false, false)
+	dlgs[-1].confirmed.emit()
+	await process_frame
+	ok(lib.positions.size() == 1 and list.ids() == [id1], "confirmed: deleted")
+	# Deleting the open one goes back to the track list.
+	ok(panel.is_position_shown(), "(Crowd open)")
+	panel.confirm_delete_position(id1).confirmed.emit()
+	await process_frame
+	ok(not panel.is_position_shown() and panel._list_view.visible and list.ids().is_empty(), "deleting the open position: back to the track list")
+	add.pressed.emit()
 	panel.show_track_list()
-	ok(not panel.is_position_shown() and panel._list_view.visible and list.get_selected_items().is_empty(),
-		"picking a folder goes back to the track list")
+	ok(not panel.is_position_shown() and list.selected_id() == "", "picking a folder goes back to the track list")
 	panel.open_position(lib.positions[0]["id"])
 	lib.from_dict({})
-	ok(not panel.is_position_shown() and list.item_count == 1, "its position gone (another show): back to the list")
+	await process_frame
+	ok(not panel.is_position_shown() and list.ids().is_empty(), "its position gone (another show): back to the list")
+	# The right-click menu.
+	var src := lib.add()
+	lib.rename(src["id"], "Stage")
+	lib.set_point(src["id"], "m1", Vector2(0.2, 0.8))
+	await process_frame
+	var menu := panel.position_menu()
+	var labels := []
+	for i in range(menu.item_count):
+		if not menu.is_item_separator(i):
+			labels.append(menu.get_item_text(i))
+	ok(labels == ["Rename", "Duplicate", "Delete…"], "a position's right-click menu: Rename, Duplicate, Delete… (%s)" % str(labels))
+	var ev := InputEventMouseButton.new()
+	ev.button_index = MOUSE_BUTTON_RIGHT
+	ev.pressed = true
+	ev.position = Vector2(20, 10)
+	list.row(src["id"]).gui_input.emit(ev)
+	ok(menu.visible and panel._menu_position == src["id"], "right-clicking a position opens it")
+	menu.hide()
+	panel.show_track_list()
+	menu.id_pressed.emit(MusicBrowserPanel.PM_RENAME)
+	var field := panel.position_editor().name_edit()
+	ok(panel.is_position_shown() and panel.position_editor().position_id == src["id"] and field.has_focus()
+		and field.get_selected_text() == "Stage", "Rename: opens it with the name selected, ready to type over")
+	menu.id_pressed.emit(MusicBrowserPanel.PM_DUPLICATE)
+	await process_frame
+	var copy: Dictionary = lib.positions[1]
+	ok(lib.positions.size() == 2 and copy["name"] == "Stage copy" and copy["colour"] != src["colour"]
+		and lib.point(copy["id"], "m1") == Vector2(0.2, 0.8), "Duplicate: a copy with its points, its own colour")
+	ok(list.ids() == [src["id"], copy["id"]] and panel.position_editor().position_id == copy["id"] and list.selected_id() == copy["id"],
+		"listed after the original, selected and open")
+	lib.set_point(copy["id"], "m1", Vector2(0.9, 0.9))
+	ok(lib.point(src["id"], "m1") == Vector2(0.2, 0.8), "the copy's points are its own")
+	menu.id_pressed.emit(MusicBrowserPanel.PM_DELETE)
+	await process_frame
+	dlgs = panel.find_children("*", "ConfirmationDialog", false, false)
+	ok(dlgs.size() >= 1 and dlgs[-1].dialog_text == "Delete the position \"Stage\"?", "Delete…: the same question as the ✕")
+	dlgs[-1].confirmed.emit()
+	await process_frame
+	ok(lib.positions.size() == 1 and lib.positions[0]["id"] == copy["id"], "and deletes it")
 	panel.queue_free()
 	await process_frame
 
