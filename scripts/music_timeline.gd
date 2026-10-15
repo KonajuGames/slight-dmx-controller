@@ -200,6 +200,7 @@ func _ready() -> void:
 	_master.dimmer_edited.connect(_mark_dirty)
 	_master.selection = _selection
 	_master.select_drag.connect(_on_select_drag)
+	_master.context_requested.connect(_on_context)
 	wave_col.add_child(_master)
 	_master.item_rect_changed.connect(_place_buttons)
 	# The song's structure, above the bar ruler and as tall.
@@ -708,8 +709,11 @@ func delete_selection() -> bool:
 					TimelineTrack.Row.DIMMER:
 						if tr.clear_dimmer(span.x, span.y):
 							changed = true
+					TimelineTrack.Row.COLOUR:
+						if tr.replace_colour(span.x, span.y, []):
+							changed = true
 					_:
-						pass        # Position / Strobe / Cues / Colour: nothing to clear yet
+						pass        # Position / Strobe / Cues: nothing to clear yet
 	if changed:
 		_mark_dirty()
 	return changed
@@ -738,8 +742,10 @@ func copy_selection() -> bool:
 				match row:
 					TimelineTrack.Row.DIMMER:
 						part["nodes"] = tr.dimmer_segment(span.x, span.y)
+					TimelineTrack.Row.COLOUR:
+						part["segments"] = tr.colour_segment(span.x, span.y)
 					_:
-						pass        # Position / Strobe / Cues / Colour: nothing to copy yet
+						pass        # Position / Strobe / Cues: nothing to copy yet
 				parts.append(part)
 			if not parts.is_empty():
 				rows[row] = parts
@@ -770,7 +776,9 @@ func clipboard() -> Dictionary:
 ## into the same kind of row; a dimmer span replaces the line there
 ## (TimelineTrack.replace_dimmer: the level outside kept). The pasted
 ## areas become the selection. Returns whether anything was pasted.
-func paste() -> bool:
+## `here_track` / `here_time` (the context menu's Paste Here): paste at
+## that time into that track instead.
+func paste(here_track: TimelineTrack = null, here_time := 0.0) -> bool:
 	if _clip.is_empty() or _wave.analysis == null:
 		return false
 	var sources: Array = _clip["tracks"]
@@ -778,7 +786,10 @@ func paste() -> bool:
 		return false
 	var pairs: Array = []           # [[target track, source track]]
 	var at: float
-	if not _selection.is_empty():
+	if here_track != null:
+		at = here_time
+		pairs.append([here_track, sources[0]])
+	elif not _selection.is_empty():
 		at = INF
 		var keys := {}
 		for b in _selection.blocks:
@@ -814,6 +825,8 @@ func paste() -> bool:
 					continue
 				if row == TimelineTrack.Row.DIMMER and part.has("nodes"):
 					changed = tr.replace_dimmer(at + part["t0"], at + part["t1"], part["nodes"]) or changed
+				elif row == TimelineTrack.Row.COLOUR and part.has("segments"):
+					changed = tr.replace_colour(at + part["t0"], at + part["t1"], part["segments"]) or changed
 				blocks.append(TimelineSelection.block(PackedStringArray([TimelineSelection.row_id(key, row)]), t0, t1))
 	if blocks.is_empty():
 		return false
@@ -828,6 +841,317 @@ func _track_for(key: String) -> TimelineTrack:
 		if String(tr.get_meta("key")) == key:
 			return tr
 	return null
+
+
+# ---------------------------------------------------------- CONTEXT MENU --
+
+enum { M_DELETE, M_UNDO, M_REDO, M_CUT, M_COPY, M_PASTE, M_PASTE_HERE, M_SELECT_ALL, M_DESELECT }
+enum Dim { BLACK, HALF, FULL, FADE_IN, FADE_OUT, PULSE_IN, PULSE_OUT, SMOOTH, BEAT_PULSES, BAR_PULSES }
+const DIM_LABELS := {Dim.BLACK: "Black (0%)", Dim.HALF: "Half (50%)", Dim.FULL: "Full (100%)",
+	Dim.FADE_IN: "Fade In", Dim.FADE_OUT: "Fade Out", Dim.PULSE_IN: "Pulse In", Dim.PULSE_OUT: "Pulse Out",
+	Dim.SMOOTH: "Smooth (ramp across)", Dim.BEAT_PULSES: "Pulse on Every Beat", Dim.BAR_PULSES: "Pulse on Every Bar"}
+enum Col { STATIC, GRADIENT, RAINBOW, CLEAR, PRESET = 100 }
+const COLOUR_PRESETS := [["Red", Color(1, 0, 0)], ["Orange", Color(1, 0.5, 0)], ["Yellow", Color(1, 1, 0)],
+	["Green", Color(0, 1, 0)], ["Cyan", Color(0, 1, 1)], ["Blue", Color(0, 0, 1)], ["Purple", Color(0.5, 0, 1)],
+	["Magenta", Color(1, 0, 1)], ["White", Color(1, 1, 1)]]
+
+var _menu: PopupMenu
+var _dimmer_menu: PopupMenu
+var _colour_menu: PopupMenu
+var _ctx := {}                  # the right-click: {track, row, time}
+
+
+## A right-click on a timeline: the actions that fit where it was — on
+## the selection: Delete, Undo / Redo, Cut / Copy / Paste and, for the
+## kinds of row selected, a Dimmer and a Colour submenu; elsewhere: Undo /
+## Redo, Paste Here, Select All.
+func _on_context(track: TimelineTrack, row: int, gpos: Vector2, time: float) -> void:
+	if _wave.analysis == null:
+		return
+	_ctx = {"track": track, "row": row, "time": time}
+	var on_sel := _selection.has(String(track.get_meta("key")), row, time)
+	context_items(on_sel)       # fills _menu
+	var local := track.get_global_transform().affine_inverse() * gpos
+	_menu.popup(Rect2i(Vector2i(track.get_screen_transform() * local), Vector2i.ZERO))
+
+
+## Fill the context menu for a right-click on (`on_selection`) or off the
+## selection. Returns the menu (for tests).
+func context_items(on_selection: bool) -> PopupMenu:
+	_ensure_menus()
+	_menu.clear()
+	var ctrl := KEY_MASK_CTRL
+	if on_selection:
+		_menu.add_item("Delete", M_DELETE, KEY_DELETE)
+	if can_undo():
+		_menu.add_item("Undo", M_UNDO, ctrl | KEY_Z)
+	if can_redo():
+		_menu.add_item("Redo", M_REDO, ctrl | KEY_Y)
+	if on_selection:
+		_menu.add_separator()
+		_menu.add_item("Cut", M_CUT, ctrl | KEY_X)
+		_menu.add_item("Copy", M_COPY, ctrl | KEY_C)
+	if not _clip.is_empty():
+		if on_selection:
+			_menu.add_item("Paste", M_PASTE, ctrl | KEY_V)
+		else:
+			_menu.add_item("Paste Here", M_PASTE_HERE)
+	if on_selection:
+		var kinds := selected_row_kinds()
+		if kinds.has(TimelineTrack.Row.DIMMER) or kinds.has(TimelineTrack.Row.COLOUR):
+			_menu.add_separator()
+		if kinds.has(TimelineTrack.Row.DIMMER):
+			_fill_dimmer_menu()
+			_menu.add_submenu_node_item("Dimmer", _dimmer_menu)
+		if kinds.has(TimelineTrack.Row.COLOUR):
+			_fill_colour_menu()
+			_menu.add_submenu_node_item("Colour", _colour_menu)
+	_menu.add_separator()
+	_menu.add_item("Select All", M_SELECT_ALL, ctrl | KEY_A)
+	if not _selection.is_empty():
+		_menu.add_item("Deselect", M_DESELECT, KEY_ESCAPE)
+	return _menu
+
+
+## The kinds of row (TimelineTrack.Row) in the selection.
+func selected_row_kinds() -> Dictionary:
+	var out := {}
+	for b in _selection.blocks:
+		for id in b["rows"]:
+			out[int(id.get_slice("|", 1))] = true
+	return out
+
+
+func _ensure_menus() -> void:
+	if _menu != null:
+		return
+	_menu = PopupMenu.new()
+	_menu.id_pressed.connect(_on_menu)
+	add_child(_menu)
+	_dimmer_menu = PopupMenu.new()
+	_dimmer_menu.id_pressed.connect(func(id: int): apply_dimmer(id))
+	_menu.add_child(_dimmer_menu)
+	_colour_menu = PopupMenu.new()
+	_colour_menu.id_pressed.connect(_on_colour_menu)
+	_menu.add_child(_colour_menu)
+
+
+func _fill_dimmer_menu() -> void:
+	_dimmer_menu.clear()
+	for k in [Dim.BLACK, Dim.HALF, Dim.FULL]:
+		_dimmer_menu.add_item(DIM_LABELS[k], k)
+	_dimmer_menu.add_separator()
+	for k in [Dim.FADE_IN, Dim.FADE_OUT, Dim.PULSE_IN, Dim.PULSE_OUT, Dim.SMOOTH]:
+		_dimmer_menu.add_item(DIM_LABELS[k], k)
+	_dimmer_menu.add_separator()
+	for k in [Dim.BEAT_PULSES, Dim.BAR_PULSES]:
+		_dimmer_menu.add_item(DIM_LABELS[k], k)
+		_dimmer_menu.set_item_disabled(_dimmer_menu.get_item_index(k), _wave.grid_beats.is_empty())
+
+
+func _fill_colour_menu() -> void:
+	_colour_menu.clear()
+	_colour_menu.add_item("Static Colour…", Col.STATIC)
+	_colour_menu.add_item("Gradient…", Col.GRADIENT)
+	_colour_menu.add_item("Rainbow", Col.RAINBOW)
+	_colour_menu.add_separator()
+	for i in range(COLOUR_PRESETS.size()):
+		_colour_menu.add_icon_item(_swatch(COLOUR_PRESETS[i][1]), COLOUR_PRESETS[i][0], Col.PRESET + i)
+	_colour_menu.add_separator()
+	_colour_menu.add_item("Clear Colour", Col.CLEAR)
+
+
+static func _swatch(c: Color) -> Texture2D:
+	var img := Image.create_empty(12, 12, false, Image.FORMAT_RGBA8)
+	img.fill(c)
+	return ImageTexture.create_from_image(img)
+
+
+func _on_menu(id: int) -> void:
+	match id:
+		M_DELETE:
+			delete_selection()
+		M_UNDO:
+			undo()
+		M_REDO:
+			redo()
+		M_CUT:
+			cut_selection()
+		M_COPY:
+			copy_selection()
+		M_PASTE:
+			paste()
+		M_PASTE_HERE:
+			if not _ctx.is_empty():
+				paste(_ctx["track"], _ctx["time"])
+		M_SELECT_ALL:
+			select_all()
+		M_DESELECT:
+			_selection.clear()
+
+
+func _on_colour_menu(id: int) -> void:
+	match id:
+		Col.STATIC:
+			_pick_colours(["Colour"], func(c: Array): apply_static_colour(c[0]))
+		Col.GRADIENT:
+			_pick_colours(["From", "To"], func(c: Array): apply_gradient(c[0], c[1]))
+		Col.RAINBOW:
+			apply_rainbow()
+		Col.CLEAR:
+			apply_colour_segments(func(_t0, _t1): return [])
+		_:
+			if id >= Col.PRESET and id - Col.PRESET < COLOUR_PRESETS.size():
+				apply_static_colour(COLOUR_PRESETS[id - Col.PRESET][1])
+
+
+## A small dialog with a colour picker per label; `done` gets the colours
+## on OK.
+func _pick_colours(labels: Array, done: Callable) -> void:
+	var dlg := ConfirmationDialog.new()
+	dlg.title = "Colour" if labels.size() == 1 else "Gradient"
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 16)
+	var pickers: Array = []
+	var defaults := [Color(1, 0, 0), Color(0, 0, 1)]
+	for i in range(labels.size()):
+		var col := VBoxContainer.new()
+		var l := Label.new()
+		l.text = labels[i]
+		col.add_child(l)
+		var p := ColorPicker.new()
+		p.edit_alpha = false
+		p.color = defaults[i % defaults.size()]
+		col.add_child(p)
+		row.add_child(col)
+		pickers.append(p)
+	dlg.add_child(row)
+	add_child(dlg)
+	dlg.confirmed.connect(func():
+		done.call(pickers.map(func(p): return p.color))
+		dlg.queue_free())
+	dlg.canceled.connect(func(): dlg.queue_free())
+	dlg.popup_centered()
+
+
+# ---------------------------------------------------- DIMMER / COLOUR ACTIONS --
+
+## Give every selected dimmer span a shape (Dim): Black / Half / Full, a
+## fade, a pulse, a smooth ramp or pulses on the beat grid
+## (dimmer_shape()). Returns whether anything changed.
+func apply_dimmer(kind: int) -> bool:
+	var changed := false
+	for tr in [_master] + Array(_fixture_tracks):
+		var key := String(tr.get_meta("key"))
+		if not tr.has_row(TimelineTrack.Row.DIMMER):
+			continue
+		for span in _merged(_selection.spans_for(key, TimelineTrack.Row.DIMMER)):
+			var shape := dimmer_shape(kind, span.x, span.y, tr.dimmer_at(span.x), tr._dimmer_after(span.y), _beat_grid_for(kind))
+			if not shape.is_empty() and tr.replace_dimmer(span.x, span.y, shape):
+				changed = true
+	if changed:
+		_mark_dirty()
+	return changed
+
+
+func _beat_grid_for(kind: int) -> PackedFloat32Array:
+	if kind == Dim.BEAT_PULSES:
+		return _wave.grid_beats
+	if kind == Dim.BAR_PULSES:
+		var out := PackedFloat32Array()
+		var beats := _wave.grid_beats
+		for i in range(beats.size()):
+			if posmod(i - _wave.bar_phase, _wave.beats_per_bar) == 0:
+				out.append(beats[i])
+		return out
+	return PackedFloat32Array()
+
+
+## The dimmer line for a shape across `t0`..`t1` (nodes relative to t0, as
+## TimelineTrack.replace_dimmer() takes). `left` / `right`: the level just
+## outside the span (the pulses start and end there, Smooth ramps between
+## them); `grid`: the beat / bar times (the beat pulses: up to 100% on each
+## and down to 0% by the next).
+static func dimmer_shape(kind: int, t0: float, t1: float, left: float, right: float,
+		grid := PackedFloat32Array()) -> PackedVector2Array:
+	var n := t1 - t0
+	match kind:
+		Dim.BLACK:
+			return PackedVector2Array([Vector2(0, 0), Vector2(n, 0)])
+		Dim.HALF:
+			return PackedVector2Array([Vector2(0, 0.5), Vector2(n, 0.5)])
+		Dim.FULL:
+			return PackedVector2Array([Vector2(0, 1), Vector2(n, 1)])
+		Dim.FADE_IN:
+			return PackedVector2Array([Vector2(0, 0), Vector2(n, 1)])
+		Dim.FADE_OUT:
+			return PackedVector2Array([Vector2(0, 1), Vector2(n, 0)])
+		Dim.PULSE_IN:
+			return PackedVector2Array([Vector2(0, left), Vector2(n * 0.5, 1), Vector2(n, right)])
+		Dim.PULSE_OUT:
+			return PackedVector2Array([Vector2(0, left), Vector2(n * 0.5, 0), Vector2(n, right)])
+		Dim.SMOOTH:
+			return PackedVector2Array([Vector2(0, left), Vector2(n, right)])
+		Dim.BEAT_PULSES, Dim.BAR_PULSES:
+			var hits: Array = []
+			for b in grid:
+				if b >= t0 and b < t1:
+					hits.append(b)
+			if hits.is_empty():
+				return PackedVector2Array()
+			var out := PackedVector2Array()
+			if hits[0] > t0:
+				out.append(Vector2(0, 0))
+			for i in range(hits.size()):
+				var at: float = hits[i] - t0
+				var next: float = (hits[i + 1] if i + 1 < hits.size() else t1) - t0
+				if not out.is_empty():
+					out.append(Vector2(at, 0))
+				out.append(Vector2(at, 1))
+				out.append(Vector2(next, 0))
+			return out
+	return PackedVector2Array()
+
+
+## Run `make(t0, t1) -> segments` (relative to t0) over every selected
+## colour span, replacing what's there. Returns whether anything changed.
+func apply_colour_segments(make: Callable) -> bool:
+	var changed := false
+	for tr in [_master] + Array(_fixture_tracks):
+		var key := String(tr.get_meta("key"))
+		if not tr.has_row(TimelineTrack.Row.COLOUR):
+			continue
+		for span in _merged(_selection.spans_for(key, TimelineTrack.Row.COLOUR)):
+			if tr.replace_colour(span.x, span.y, make.call(span.x, span.y)):
+				changed = true
+	if changed:
+		_mark_dirty()
+	return changed
+
+
+## One colour across every selected colour span.
+func apply_static_colour(c: Color) -> bool:
+	return apply_colour_segments(func(t0, t1): return [{"t0": 0.0, "t1": t1 - t0, "c0": c, "c1": c}])
+
+
+## A gradient from `a` to `b` across every selected colour span.
+func apply_gradient(a: Color, b: Color) -> bool:
+	return apply_colour_segments(func(t0, t1): return [{"t0": 0.0, "t1": t1 - t0, "c0": a, "c1": b}])
+
+
+## The hue wheel once round across every selected colour span.
+func apply_rainbow() -> bool:
+	return apply_colour_segments(func(t0, t1): return rainbow_segments(t1 - t0))
+
+
+## A rainbow over `length` seconds: red round the hue wheel back to red,
+## in six segments.
+static func rainbow_segments(length: float) -> Array:
+	var out: Array = []
+	for i in range(6):
+		out.append({"t0": length * i / 6.0, "t1": length * (i + 1) / 6.0,
+			"c0": Color.from_hsv(i / 6.0, 1, 1), "c1": Color.from_hsv(fmod((i + 1) / 6.0, 1.0), 1, 1)})
+	return out
 
 
 ## Spans ([Vector2(t0, t1)]) sorted and with overlapping / touching ones
@@ -1110,9 +1434,11 @@ func _rebuild_fixture_tracks() -> void:
 			tr.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			tr.set_meta("key", spec["key"])
 			tr.dimmer_nodes = _nodes_from(saved.get(spec["key"], {}).get("dimmer", []))
+			tr.colour_segments = _segs_from(saved.get(spec["key"], {}).get("colour", []))
 			tr.dimmer_edited.connect(_mark_dirty)
 			tr.selection = _selection
 			tr.select_drag.connect(_on_select_drag)
+			tr.context_requested.connect(_on_context)
 			row.add_child(tr)
 			var plate := TimelineTrack.NamePlate.new()
 			plate.track = tr
@@ -1184,6 +1510,10 @@ func _collect() -> void:
 			entry.erase("dimmer")
 		else:
 			entry["dimmer"] = _nodes_to(tr.dimmer_nodes)
+		if tr.colour_segments.is_empty():
+			entry.erase("colour")
+		else:
+			entry["colour"] = _segs_to(tr.colour_segments)
 		if entry.is_empty():
 			tracks.erase(key)
 		else:
@@ -1196,6 +1526,7 @@ func _show_song_data() -> void:
 	var tracks: Dictionary = song_data().get("tracks", {})
 	if _master != null:
 		_master.dimmer_nodes = _nodes_from(tracks.get("master", {}).get("dimmer", []))
+		_master.colour_segments = _segs_from(tracks.get("master", {}).get("colour", []))
 	_rebuild_fixture_tracks()
 	if _path != "" and _struct_cache.has(_path):
 		_apply_saved_structure(_path, _struct_cache[_path])
@@ -1295,6 +1626,7 @@ func _restore(snap: Dictionary) -> void:
 	var tracks: Dictionary = d["tracks"]
 	for tr in [_master] + Array(_fixture_tracks):
 		tr.dimmer_nodes = _nodes_from(tracks.get(String(tr.get_meta("key")), {}).get("dimmer", []))
+		tr.colour_segments = _segs_from(tracks.get(String(tr.get_meta("key")), {}).get("colour", []))
 	if _struct_cache.has(_path):
 		_apply_saved_structure(_path, _struct_cache[_path])
 		_set_structure(_struct_cache[_path])
@@ -1317,6 +1649,26 @@ static func _nodes_from(arr) -> PackedVector2Array:
 		for p in arr:
 			if p is Array and p.size() >= 2:
 				out.append(Vector2(float(p[0]), float(p[1])))
+	return out
+
+
+## Colour segments to / from their saved form: [[t0, t1, "rrggbb",
+## "rrggbb"], ...].
+static func _segs_to(segs: Array) -> Array:
+	var out := []
+	for sg in segs:
+		out.append([snappedf(sg["t0"], 0.001), snappedf(sg["t1"], 0.001),
+			(sg["c0"] as Color).to_html(false), (sg["c1"] as Color).to_html(false)])
+	return out
+
+
+static func _segs_from(arr) -> Array:
+	var out: Array = []
+	if arr is Array:
+		for e in arr:
+			if e is Array and e.size() >= 4:
+				out.append({"t0": float(e[0]), "t1": float(e[1]),
+					"c0": Color.from_string(str(e[2]), Color.WHITE), "c1": Color.from_string(str(e[3]), Color.WHITE)})
 	return out
 
 

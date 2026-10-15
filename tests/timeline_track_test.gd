@@ -39,6 +39,8 @@ func _run() -> void:
 	_test_dimmer_segments()
 	await _test_copy_paste()
 	await _test_undo_redo()
+	_test_dimmer_shapes()
+	await _test_context_menu()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
 
@@ -798,3 +800,145 @@ func _test_undo_redo() -> void:
 	tl._dirty = false
 	tl.queue_free()
 	await process_frame
+
+
+func _test_dimmer_shapes() -> void:
+	print("- the Dimmer submenu's shapes")
+	var D := MusicTimeline.Dim
+	var shape := func(k): return MusicTimeline.dimmer_shape(k, 10.0, 14.0, 0.3, 0.6)
+	ok(shape.call(D.BLACK) == PackedVector2Array([Vector2(0, 0), Vector2(4, 0)]), "Black: 0%")
+	ok(shape.call(D.FULL) == PackedVector2Array([Vector2(0, 1), Vector2(4, 1)]), "Full: 100%")
+	ok(shape.call(D.HALF) == PackedVector2Array([Vector2(0, 0.5), Vector2(4, 0.5)]), "Half: 50%")
+	ok(shape.call(D.FADE_IN) == PackedVector2Array([Vector2(0, 0), Vector2(4, 1)]), "Fade In: 0% up to 100%")
+	ok(shape.call(D.FADE_OUT) == PackedVector2Array([Vector2(0, 1), Vector2(4, 0)]), "Fade Out: 100% down to 0%")
+	ok(shape.call(D.PULSE_IN) == PackedVector2Array([Vector2(0, 0.3), Vector2(2, 1), Vector2(4, 0.6)]),
+		"Pulse In: from the level on the left up to 100% and down to the level on the right")
+	ok(shape.call(D.PULSE_OUT) == PackedVector2Array([Vector2(0, 0.3), Vector2(2, 0), Vector2(4, 0.6)]), "Pulse Out: down to 0% in the middle")
+	ok(shape.call(D.SMOOTH) == PackedVector2Array([Vector2(0, 0.3), Vector2(4, 0.6)]), "Smooth: a straight ramp between the two")
+	var beats := PackedFloat32Array([9.0, 10.5, 11.0, 13.0, 15.0])
+	var pulses: PackedVector2Array = MusicTimeline.dimmer_shape(D.BEAT_PULSES, 10.0, 14.0, 0.3, 0.6, beats)
+	ok(pulses == PackedVector2Array([Vector2(0, 0), Vector2(0.5, 0), Vector2(0.5, 1), Vector2(1, 0), Vector2(1, 0), Vector2(1, 1),
+		Vector2(3, 0), Vector2(3, 0), Vector2(3, 1), Vector2(4, 0)]), "beat pulses: up at each beat, down to 0%% by the next (%s)" % str(pulses))
+	ok(MusicTimeline.dimmer_shape(D.BEAT_PULSES, 20.0, 21.0, 0, 0, beats).is_empty(), "no beats in the span: no shape")
+
+
+func _menu_ids(menu: PopupMenu) -> Array:
+	var out := []
+	for i in range(menu.item_count):
+		if not menu.is_item_separator(i):
+			out.append(menu.get_item_text(i))
+	return out
+
+
+func _test_context_menu() -> void:
+	print("- the right-click menu")
+	var R := TimelineTrack.Row
+	var fixtures := [{"key": "p1", "name": "Par 1", "profile": _par(), "mode": 0}]
+	var tl := MusicTimeline.new()
+	tl.fixtures_provider = func(): return fixtures
+	root.add_child(tl)
+	tl.position = Vector2.ZERO
+	tl.size = Vector2(1100, 700)
+	tl.open("user://_menu_song.wav")
+	var a := SongAnalysis.new()
+	a.duration = 60.0
+	for arr in [a.wave_lo, a.wave_mid, a.wave_hi, a.wave_peak]:
+		arr.resize(6000)
+	tl._set_analysis(a)
+	await process_frame
+	await process_frame
+	var m := tl.master_track()
+	var p1 := tl.fixture_tracks()[0]
+	var sel := tl.selection()
+	# Off the selection, nothing to undo or paste: just Select All.
+	ok(_menu_ids(tl.context_items(false)) == ["Select All"], "off any selection, a fresh song: Select All")
+	# On a selection of dimmer rows.
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["master|%d" % R.DIMMER, "p1|%d" % R.DIMMER]), 10.0, 14.0)])
+	ok(_menu_ids(tl.context_items(true)) == ["Delete", "Cut", "Copy", "Dimmer", "Select All", "Deselect"],
+		"on a dimmer selection: Delete, Cut, Copy, Dimmer, Select All, Deselect (%s)" % str(_menu_ids(tl.context_items(true))))
+	var dm: PopupMenu = tl._dimmer_menu
+	ok(_menu_ids(dm) == ["Black (0%)", "Half (50%)", "Full (100%)", "Fade In", "Fade Out", "Pulse In", "Pulse Out",
+		"Smooth (ramp across)", "Pulse on Every Beat", "Pulse on Every Bar"], "the Dimmer submenu")
+	ok(dm.is_item_disabled(dm.get_item_index(MusicTimeline.Dim.BEAT_PULSES)), "beat pulses greyed out without a beat grid")
+	# A real right-click on it opens the menu.
+	var wr := tl.wave().get_global_rect()
+	var at := Vector2(wr.position.x + 12.0 / 60.0 * wr.size.x, (m.get_global_transform() * m.row_rect(R.DIMMER).get_center()).y)
+	var ev := InputEventMouseButton.new()
+	ev.position = at
+	ev.global_position = at
+	ev.button_index = MOUSE_BUTTON_RIGHT
+	ev.pressed = true
+	root.push_input(ev)
+	ok(tl._menu.visible and tl._ctx["track"] == m and tl._ctx["row"] == R.DIMMER and absf(tl._ctx["time"] - 12.0) < 0.2,
+		"right-clicking the selection opens the menu there")
+	tl._menu.hide()
+	# Pulse In from the menu.
+	m.dimmer_nodes = PackedVector2Array([Vector2(0, 0.4), Vector2(60, 0.4)])
+	m.dimmer_edited.emit()
+	dm.id_pressed.emit(MusicTimeline.Dim.PULSE_IN)
+	ok(is_equal_approx(m.dimmer_at(12.0), 1.0) and is_equal_approx(m.dimmer_at(10.0), 0.4) and is_equal_approx(m._dimmer_after(14.0), 0.4),
+		"Dimmer > Pulse In: up to 100% mid-span, the edges at the level outside")
+	ok(is_equal_approx(p1.dimmer_at(12.0), 1.0) and is_equal_approx(p1.dimmer_at(10.0), 1.0), "...on every selected dimmer row")
+	ok(_menu_ids(tl.context_items(true)).has("Undo"), "now Undo is offered")
+	tl._menu.id_pressed.emit(MusicTimeline.M_UNDO)
+	ok(is_equal_approx(m.dimmer_at(12.0), 0.4) and _menu_ids(tl.context_items(true)).has("Redo"), "Undo from the menu; then Redo is offered")
+	tl._menu.id_pressed.emit(MusicTimeline.M_REDO)
+	ok(is_equal_approx(m.dimmer_at(12.0), 1.0), "Redo from the menu")
+	# Colour rows.
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["p1|%d" % R.COLOUR, "master|%d" % R.COLOUR]), 20.0, 30.0)])
+	var items := _menu_ids(tl.context_items(true))
+	ok(items.has("Colour") and not items.has("Dimmer"), "a colour selection: a Colour submenu (no Dimmer)")
+	var cm := _menu_ids(tl._colour_menu)
+	ok(cm[1] == "Gradient…" and cm[2] == "Rainbow" and cm.has("Red") and cm[-1] == "Clear Colour",
+		"the Colour submenu: static, gradient, rainbow, presets, clear (%s)" % str(cm))
+	tl._colour_menu.id_pressed.emit(MusicTimeline.Col.PRESET + 5)      # Blue
+	ok(p1.colour_at(25.0) == Color(0, 0, 1) and m.colour_at(25.0) == Color(0, 0, 1) and p1.colour_at(31.0) == null,
+		"Colour > Blue: a static colour over the span")
+	ok(tl.apply_gradient(Color(1, 0, 0), Color(0, 1, 0)) and (p1.colour_at(25.0) as Color).is_equal_approx(Color(0.5, 0.5, 0)),
+		"a gradient across the span")
+	ok(tl.apply_rainbow() and p1.colour_segments.size() == 6 and (p1.colour_at(20.0) as Color).is_equal_approx(Color(1, 0, 0)),
+		"a rainbow: six segments round the hue wheel")
+	# Delete, copy / paste and the saved form.
+	tl.apply_static_colour(Color(1, 0.5, 0))
+	tl.copy_selection()
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["p1|%d" % R.COLOUR]), 40.0, 41.0)])
+	tl.paste()
+	ok(p1.colour_at(45.0) == Color(1, 0.5, 0) and m.colour_at(45.0) == null, "colour copies and pastes")
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["p1|%d" % R.COLOUR]), 22.0, 24.0)])
+	tl._menu.id_pressed.emit(MusicTimeline.M_DELETE)
+	ok(p1.colour_at(23.0) == null and p1.colour_at(21.0) == Color(1, 0.5, 0) and p1.colour_at(25.0) == Color(1, 0.5, 0),
+		"Delete cuts a gap in a colour segment")
+	tl._collect()
+	var saved: Array = tl.song_data()["tracks"]["p1"]["colour"]
+	ok(saved.size() == 3 and saved[0][2] == "ff8000", "saved as [t0, t1, colour, colour] (%s)" % str(saved[0]))
+	ok(_near(MusicTimeline._segs_from(saved)[0]["c0"], Color(1, 0.5, 0)), "and read back (8-bit)")
+	tl.undo()
+	ok(_near(p1.colour_at(23.0), Color(1, 0.5, 0)), "undo brings colour back too")
+	# Off the selection with something copied: Paste Here, into the track clicked.
+	sel.clear()
+	items = _menu_ids(tl.context_items(false))
+	ok(items.has("Paste Here") and items.has("Undo") and not items.has("Delete") and not items.has("Copy"),
+		"off the selection: Undo / Paste Here, no Delete / Copy (%s)" % str(items))
+	tl._ctx = {"track": p1, "row": R.COLOUR, "time": 50.0}
+	tl._menu.id_pressed.emit(MusicTimeline.M_PASTE_HERE)
+	ok(p1.colour_at(55.0) == Color(1, 0.5, 0), "Paste Here: at the clicked time, into the clicked track")
+	# Ctrl+right-click on a dimmer node still removes it (no menu).
+	tl._menu.hide()
+	m.dimmer_nodes = PackedVector2Array([Vector2(12, 0.5)])
+	var node_at := m.get_global_transform() * Vector2(m._t2x(12.0), m._level_y(m.row_rect(R.DIMMER), 0.5))
+	ev = InputEventMouseButton.new()
+	ev.position = node_at
+	ev.global_position = node_at
+	ev.button_index = MOUSE_BUTTON_RIGHT
+	ev.ctrl_pressed = true
+	ev.pressed = true
+	root.push_input(ev)
+	ok(m.dimmer_nodes.is_empty() and not tl._menu.visible, "Ctrl+right-click on a node still removes it, no menu")
+	tl._dirty = false
+	tl.queue_free()
+	await process_frame
+
+
+## Colours equal to 8-bit precision (as they're saved).
+func _near(a, b: Color) -> bool:
+	return a is Color and absf(a.r - b.r) < 0.003 and absf(a.g - b.g) < 0.003 and absf(a.b - b.b) < 0.003

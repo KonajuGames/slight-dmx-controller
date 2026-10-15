@@ -218,8 +218,25 @@ technical reference.
   paste, the song structure — and **Ctrl+Y** (or Ctrl+Shift+Z) redoes
   them, up to 100 steps. Each song keeps its own history while the show
   is open (switching songs and back keeps it; loading another show
-  clears it); a new edit after undoing drops what could be redone. So far the rows other than the dimmer are empty (nothing to
-  clear, copy or paste there yet), and nothing drives the fixtures.
+  clears it); a new edit after undoing drops what could be redone.
+  The **Colour** row holds colour segments: a span with a colour at each
+  end (one colour for a static colour, two for a gradient), drawn as a
+  band; outside its segments the row sets nothing. Delete, cut, copy,
+  paste, undo and saving cover it as they do the dimmer.
+  **Right-click** a timeline for a menu of what fits there. On the
+  selection: Delete, Undo / Redo (when there's something to undo /
+  redo), Cut, Copy, Paste (when something's been copied), then — for the
+  kinds of row selected — a **Dimmer** submenu (Black 0%, Half 50%, Full
+  100%, Fade In 0→100%, Fade Out 100→0%, Pulse In: from the level on the
+  left of the selection up to 100% and down to the level on its right,
+  Pulse Out: the same down to 0%, Smooth: a straight ramp between the
+  two, Pulse on Every Beat / Bar: up to 100% on each and down to 0% by
+  the next) and a **Colour** submenu (Static Colour… and Gradient… with
+  colour pickers, Rainbow, preset colours, Clear Colour), each applied to
+  every selected row of its kind; then Select All / Deselect. Off the
+  selection: Undo / Redo, **Paste Here** (at the clicked time, into the
+  clicked track) and Select All. Ctrl+right-click on a dimmer node still
+  removes it. So far the Position, Strobe and Cues rows are empty.
 - `timeline_store.gd` — the `TimelineStore` class: a show's music
   timelines, in a folder beside the show file (`MyShow.slight` →
   `MyShow.timelines/`): one JSON file per song, named by the song's
@@ -374,12 +391,14 @@ Global controls live in the top bar:
   highest-takes-precedence, pan / tilt averaged. A song's master dimmer
   line scales every fixture, a fixture's its own, a head's that head's:
   on a fixture with a DIMMER channel that channel is set; on one without,
-  its colour (from the console) is scaled, like its virtual dimmer. Only
-  what a song's timelines cover is driven; everything else stays as the
-  console has it. The timelines go into the frame under chases and
-  effects and over Auto Show. Leaving DJ Perform Mode stops the OS2L
-  listener and the timeline playback. So far only the dimmer rows have
-  content, so the dimmers are all that's driven.
+  its colour is scaled, like its virtual dimmer. A colour segment sets a
+  head's red / green / blue — the head's own colour row first, else its
+  fixture's, else the master's — and otherwise the console's colour
+  stands. Only what a song's timelines cover is driven; everything else
+  stays as the console has it. The timelines go into the frame under
+  chases and effects and over Auto Show. Leaving DJ Perform Mode stops
+  the OS2L listener and the timeline playback. So far the dimmer and
+  colour rows are the ones with content.
 
 - **Grand Master** — one 0–255 fader that scales *every* universe's
   output on send (non-destructive: the per-channel values you dialed

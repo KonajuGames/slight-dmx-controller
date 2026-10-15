@@ -23,6 +23,10 @@ extends Control
 ##                          up or down
 ##   Ctrl + left-click line add a node there
 ##   Ctrl + right-click     remove the node under the pointer
+## The colour row holds colour segments (colour_segments): a span with a
+## colour at each end — the same for a static colour, two for a gradient;
+## outside its segments the row sets nothing. Right-click asks the owner
+## for a context menu (context_requested).
 ## A left-button drag anywhere else selects an area (select_drag: the
 ## track's owner — MusicTimeline — keeps the TimelineSelection, which can
 ## span rows of several tracks; this track draws its rows' part of it).
@@ -35,6 +39,9 @@ signal dimmer_edited
 ## press.
 signal select_drag(track: TimelineTrack, phase: int, global_pos: Vector2, ctrl: bool, shift: bool)
 enum { SELECT_PRESS, SELECT_MOVE, SELECT_RELEASE }
+## A right-click on `row` (not a Ctrl+right-click on a dimmer node, which
+## removes it), at `global_pos` / `time` seconds.
+signal context_requested(track: TimelineTrack, row: int, global_pos: Vector2, time: float)
 
 ## The kinds of row (stacked bottom to top in this order: ROW_ORDER).
 enum Row { POSITION, STROBE, CUES, COLOUR, DIMMER }
@@ -77,6 +84,12 @@ var rows: Array = ROW_ORDER.duplicate():
 var dimmer_nodes := PackedVector2Array():
 	set(v):
 		dimmer_nodes = v
+		queue_redraw()
+## The colour row's segments, in time order and not overlapping:
+## [{t0, t1, c0: Color, c1: Color}] — c0 at t0 fading to c1 at t1.
+var colour_segments: Array = []:
+	set(v):
+		colour_segments = v
 		queue_redraw()
 ## Supplies the view (zoom / scroll) — the timeline's zoomable waveform.
 var wave: WaveHeatmap
@@ -389,6 +402,83 @@ func row_at(pos: Vector2) -> int:
 	return -1
 
 
+# ---------------------------------------------------------------- COLOUR --
+
+## The colour at `t` seconds (a segment's, interpolated), or null where
+## no segment is.
+func colour_at(t: float):
+	return segment_colour_at(colour_segments, t)
+
+
+static func segment_colour_at(segs: Array, t: float):
+	for sg in segs:
+		if t >= sg["t0"] and t <= sg["t1"]:
+			var span: float = sg["t1"] - sg["t0"]
+			return (sg["c0"] as Color).lerp(sg["c1"], 0.0 if span <= 0.0 else (t - sg["t0"]) / span)
+	return null
+
+
+## The colour segments from `t0` to `t1` (for copying), cut to that span
+## and made relative to t0.
+func colour_segment(t0: float, t1: float) -> Array:
+	var out: Array = []
+	for sg in colour_segments:
+		if sg["t1"] <= t0 or sg["t0"] >= t1:
+			continue
+		var a := maxf(sg["t0"], t0)
+		var b := minf(sg["t1"], t1)
+		out.append({"t0": a - t0, "t1": b - t0,
+			"c0": segment_colour_at([sg], a), "c1": segment_colour_at([sg], b)})
+	return out
+
+
+## Replace the colour row from `t0` to `t1` with `segments` (relative to
+## t0, as colour_segment() gives; [] clears it): segments overlapping the
+## span are cut back to its edges (keeping their colours there). Cut off
+## at the song's end. Returns whether anything changed.
+func replace_colour(t0: float, t1: float, segments: Array) -> bool:
+	var end := wave.duration() if wave != null and wave.analysis != null else INF
+	var shift := t0
+	t0 = maxf(t0, 0.0)
+	t1 = minf(t1, end)
+	if t1 <= t0:
+		return false
+	var out: Array = []
+	for sg in colour_segments:
+		if sg["t1"] <= t0 or sg["t0"] >= t1:
+			out.append(sg)
+			continue
+		if sg["t0"] < t0:
+			out.append({"t0": sg["t0"], "t1": t0, "c0": sg["c0"], "c1": segment_colour_at([sg], t0)})
+		if sg["t1"] > t1:
+			out.append({"t0": t1, "t1": sg["t1"], "c0": segment_colour_at([sg], t1), "c1": sg["c1"]})
+	for sg in segments:
+		var a: float = sg["t0"] + shift
+		var b: float = sg["t1"] + shift
+		if b <= t0 or a >= t1:
+			continue
+		var whole := {"t0": a, "t1": b, "c0": sg["c0"], "c1": sg["c1"]}
+		var ca := maxf(a, t0)
+		var cb := minf(b, t1)
+		if cb > ca:
+			out.append({"t0": ca, "t1": cb, "c0": segment_colour_at([whole], ca), "c1": segment_colour_at([whole], cb)})
+	out.sort_custom(func(x, y): return x["t0"] < y["t0"])
+	if _same_segments(out, colour_segments):
+		return false
+	colour_segments = out
+	return true
+
+
+static func _same_segments(a: Array, b: Array) -> bool:
+	if a.size() != b.size():
+		return false
+	for i in range(a.size()):
+		if not (is_equal_approx(a[i]["t0"], b[i]["t0"]) and is_equal_approx(a[i]["t1"], b[i]["t1"])
+				and (a[i]["c0"] as Color).is_equal_approx(b[i]["c0"]) and (a[i]["c1"] as Color).is_equal_approx(b[i]["c1"])):
+			return false
+	return true
+
+
 func _gui_input(event: InputEvent) -> void:
 	# An area selection under way: follow it to the release.
 	if _selecting:
@@ -401,6 +491,13 @@ func _gui_input(event: InputEvent) -> void:
 			accept_event()
 		return
 	var dimmer_editing := editable and has_row(Row.DIMMER)
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed \
+			and not (event.ctrl_pressed and dimmer_editing and node_at(event.position) >= 0):
+		var row := row_at(event.position)
+		if row >= 0:
+			context_requested.emit(self, row, get_global_transform() * event.position, _x2t(event.position.x))
+			accept_event()
+			return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		var at: Vector2 = event.position
 		var special := dimmer_editing and (node_at(at) >= 0 or on_line(at))
@@ -550,6 +647,8 @@ func _draw() -> void:
 		i += 1
 		if row == Row.DIMMER:
 			_draw_dimmer(r)
+		elif row == Row.COLOUR:
+			_draw_colour(r)
 		# The name, sized to fit the row (8 px in the 10 px rows), at the top
 		# of the dimmer row.
 		var fs := 10 if row == Row.DIMMER else 8
@@ -573,6 +672,33 @@ func _draw_selection(row: Row, r: Rect2) -> void:
 			var x := _t2x(t)
 			if x >= 0.0 and x <= size.x:
 				draw_line(Vector2(x, r.position.y), Vector2(x, r.end.y), _SELECT_EDGE, 1.0)
+
+
+## The colour segments in view: a band each, shaded from its start colour
+## to its end colour.
+func _draw_colour(r: Rect2) -> void:
+	var v := _view()
+	var pts := PackedVector2Array()
+	var cols := PackedColorArray()
+	var idx := PackedInt32Array()
+	for sg in colour_segments:
+		if sg["t1"] < v.x or sg["t0"] > v.x + v.y:
+			continue
+		var a := maxf(sg["t0"], v.x)
+		var b := minf(sg["t1"], v.x + v.y)
+		var ca: Color = segment_colour_at([sg], a)
+		var cb: Color = segment_colour_at([sg], b)
+		var x0 := _t2x(a)
+		var x1 := maxf(_t2x(b), x0 + 1.0)
+		var base := pts.size()
+		for q in [Vector2(x0, r.position.y + 1), Vector2(x1, r.position.y + 1), Vector2(x1, r.end.y), Vector2(x0, r.end.y)]:
+			pts.append(q)
+		for c in [ca, cb, cb, ca]:
+			cols.append(c)
+		for t in [0, 1, 2, 0, 2, 3]:
+			idx.append(base + t)
+	if not pts.is_empty():
+		RenderingServer.canvas_item_add_triangle_array(get_canvas_item(), idx, pts, cols)
 
 
 func _draw_dimmer(r: Rect2) -> void:

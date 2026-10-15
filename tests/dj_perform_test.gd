@@ -79,11 +79,17 @@ func _bases() -> Array:
 	return [b]
 
 
-func _nodes(arr: Array) -> PackedVector2Array:
+## A track with a dimmer line through these [t, level] points.
+func _nodes(arr: Array) -> Dictionary:
 	var out := PackedVector2Array()
 	for p in arr:
 		out.append(Vector2(p[0], p[1]))
-	return out
+	return {"dimmer": out}
+
+
+## A track with one colour segment.
+func _colour(t0: float, t1: float, c0: Color, c1: Color) -> Dictionary:
+	return {"colour": [{"t0": t0, "t1": t1, "c0": c0, "c1": c1}]}
 
 
 func _test_song_output() -> void:
@@ -118,6 +124,24 @@ func _test_song_output() -> void:
 	# Off the end of the universes / other universes.
 	out = P.song_output({"master": _nodes([[0, 1.0]])}, 5.0, [{"uid": "z", "u": 3, "start": 0, "mode": 0, "profile": _profile("dpar", ["DIMMER"])}], bases, 1)
 	ok(out[0].is_empty(), "a fixture on a universe that isn't there: skipped")
+	# Colour.
+	out = P.song_output({"master": _colour(0, 10, Color(1, 0, 0), Color(1, 0, 0))}, 5.0, fx, bases, 1)
+	o = out[0]
+	ok(o.get(1) == 255 and o.get(2) == 0 and o.get(3) == 0 and not o.has(0), "master colour: every head red, dimmer channel left alone")
+	ok(o.get(10) == 255 and o.get(11) == 0 and o.get(20) == 255 and o.get(23) == 255 and o.get(43) == 255, "...on every fixture and head")
+	ok(P.song_output({"master": _colour(0, 10, Color(1, 0, 0), Color(1, 0, 0))}, 12.0, fx, bases, 1)[0].is_empty(),
+		"outside the colour segment: nothing set")
+	out = P.song_output({"master": _colour(0, 10, Color(0, 0, 0), Color(0, 0, 1))}, 5.0, fx, bases, 1)
+	ok(out[0].get(3) == 128, "a gradient: half way at the middle (%s)" % out[0].get(3))
+	var t2 := {"master": _colour(0, 10, Color(1, 0, 0), Color(1, 0, 0)), "c": _colour(0, 10, Color(0, 1, 0), Color(0, 1, 0)),
+		"c/h1": _colour(0, 10, Color(0, 0, 1), Color(0, 0, 1))}
+	o = P.song_output(t2, 5.0, fx, bases, 1)[0]
+	ok(o.get(10) == 255 and o.get(21) == 255 and o.get(20) == 0 and o.get(25) == 255 and o.get(24) == 0,
+		"a head's colour beats its fixture's, which beats the master's")
+	t2 = {"b": _colour(0, 10, Color(1, 1, 1), Color(1, 1, 1)), "master": _nodes([[0, 0.5]])}
+	o = P.song_output(t2, 5.0, fx, bases, 1)[0]
+	ok(o.get(10) == 128 and o.get(11) == 128, "no dimmer channel: the timeline's colour, dimmed (%s)" % o.get(10))
+	ok(o.get(0) == 128 and o.get(1) == null, "with one: colour and dimmer separate (the par's colour untouched)")
 
 
 func _test_mix() -> void:
