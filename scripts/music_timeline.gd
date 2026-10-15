@@ -1211,8 +1211,9 @@ func snap_nearest(t: float) -> float:
 
 ## A press on a selected area's start / end on `track`'s row under
 ## `gpos`: what dragging it needs ({} if not on an edge) — the block,
-## which end, and each selected dimmer row's nodes on that edge (moved
-## with it, kept between their neighbours).
+## which end, each selected dimmer row's nodes on that edge and colour
+## row's segment boundaries there (moved with it, kept between their
+## neighbours).
 func _edge_at(track: TimelineTrack, gpos: Vector2) -> Dictionary:
 	var local := track.get_global_transform().affine_inverse() * gpos
 	var row := track.row_at(local)
@@ -1230,11 +1231,32 @@ func _edge_at(track: TimelineTrack, gpos: Vector2) -> Dictionary:
 			var lo: float = 0.0 if which == 0 else b["t0"]
 			var hi: float = b["t1"] if which == 0 else _wave.duration()
 			var moving: Array = []       # [{track, nodes (original), idx: [node indices on the edge]}]
+			var stretching: Array = []   # [{track, segs (original), ends: [[segment index, "t0" / "t1"]]}]
 			for rid in b["rows"]:
-				if int(rid.get_slice("|", 1)) != TimelineTrack.Row.DIMMER:
-					continue
+				var kind := int(rid.get_slice("|", 1))
 				var tr := _track_for(rid.get_slice("|", 0))
 				if tr == null:
+					continue
+				if kind == TimelineTrack.Row.COLOUR:
+					# Colour segment boundaries on the edge move with it; the
+					# segments' other ends (and their neighbours) limit it.
+					var ends: Array = []
+					for k in range(tr.colour_segments.size()):
+						var sg: Dictionary = tr.colour_segments[k]
+						if absf(sg["t0"] - et) < 0.001:
+							ends.append([k, "t0"])
+							hi = minf(hi, sg["t1"] - 0.001)
+						elif absf(sg["t1"] - et) < 0.001:
+							ends.append([k, "t1"])
+							lo = maxf(lo, sg["t0"] + 0.001)
+						elif sg["t1"] < et:
+							lo = maxf(lo, sg["t1"])
+						elif sg["t0"] > et:
+							hi = minf(hi, sg["t0"])
+					if not ends.is_empty():
+						stretching.append({"track": tr, "segs": tr.colour_segments, "ends": ends})
+					continue
+				if kind != TimelineTrack.Row.DIMMER:
 					continue
 				var idx: Array = []
 				for k in range(tr.dimmer_nodes.size()):
@@ -1247,13 +1269,14 @@ func _edge_at(track: TimelineTrack, gpos: Vector2) -> Dictionary:
 						hi = minf(hi, x)
 				if not idx.is_empty():
 					moving.append({"track": tr, "nodes": tr.dimmer_nodes, "idx": idx})
-			return {"mode": "edge", "block": bi, "which": which, "lo": lo, "hi": hi, "moving": moving}
+			return {"mode": "edge", "block": bi, "which": which, "lo": lo, "hi": hi, "moving": moving,
+				"stretching": stretching}
 	return {}
 
 
 ## Dragging a selected area's edge: it follows the pointer, snapped and
-## kept inside its limits; the dimmer nodes on it follow. One undo step
-## when released, if any nodes moved.
+## kept inside its limits; the dimmer nodes and colour segment boundaries
+## on it follow. One undo step when released, if any of those moved.
 func _drag_edge(phase: int, gpos: Vector2) -> void:
 	var d := _sel_drag
 	var t := clampf(snap_nearest(_time_at(gpos.x)), d["lo"], d["hi"])
@@ -1273,6 +1296,12 @@ func _drag_edge(phase: int, gpos: Vector2) -> void:
 			nodes[k].x = t
 		m["track"].dimmer_nodes = nodes
 		moved = moved or nodes != m["nodes"]
+	for c in d["stretching"]:
+		var segs: Array = (c["segs"] as Array).duplicate(true)
+		for e in c["ends"]:
+			segs[e[0]][e[1]] = t
+		c["track"].colour_segments = segs
+		moved = moved or not TimelineTrack._same_segments(segs, c["segs"])
 	if phase == TimelineTrack.SELECT_RELEASE:
 		_sel_drag = {}
 		if moved:

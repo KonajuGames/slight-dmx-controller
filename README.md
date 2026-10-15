@@ -221,8 +221,9 @@ technical reference.
   clears it); a new edit after undoing drops what could be redone.
   A plain drag on a selected area's **start or end** moves that edge
   (snapped like a new selection: to the nearest bar or beat, or freely),
-  and any dimmer node sitting on that edge moves with it — kept between
-  its neighbours, and the edge can't pass the other end. A plain drag
+  and any dimmer node or colour segment boundary sitting on that edge
+  moves with it (a segment stretching or shrinking, keeping its colours)
+  — kept between its neighbours, and the edge can't pass the other end. A plain drag
   **inside** the selection moves the whole selection (its start snapped,
   kept within the song): while dragging only the selection moves; on
   release its content is cut from where it was (cleared as Delete does)

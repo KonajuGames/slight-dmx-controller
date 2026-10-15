@@ -1037,6 +1037,24 @@ func _test_drag_selection() -> void:
 	tl.apply_static_colour(Color(1, 0, 0))
 	tl.move_selection(sel.blocks.duplicate(true), 4.0)
 	ok(p1.colour_at(3.0) == null and p1.colour_at(7.0) == Color(1, 0, 0), "colour moves with the selection")
+	# Colour segment boundaries on a dragged edge move with it.
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["p1|%d" % R.COLOUR]), 6.0, 8.0)])
+	p1.colour_segments = [{"t0": 2.0, "t1": 6.0, "c0": Color(0, 1, 0), "c1": Color(0, 1, 0)},
+		{"t0": 6.0, "t1": 8.0, "c0": Color(1, 0, 0), "c1": Color(1, 0, 0)},
+		{"t0": 12.0, "t1": 14.0, "c0": Color(0, 0, 1), "c1": Color(0, 0, 1)}]
+	p1.dimmer_edited.emit()                         # (a recorded edit, for undo)
+	await process_frame
+	_sel_drag(tl, _at(tl, p1, R.COLOUR, 8.0), _at(tl, p1, R.COLOUR, 9.8))
+	ok(is_equal_approx(sel.blocks[0]["t1"], 10.0) and is_equal_approx(p1.colour_segments[1]["t1"], 10.0)
+		and p1.colour_segments[1]["c1"] == Color(1, 0, 0), "a segment ending on the dragged edge stretches with it (to %.1f)" % p1.colour_segments[1]["t1"])
+	_sel_drag(tl, _at(tl, p1, R.COLOUR, 6.0), _at(tl, p1, R.COLOUR, 3.9))
+	ok(is_equal_approx(sel.blocks[0]["t0"], 4.0) and is_equal_approx(p1.colour_segments[0]["t1"], 4.0)
+		and is_equal_approx(p1.colour_segments[1]["t0"], 4.0), "both segments meeting on the edge move with it (to %.1f)" % sel.blocks[0]["t0"])
+	_sel_drag(tl, _at(tl, p1, R.COLOUR, 10.0), _at(tl, p1, R.COLOUR, 16.0))
+	ok(is_equal_approx(p1.colour_segments[1]["t1"], 12.0) and p1.colour_segments[2]["t0"] == 12.0,
+		"stopped by the next segment along (%.1f)" % p1.colour_segments[1]["t1"])
+	tl.undo()
+	ok(is_equal_approx(p1.colour_segments[1]["t1"], 10.0), "undoable")
 	tl._dirty = false
 	tl.queue_free()
 	await process_frame
