@@ -189,6 +189,27 @@ func _test_song_output() -> void:
 	var mixed: Array = P.mix([P.song_output({"master": at_left}, 5.0, fx, bases, 1, lib),
 		P.song_output({"d": {"position": [{"t0": 0.0, "t1": 10.0, "pos": right["id"]}]}}, 5.0, fx, bases, 1, lib)], avg, 1)
 	ok(mixed[0][40] == 192 and mixed[0][41] == 128, "two decks moving it: the average (%s / %s)" % [mixed[0][40], mixed[0][41]])
+	# Movement: around the position, or the console's pan / tilt.
+	var circle := {"movement": [{"t0": 0.0, "t1": 10.0, "fx": "circle", "period": 2.0, "size": 0.1}]}
+	var both := {"position": at_left["position"], "movement": circle["movement"]}
+	o = P.song_output({"master": both}, 4.0, fx, bases, 1, lib)[0]      # 4 s in: two cycles, at angle 0
+	ok(o.get(40) == int(round(0.6 * 255)) and o.get(41) == 255, "a circle around the position (start of a cycle: +size pan) (%s / %s)" % [o.get(40), o.get(41)])
+	o = P.song_output({"master": both}, 4.5, fx, bases, 1, lib)[0]      # a quarter round: +size tilt
+	ok(o.get(40) == 128 and o.get(41) == 255, "...a quarter round: up (tilt clamped at the top)")
+	o = P.song_output({"master": both}, 5.0, fx, bases, 1, lib)[0]      # half round
+	ok(o.get(40) == int(round(0.4 * 255)), "...half round: the other side (%s)" % o.get(40))
+	var console: Array = _bases()
+	console[0][40] = 64
+	console[0][41] = 128
+	o = P.song_output({"master": circle}, 4.0, fx, console, 1, lib)[0]
+	ok(o.get(40) == int(round((64.0 / 255.0 + 0.1) * 255)) and o.get(41) == 128, "no position: around the console's pan / tilt (%s / %s)" % [o.get(40), o.get(41)])
+	var still := {"movement": [{"t0": 0.0, "t1": 10.0, "fx": "none"}]}
+	o = P.song_output({"master": both, "d": still}, 4.5, fx, bases, 1, lib)[0]
+	ok(o.get(40) == 128 and o.get(41) == 255, "a fixture's None beats the master's circle: at the position, still")
+	ok(P.song_output({"master": still}, 4.5, fx, bases, 1, lib)[0].is_empty(), "None alone, no position: nothing driven")
+	o = P.song_output({"master": circle}, 4.5, [spot16], bases, 1, lib)[0]
+	ok(o.get(100) * 256 + o.get(101) == 0 and o.get(102) * 256 + o.get(103) == int(round(0.1 * 65535)),
+		"16-bit: around the console's (here 0 / 0, clamped)")
 
 
 func _test_mix() -> void:

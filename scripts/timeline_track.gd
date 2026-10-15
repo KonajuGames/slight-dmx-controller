@@ -4,9 +4,10 @@ extends Control
 ## master (affects every fixture), one fixture, or one head of a fixture.
 ## It's a stack of rows, one per kind of thing its target supports, from
 ## the bottom up:
-##   Position — 10 px, for moving heads (pan / tilt)
+##   Position — 10 px, for moving heads (pan / tilt): a named position
 ##   Strobe   — 10 px
-##   Cues     — 10 px
+##   Movement — 10 px, for moving heads: a movement effect (circle, figure
+##              8, ...) around the pan / tilt the Position row gives
 ##   Colour   — 10 px
 ##   Dimmer   — 80 px: a node line for the intensity, filled underneath
 ##              with white fading from transparent at the bottom of the
@@ -52,12 +53,12 @@ enum { SELECT_PRESS, SELECT_MOVE, SELECT_RELEASE }
 signal context_requested(track: TimelineTrack, row: int, global_pos: Vector2, time: float)
 
 ## The kinds of row (stacked bottom to top in this order: ROW_ORDER).
-enum Row { POSITION, STROBE, CUES, COLOUR, DIMMER }
+enum Row { POSITION, STROBE, MOVEMENT, COLOUR, DIMMER }
 enum Target { MASTER, FIXTURE, HEAD }
 
 ## Bottom to top.
-const ROW_ORDER := [Row.POSITION, Row.STROBE, Row.CUES, Row.COLOUR, Row.DIMMER]
-const ROW_NAMES := {Row.POSITION: "Position", Row.STROBE: "Strobe", Row.CUES: "Cues",
+const ROW_ORDER := [Row.POSITION, Row.STROBE, Row.MOVEMENT, Row.COLOUR, Row.DIMMER]
+const ROW_NAMES := {Row.POSITION: "Position", Row.STROBE: "Strobe", Row.MOVEMENT: "Movement",
 	Row.COLOUR: "Colour", Row.DIMMER: "Dimmer"}
 const ROW_HEIGHT := 10.0
 const DIMMER_HEIGHT := 80.0
@@ -122,6 +123,13 @@ var position_segments: Array = []:
 	set(v):
 		position_segments = v
 		queue_redraw()
+## The movement row's segments, in time order, not overlapping:
+## [{t0, t1, fx: Movement name ("none", "circle", ...), period: seconds
+## per cycle, size: 0..1 of the pan / tilt range}].
+var movement_segments: Array = []:
+	set(v):
+		movement_segments = v
+		queue_redraw()
 ## The show's named positions (their colours, for drawing the position
 ## row). Null = none.
 var positions: PositionLibrary:
@@ -165,18 +173,20 @@ var _press := Vector2.ZERO                 # pointer position at the press
 var _orig := PackedVector2Array()          # the nodes at the press
 
 
-## The rows a fixture (or head) with these channel roles gets: Position for
-## pan / tilt, Strobe for a strobe / shutter channel, Colour for any colour
-## channel or wheel, Dimmer for a dimmer channel — or for colour / white
-## channels without one, which the fixture's virtual dimmer scales; Cues
-## always.
+## The rows a fixture (or head) with these channel roles gets: Position
+## and Movement for pan / tilt, Strobe for a strobe / shutter channel,
+## Colour for any colour channel or wheel, Dimmer for a dimmer channel — or
+## for colour / white channels without one, which the fixture's virtual
+## dimmer scales.
 static func rows_for_roles(roles: Array) -> Array:
 	var out := []
-	if "PAN" in roles or "TILT" in roles:
+	var moves := "PAN" in roles or "TILT" in roles
+	if moves:
 		out.append(Row.POSITION)
 	if "STROBE" in roles:
 		out.append(Row.STROBE)
-	out.append(Row.CUES)
+	if moves:
+		out.append(Row.MOVEMENT)
 	for r in ["RED", "GREEN", "BLUE", "WHITE", "AMBER", "UV", "COLOR_WHEEL"]:
 		if r in roles:
 			out.append(Row.COLOUR)
@@ -604,19 +614,98 @@ func replace_position(t0: float, t1: float, segments: Array) -> bool:
 	return true
 
 
+# -------------------------------------------------------------- MOVEMENT --
+
+## The movement effects: none (hold still — beating a master movement),
+## and the shapes the pan / tilt trace around their position.
+const MOVEMENTS := ["none", "circle", "figure8", "pan_sweep", "tilt_sweep"]
+const MOVEMENT_NAMES := {"none": "None", "circle": "Circle", "figure8": "Figure 8",
+	"pan_sweep": "Pan Sweep", "tilt_sweep": "Tilt Sweep"}
+## A new movement's size (of the pan / tilt range) and, without a beat
+## grid, its cycle length.
+const MOVEMENT_SIZE := 0.08
+const MOVEMENT_PERIOD := 2.0
+
+
+## The movement segment at `t` seconds ({} where there's none).
+func movement_at(t: float) -> Dictionary:
+	return movement_segment_at(movement_segments, t)
+
+
+static func movement_segment_at(spans: Array, t: float) -> Dictionary:
+	for sg in spans:
+		if t >= sg["t0"] and t <= sg["t1"]:
+			return sg
+	return {}
+
+
+## Where a movement puts the pan / tilt, relative to its centre, `dt`
+## seconds into its segment: the shape's point at that phase of its cycle,
+## times its size (pan right, tilt up). None: no offset.
+static func movement_offset(sg: Dictionary, dt: float) -> Vector2:
+	var period := maxf(float(sg.get("period", MOVEMENT_PERIOD)), 0.05)
+	var a := TAU * fposmod(dt / period, 1.0)
+	var size := float(sg.get("size", MOVEMENT_SIZE))
+	match String(sg.get("fx", "none")):
+		"circle":
+			return Vector2(cos(a), sin(a)) * size
+		"figure8":
+			return Vector2(sin(a), sin(2.0 * a) * 0.5) * size
+		"pan_sweep":
+			return Vector2(sin(a), 0.0) * size
+		"tilt_sweep":
+			return Vector2(0.0, sin(a)) * size
+	return Vector2.ZERO
+
+
+func movement_segment(t0: float, t1: float) -> Array:
+	return tagged_segment(movement_segments, t0, t1, "fx", "none")
+
+
+## Replace the movement row from `t0` to `t1` with `segments` (relative to
+## t0; [] clears it). Touching segments with the same effect join.
+func replace_movement(t0: float, t1: float, segments: Array) -> bool:
+	var out := _replace_tagged(movement_segments, t0, t1, segments, "fx", "none")
+	if out == movement_segments:
+		return false
+	movement_segments = out
+	return true
+
+
 # ---------------------------------------------------------- TAGGED SPANS --
 # Strobe and position segments are spans with one tag each ({t0, t1,
 # <tag>}): a speed, a position's id.
 
 ## The segments of `spans` from `t0` to `t1`, cut to that span and made
-## relative to t0, keeping their `tag` (`default` where it's missing).
+## relative to t0, keeping their `tag` (`default` where it's missing) and
+## any other fields.
 static func tagged_segment(spans: Array, t0: float, t1: float, tag: String, default) -> Array:
 	var out: Array = []
 	for sg in spans:
 		if sg["t1"] <= t0 or sg["t0"] >= t1:
 			continue
-		out.append({"t0": maxf(sg["t0"], t0) - t0, "t1": minf(sg["t1"], t1) - t0, tag: sg.get(tag, default)})
+		out.append(_with_span(sg, maxf(sg["t0"], t0) - t0, minf(sg["t1"], t1) - t0, tag, default))
 	return out
+
+
+## A copy of span `sg` (every field) over `a`..`b`, its `tag` filled in.
+static func _with_span(sg: Dictionary, a: float, b: float, tag: String, default) -> Dictionary:
+	var out := sg.duplicate()
+	out["t0"] = a
+	out["t1"] = b
+	if not out.has(tag):
+		out[tag] = default
+	return out
+
+
+## Whether two spans are the same apart from their times (so may join).
+static func _same_but_times(x: Dictionary, y: Dictionary) -> bool:
+	if x.size() != y.size():
+		return false
+	for k in x:
+		if k != "t0" and k != "t1" and (not y.has(k) or x[k] != y[k]):
+			return false
+	return true
 
 
 ## `spans` with `t0`..`t1` replaced by `segments` (relative to t0): the
@@ -635,22 +724,21 @@ func _replace_tagged(spans: Array, t0: float, t1: float, segments: Array, tag: S
 		if sg["t1"] <= t0 or sg["t0"] >= t1:
 			out.append(sg.duplicate())
 			continue
-		var v = sg.get(tag, default)
 		if sg["t0"] < t0:
-			out.append({"t0": sg["t0"], "t1": t0, tag: v})
+			out.append(_with_span(sg, sg["t0"], t0, tag, default))
 		if sg["t1"] > t1:
-			out.append({"t0": t1, "t1": sg["t1"], tag: v})
+			out.append(_with_span(sg, t1, sg["t1"], tag, default))
 	for sg in segments:
 		var a := maxf(sg["t0"] + shift, t0)
 		var b := minf(sg["t1"] + shift, t1)
 		if b > a:
-			out.append({"t0": a, "t1": b, tag: sg.get(tag, default)})
+			out.append(_with_span(sg, a, b, tag, default))
 	out.sort_custom(func(x, y): return x["t0"] < y["t0"])
 	var joined: Array = []
 	for sg in out:
 		if not sg.has(tag):
 			sg[tag] = default
-		if not joined.is_empty() and sg["t0"] <= joined[-1]["t1"] + 0.0005 and sg[tag] == joined[-1][tag]:
+		if not joined.is_empty() and sg["t0"] <= joined[-1]["t1"] + 0.0005 and _same_but_times(sg, joined[-1]):
 			joined[-1]["t1"] = maxf(joined[-1]["t1"], sg["t1"])
 		else:
 			joined.append(sg)
@@ -863,6 +951,8 @@ func _draw() -> void:
 			_draw_strobe(r, strobe_segments, 0.0, _STROBE)
 		elif row == Row.POSITION:
 			_draw_position(r, position_segments, 0.0, 1.0)
+		elif row == Row.MOVEMENT:
+			_draw_movement(r, movement_segments, 0.0, 1.0)
 		# The name, sized to fit the row (8 px in the 10 px rows), at the top
 		# of the dimmer row.
 		var fs := 10 if row == Row.DIMMER else 8
@@ -904,6 +994,8 @@ func _draw_ghost(row: Row, r: Rect2) -> void:
 			_draw_strobe(r, part["strobes"], start, _GHOST_LINE)
 		if part.has("positions"):
 			_draw_position(r, part["positions"], start, 0.6)
+		if part.has("movements"):
+			_draw_movement(r, part["movements"], start, 0.6)
 		if part.has("segments"):
 			for sg in part["segments"]:
 				var a := _t2x(start + sg["t0"])
@@ -1010,6 +1102,46 @@ func _draw_position(r: Rect2, segs: Array, shift: float, alpha: float) -> void:
 		if x0 + h >= 0.0 and x0 <= size.x:
 			draw_colored_polygon(PackedVector2Array([Vector2(x0, r.position.y + 1), Vector2(x0 + h * 0.85, mid),
 				Vector2(x0, r.end.y - 1)]), col)
+
+
+## Movement segments (offset by `shift` seconds, at `alpha`): the effect's
+## shape, small, at the start (a dot for none), and a line across the span
+## — dashed for none.
+func _draw_movement(r: Rect2, segs: Array, shift: float, alpha: float) -> void:
+	var v := _view()
+	var mid := r.position.y + r.size.y * 0.5
+	var rad := (r.size.y - 2.0) * 0.5
+	var col := Color(0.75, 0.85, 1.0, 0.9 * alpha)
+	for sg in segs:
+		var a: float = sg["t0"] + shift
+		var b: float = sg["t1"] + shift
+		if b < v.x or a > v.x + v.y:
+			continue
+		var fx := String(sg.get("fx", "none"))
+		var x0 := _t2x(a)
+		var x1 := _t2x(b)
+		var c := Vector2(x0 + rad + 1.0, mid)
+		var d0 := clampf(x0 + 2.0 * rad + 3.0, 0.0, size.x)
+		var d1 := clampf(x1, 0.0, size.x)
+		if d1 > d0:
+			if fx == "none":
+				draw_dashed_line(Vector2(d0, mid), Vector2(d1, mid), Color(col.r, col.g, col.b, col.a * 0.6), 1.0, 3.0)
+			else:
+				draw_line(Vector2(d0, mid), Vector2(d1, mid), Color(col.r, col.g, col.b, col.a * 0.6), 1.0)
+		if x1 >= 0.0 and x1 <= size.x:
+			draw_line(Vector2(x1, r.position.y + 2), Vector2(x1, r.end.y - 1), Color(col.r, col.g, col.b, col.a * 0.6), 1.0)
+		if c.x + rad < 0.0 or c.x - rad > size.x:
+			continue
+		if fx == "none":
+			draw_circle(c, 1.5, col)
+			continue
+		# The shape itself, traced once round — bigger for a bigger movement.
+		var scale := rad * (0.55 + 0.45 * clampf(float(sg.get("size", MOVEMENT_SIZE)) / 0.16, 0.0, 1.0))
+		var pts := PackedVector2Array()
+		for i in range(25):
+			var o := movement_offset({"fx": fx, "period": 1.0, "size": 1.0}, i / 24.0)
+			pts.append(c + Vector2(o.x, -o.y) * scale)
+		draw_polyline(pts, col, 1.2, true)
 
 
 ## The height of a strobe segment's dashed line in the row `r`, by speed.

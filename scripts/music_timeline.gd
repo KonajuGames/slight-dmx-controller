@@ -28,8 +28,9 @@ extends VBoxContainer
 ## Above it, in a vertically scrolling panel filling the space left, a
 ## timeline for every patched fixture (fixtures_provider), followed by one
 ## for each of its heads when it has more than one.
-## Then the master lighting timeline (TimelineTrack: position, strobe, cue
-## and colour rows and a dimmer node line), which affects every fixture.
+## Then the master lighting timeline (TimelineTrack: position, strobe,
+## movement and colour rows and a dimmer node line), which affects every
+## fixture.
 ## A song's timelines (every track's dimmer nodes, and the structure once
 ## edited) are kept in the show's timeline_store, keyed by fixture uid, and
 ## saved automatically when the song is left (another song opened, the
@@ -747,11 +748,14 @@ func delete_selection() -> bool:
 					TimelineTrack.Row.POSITION:
 						if tr.replace_position(span.x, span.y, []):
 							changed = true
+					TimelineTrack.Row.MOVEMENT:
+						if tr.replace_movement(span.x, span.y, []):
+							changed = true
 					TimelineTrack.Row.STROBE:
 						if tr.replace_strobe(span.x, span.y, []):
 							changed = true
 					_:
-						pass        # Position / Cues: nothing to clear yet
+						pass
 	if changed:
 		_mark_dirty()
 	return changed
@@ -793,8 +797,10 @@ func _copy_clip() -> Dictionary:
 						part["strobes"] = tr.strobe_segment(span.x, span.y)
 					TimelineTrack.Row.POSITION:
 						part["positions"] = tr.position_segment(span.x, span.y)
+					TimelineTrack.Row.MOVEMENT:
+						part["movements"] = tr.movement_segment(span.x, span.y)
 					_:
-						pass        # Position / Cues: nothing to copy yet
+						pass
 				parts.append(part)
 			if not parts.is_empty():
 				rows[row] = parts
@@ -891,6 +897,8 @@ func _paste_into(pairs: Array, at: float) -> Dictionary:
 					changed = tr.replace_strobe(at + part["t0"], at + part["t1"], part["strobes"]) or changed
 				elif row == TimelineTrack.Row.POSITION and part.has("positions"):
 					changed = tr.replace_position(at + part["t0"], at + part["t1"], part["positions"]) or changed
+				elif row == TimelineTrack.Row.MOVEMENT and part.has("movements"):
+					changed = tr.replace_movement(at + part["t0"], at + part["t1"], part["movements"]) or changed
 				blocks.append(TimelineSelection.block(PackedStringArray([TimelineSelection.row_id(key, row)]), t0, t1))
 	return {"blocks": blocks, "changed": changed}
 
@@ -921,13 +929,24 @@ var _dimmer_menu: PopupMenu
 var _colour_menu: PopupMenu
 var _strobe_menu: PopupMenu
 var _position_menu: PopupMenu
+var _movement_menu: PopupMenu
+const MOVEMENT_CLEAR := 1000
+## The Movement submenu's sizes (of the pan / tilt range) and cycles (in
+## bars), and the item ids they're listed under.
+const MOVEMENT_SIZES := [["Small", 0.04], ["Medium", 0.08], ["Large", 0.16]]
+const MOVEMENT_CYCLES := [["½ bar", 0.5], ["1 bar", 1.0], ["2 bars", 2.0]]
+const MOVEMENT_SIZE_ID := 200
+const MOVEMENT_CYCLE_ID := 300
+## The size / cycle new movements get (indices into the lists above).
+var movement_size := 1
+var movement_cycle := 1
 const POSITION_CLEAR := 1000
 var _ctx := {}                  # the right-click: {track, row, time}
 
 
 ## A right-click on a timeline: the actions that fit where it was — on
 ## the selection: Delete, Undo / Redo, Cut / Copy / Paste and, for the
-## kinds of row selected, a Dimmer, Colour, Strobe and Position submenu; elsewhere: Undo /
+## kinds of row selected, a Dimmer, Colour, Strobe, Position and Movement submenu; elsewhere: Undo /
 ## Redo, Paste Here, Select All.
 func _on_context(track: TimelineTrack, row: int, gpos: Vector2, time: float) -> void:
 	if _wave.analysis == null:
@@ -963,7 +982,7 @@ func context_items(on_selection: bool) -> PopupMenu:
 	if on_selection:
 		var kinds := selected_row_kinds()
 		if kinds.has(TimelineTrack.Row.DIMMER) or kinds.has(TimelineTrack.Row.COLOUR) or kinds.has(TimelineTrack.Row.STROBE) \
-				or kinds.has(TimelineTrack.Row.POSITION):
+				or kinds.has(TimelineTrack.Row.POSITION) or kinds.has(TimelineTrack.Row.MOVEMENT):
 			_menu.add_separator()
 		if kinds.has(TimelineTrack.Row.DIMMER):
 			_fill_dimmer_menu()
@@ -981,6 +1000,9 @@ func context_items(on_selection: bool) -> PopupMenu:
 		if kinds.has(TimelineTrack.Row.POSITION):
 			_fill_position_menu()
 			_menu.add_submenu_node_item("Position", _position_menu)
+		if kinds.has(TimelineTrack.Row.MOVEMENT):
+			_fill_movement_menu()
+			_menu.add_submenu_node_item("Movement", _movement_menu)
 	_menu.add_separator()
 	_menu.add_item("Select All", M_SELECT_ALL, ctrl | KEY_A)
 	if not _selection.is_empty():
@@ -1019,6 +1041,17 @@ func _ensure_menus() -> void:
 		elif positions != null and id < positions.positions.size():
 			apply_position(String(positions.positions[id]["id"])))
 	_menu.add_child(_position_menu)
+	_movement_menu = PopupMenu.new()
+	_movement_menu.id_pressed.connect(func(id: int):
+		if id == MOVEMENT_CLEAR:
+			apply_movement("")
+		elif id >= MOVEMENT_CYCLE_ID:
+			set_movement_cycle(id - MOVEMENT_CYCLE_ID)
+		elif id >= MOVEMENT_SIZE_ID:
+			set_movement_size(id - MOVEMENT_SIZE_ID)
+		else:
+			apply_movement(TimelineTrack.MOVEMENTS[id]))
+	_menu.add_child(_movement_menu)
 
 
 func _fill_dimmer_menu() -> void:
@@ -1245,6 +1278,128 @@ func apply_position(id: String) -> bool:
 	return changed
 
 
+## The Movement submenu: None and the shapes, then Size and Cycle (radio
+## items, checked at the selection's movement — or what new ones get),
+## then Clear Movement.
+func _fill_movement_menu() -> void:
+	_sync_movement_options()
+	_movement_menu.clear()
+	for i in range(TimelineTrack.MOVEMENTS.size()):
+		_movement_menu.add_item(TimelineTrack.MOVEMENT_NAMES[TimelineTrack.MOVEMENTS[i]], i)
+		if i == 0:
+			_movement_menu.add_separator()
+	_movement_menu.add_separator("Size")
+	for i in range(MOVEMENT_SIZES.size()):
+		_movement_menu.add_radio_check_item(MOVEMENT_SIZES[i][0], MOVEMENT_SIZE_ID + i)
+		_movement_menu.set_item_checked(_movement_menu.get_item_index(MOVEMENT_SIZE_ID + i), i == movement_size)
+	_movement_menu.add_separator("Cycle")
+	for i in range(MOVEMENT_CYCLES.size()):
+		_movement_menu.add_radio_check_item(MOVEMENT_CYCLES[i][0], MOVEMENT_CYCLE_ID + i)
+		_movement_menu.set_item_checked(_movement_menu.get_item_index(MOVEMENT_CYCLE_ID + i), i == movement_cycle)
+	_movement_menu.add_separator()
+	_movement_menu.add_item("Clear Movement", MOVEMENT_CLEAR)
+
+
+## Take the size / cycle shown from the first movement in the selection,
+## if there is one.
+func _sync_movement_options() -> void:
+	for tr in [_master] + Array(_fixture_tracks):
+		var key := String(tr.get_meta("key"))
+		for span in _merged(_selection.spans_for(key, TimelineTrack.Row.MOVEMENT)):
+			var segs: Array = tr.movement_segment(span.x, span.y)
+			for sg in segs:
+				if String(sg["fx"]) == "none":
+					continue
+				movement_size = _nearest_index(MOVEMENT_SIZES, float(sg["size"]))
+				movement_cycle = _nearest_index(MOVEMENT_CYCLES, float(sg["period"]) / bar_length_at(span.x + sg["t0"]))
+				return
+
+
+static func _nearest_index(options: Array, v: float) -> int:
+	var best := 0
+	for i in range(options.size()):
+		if absf(options[i][1] - v) < absf(options[best][1] - v):
+			best = i
+	return best
+
+
+## Put movement effect `fx` (TimelineTrack.MOVEMENTS; "" clears) across
+## every selected movement span, at the chosen size (movement_size) and
+## cycle (movement_cycle bars, from the beat grid where the span starts).
+## Returns whether anything changed.
+func apply_movement(fx: String) -> bool:
+	var changed := false
+	for tr in [_master] + Array(_fixture_tracks):
+		var key := String(tr.get_meta("key"))
+		if not tr.has_row(TimelineTrack.Row.MOVEMENT):
+			continue
+		for span in _merged(_selection.spans_for(key, TimelineTrack.Row.MOVEMENT)):
+			var segs := [] if fx == "" else [{"t0": 0.0, "t1": span.y - span.x, "fx": fx,
+				"period": bar_length_at(span.x) * MOVEMENT_CYCLES[movement_cycle][1],
+				"size": MOVEMENT_SIZES[movement_size][1]}]
+			if tr.replace_movement(span.x, span.y, segs):
+				changed = true
+	if changed:
+		_mark_dirty()
+	return changed
+
+
+## Size `i` (MOVEMENT_SIZES) for new movements, and for the selected ones.
+func set_movement_size(i: int) -> bool:
+	movement_size = clampi(i, 0, MOVEMENT_SIZES.size() - 1)
+	return _restyle_movements(func(sg: Dictionary, _at: float): sg["size"] = MOVEMENT_SIZES[movement_size][1])
+
+
+## Cycle `i` (MOVEMENT_CYCLES) for new movements, and for the selected
+## ones (in bars at each segment's start).
+func set_movement_cycle(i: int) -> bool:
+	movement_cycle = clampi(i, 0, MOVEMENT_CYCLES.size() - 1)
+	return _restyle_movements(func(sg: Dictionary, at: float):
+		sg["period"] = bar_length_at(at) * MOVEMENT_CYCLES[movement_cycle][1])
+
+
+## Change the selected movement segments in place with `change(segment,
+## its start in seconds)` — their effects and times kept.
+func _restyle_movements(change: Callable) -> bool:
+	var changed := false
+	for tr in [_master] + Array(_fixture_tracks):
+		var key := String(tr.get_meta("key"))
+		if not tr.has_row(TimelineTrack.Row.MOVEMENT):
+			continue
+		for span in _merged(_selection.spans_for(key, TimelineTrack.Row.MOVEMENT)):
+			var segs: Array = tr.movement_segment(span.x, span.y)
+			if segs.is_empty():
+				continue
+			for sg in segs:
+				if String(sg["fx"]) != "none":
+					change.call(sg, span.x + float(sg["t0"]))
+			# Keep the gaps between them: replace only where they are.
+			for sg in segs:
+				if tr.replace_movement(span.x + float(sg["t0"]), span.x + float(sg["t1"]), [_relative(sg)]):
+					changed = true
+	if changed:
+		_mark_dirty()
+	return changed
+
+
+## A segment made relative to its own start (for replace_movement()).
+static func _relative(sg: Dictionary) -> Dictionary:
+	var out := sg.duplicate()
+	out["t1"] = float(sg["t1"]) - float(sg["t0"])
+	out["t0"] = 0.0
+	return out
+
+
+## How long a bar is at `t` seconds, from the beat grid (MOVEMENT_PERIOD
+## without one).
+func bar_length_at(t: float) -> float:
+	var beats := _wave.grid_beats
+	if beats.size() < 2:
+		return TimelineTrack.MOVEMENT_PERIOD
+	var i := clampi(beats.bsearch(t), 1, beats.size() - 1)
+	return (beats[i] - beats[i - 1]) * maxi(_wave.beats_per_bar, 1)
+
+
 ## Turn the strobe on at `speed` (TimelineTrack.Strobe), or off
 ## (STROBE_OFF), across every selected strobe span. Returns whether
 ## anything changed.
@@ -1335,12 +1490,12 @@ func _edge_at(track: TimelineTrack, gpos: Vector2) -> Dictionary:
 				var tr := _track_for(rid.get_slice("|", 0))
 				if tr == null:
 					continue
-				if kind in [TimelineTrack.Row.COLOUR, TimelineTrack.Row.STROBE, TimelineTrack.Row.POSITION]:
+				if kind in [TimelineTrack.Row.COLOUR, TimelineTrack.Row.STROBE, TimelineTrack.Row.POSITION, TimelineTrack.Row.MOVEMENT]:
 					# Colour / strobe / position segment boundaries on the edge move with
 					# it; the segments' other ends (and their neighbours)
 					# limit it.
 					var prop: String = {TimelineTrack.Row.COLOUR: "colour_segments", TimelineTrack.Row.STROBE: "strobe_segments",
-						TimelineTrack.Row.POSITION: "position_segments"}[kind]
+						TimelineTrack.Row.POSITION: "position_segments", TimelineTrack.Row.MOVEMENT: "movement_segments"}[kind]
 					var segs_now: Array = tr.get(prop)
 					var ends: Array = []
 					for k in range(segs_now.size()):
@@ -1759,6 +1914,7 @@ func _rebuild_fixture_tracks() -> void:
 			tr.colour_segments = _segs_from(saved.get(spec["key"], {}).get("colour", []))
 			tr.strobe_segments = _spans_from(saved.get(spec["key"], {}).get("strobe", []))
 			tr.position_segments = _pos_from(saved.get(spec["key"], {}).get("position", []))
+			tr.movement_segments = _moves_from(saved.get(spec["key"], {}).get("movement", []))
 			tr.positions = positions
 			tr.dimmer_edited.connect(_mark_dirty)
 			tr.selection = _selection
@@ -1839,6 +1995,10 @@ func _collect() -> void:
 			entry.erase("colour")
 		else:
 			entry["colour"] = _segs_to(tr.colour_segments)
+		if tr.movement_segments.is_empty():
+			entry.erase("movement")
+		else:
+			entry["movement"] = _moves_to(tr.movement_segments)
 		if tr.position_segments.is_empty():
 			entry.erase("position")
 		else:
@@ -1862,6 +2022,7 @@ func _show_song_data() -> void:
 		_master.colour_segments = _segs_from(tracks.get("master", {}).get("colour", []))
 		_master.strobe_segments = _spans_from(tracks.get("master", {}).get("strobe", []))
 		_master.position_segments = _pos_from(tracks.get("master", {}).get("position", []))
+		_master.movement_segments = _moves_from(tracks.get("master", {}).get("movement", []))
 	_rebuild_fixture_tracks()
 	if _path != "" and _struct_cache.has(_path):
 		_apply_saved_structure(_path, _struct_cache[_path])
@@ -1965,6 +2126,7 @@ func _restore(snap: Dictionary) -> void:
 		tr.colour_segments = _segs_from(tracks.get(String(tr.get_meta("key")), {}).get("colour", []))
 		tr.strobe_segments = _spans_from(tracks.get(String(tr.get_meta("key")), {}).get("strobe", []))
 		tr.position_segments = _pos_from(tracks.get(String(tr.get_meta("key")), {}).get("position", []))
+		tr.movement_segments = _moves_from(tracks.get(String(tr.get_meta("key")), {}).get("movement", []))
 	if _struct_cache.has(_path):
 		_apply_saved_structure(_path, _struct_cache[_path])
 		_set_structure(_struct_cache[_path])
@@ -1997,6 +2159,28 @@ static func _segs_to(segs: Array) -> Array:
 	for sg in segs:
 		out.append([snappedf(sg["t0"], 0.001), snappedf(sg["t1"], 0.001),
 			(sg["c0"] as Color).to_html(false), (sg["c1"] as Color).to_html(false)])
+	return out
+
+
+## Movement segments to / from their saved form: [[t0, t1, effect,
+## period, size], ...].
+static func _moves_to(spans: Array) -> Array:
+	var out := []
+	for sg in spans:
+		out.append([snappedf(sg["t0"], 0.001), snappedf(sg["t1"], 0.001), String(sg.get("fx", "none")),
+			snappedf(float(sg.get("period", TimelineTrack.MOVEMENT_PERIOD)), 0.0001),
+			snappedf(float(sg.get("size", TimelineTrack.MOVEMENT_SIZE)), 0.0001)])
+	return out
+
+
+static func _moves_from(arr) -> Array:
+	var out: Array = []
+	if arr is Array:
+		for e in arr:
+			if e is Array and e.size() >= 3 and float(e[1]) > float(e[0]) and str(e[2]) in TimelineTrack.MOVEMENTS:
+				out.append({"t0": float(e[0]), "t1": float(e[1]), "fx": str(e[2]),
+					"period": float(e[3]) if e.size() > 3 else TimelineTrack.MOVEMENT_PERIOD,
+					"size": float(e[4]) if e.size() > 4 else TimelineTrack.MOVEMENT_SIZE})
 	return out
 
 

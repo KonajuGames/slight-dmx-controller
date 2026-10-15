@@ -192,7 +192,7 @@ technical reference.
 - `timeline_track.gd` — the `TimelineTrack` class: a lighting timeline
   in the track timeline, for the master (all fixtures), a fixture, or one
   head — a stack of rows for what its target supports, bottom up:
-  Position (moving heads), Strobe, Cues, Colour (10 px each) and an 80 px
+  Position (moving heads), Strobe, Movement (moving heads), Colour (10 px each) and an 80 px
   Dimmer row with a node line, filled white underneath fading from
   transparent at the bottom to 50 % at the top. The master track (every
   row) sits above the song structure and follows the waveform's zoom;
@@ -299,7 +299,21 @@ technical reference.
   lists every named position with its icon, then **Clear Position**;
   Delete, cut / copy / paste, moving (with the ghost), edge drags, undo
   and saving cover it like the strobe row, and touching segments of the
-  same position join. So far the Cues row is empty.
+  same position join.
+  The **Movement** row (moving heads and the master only) holds movement
+  effects, relative to the pan / tilt the Position row gives: **None**
+  (hold still — a fixture's None beats a master movement), **Circle**,
+  **Figure 8**, **Pan Sweep** and **Tilt Sweep** — each with a size
+  (**Small / Medium / Large**: 4 / 8 / 16% of the pan / tilt range) and a
+  cycle length (**½ / 1 / 2 bars**, from the beat grid where it's
+  applied). Drawn as the effect's shape, tiny (bigger for a bigger
+  movement), at the start with a line across the span (dashed for
+  None). Its right-click **Movement** submenu has the effects, then
+  **Size** and **Cycle** radio items — checked at the selection's
+  movement; picking one changes the selected movements (effects kept)
+  and is what new ones get — and **Clear Movement**; Delete,
+  cut / copy / paste, moving, edge drags, undo and saving cover it like
+  the other rows.
 - `timeline_store.gd` — the `TimelineStore` class: a show's music
   timelines, in a folder beside the show file (`MyShow.slight` →
   `MyShow.timelines/`): one JSON file per song, named by the song's
@@ -469,8 +483,11 @@ Global controls live in the top bar:
   fixture's position row (else the master's) names a position, its PAN
   and TILT go to that position's point for the fixture — 16-bit across
   coarse and fine channels, else over the channel's min–max — and decks
-  moving the same fixture are averaged. So far the Cues row is the only
-  one without content.
+  moving the same fixture are averaged. Where a fixture's movement row
+  (else the master's) has an effect, its pan / tilt trace that shape
+  around the position — or, without one, around the console's pan /
+  tilt — in time with the song (the effect's cycle from the segment's
+  start); None holds it still.
 
 - **Grand Master** — one 0–255 fader that scales *every* universe's
   output on send (non-destructive: the per-channel values you dialed

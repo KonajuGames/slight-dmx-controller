@@ -45,6 +45,7 @@ func _run() -> void:
 	_test_strobe_model()
 	await _test_strobe_editing()
 	await _test_position_row()
+	await _test_movement_row()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
 
@@ -57,7 +58,7 @@ func _test_rows() -> void:
 	ok(tr.custom_minimum_size.y == 80.0 + 4 * 10.0, "120 px: four 10 px rows + the 80 px dimmer (%.0f)" % tr.custom_minimum_size.y)
 	tr.size = Vector2(800, tr.custom_minimum_size.y)
 	var R := TimelineTrack.Row
-	var want := {R.DIMMER: Rect2(0, 0, 800, 80), R.COLOUR: Rect2(0, 80, 800, 10), R.CUES: Rect2(0, 90, 800, 10),
+	var want := {R.DIMMER: Rect2(0, 0, 800, 80), R.COLOUR: Rect2(0, 80, 800, 10), R.MOVEMENT: Rect2(0, 90, 800, 10),
 		R.STROBE: Rect2(0, 100, 800, 10), R.POSITION: Rect2(0, 110, 800, 10)}
 	var all_ok := true
 	for r in want:
@@ -70,18 +71,19 @@ func _test_rows_for_roles() -> void:
 	print("- rows from a fixture's channels")
 	var R := TimelineTrack.Row
 	ok(TimelineTrack.rows_for_roles(["PAN", "PAN_FINE", "TILT", "DIMMER", "STROBE", "COLOR_WHEEL", "GOBO"])
-		== [R.POSITION, R.STROBE, R.CUES, R.COLOUR, R.DIMMER], "moving head: every row")
-	ok(TimelineTrack.rows_for_roles(["DIMMER", "RED", "GREEN", "BLUE"]) == [R.CUES, R.COLOUR, R.DIMMER],
-		"RGB par: cues, colour, dimmer")
-	ok(TimelineTrack.rows_for_roles(["RED", "GREEN", "BLUE", "WHITE"]) == [R.CUES, R.COLOUR, R.DIMMER],
+		== [R.POSITION, R.STROBE, R.MOVEMENT, R.COLOUR, R.DIMMER], "moving head: every row")
+	ok(TimelineTrack.rows_for_roles(["DIMMER", "RED", "GREEN", "BLUE"]) == [R.COLOUR, R.DIMMER],
+		"RGB par: colour, dimmer (no movement: it can't move)")
+	ok(TimelineTrack.rows_for_roles(["RED", "GREEN", "BLUE", "WHITE"]) == [R.COLOUR, R.DIMMER],
 		"RGBW without a dimmer channel: still a dimmer row (the virtual dimmer)")
-	ok(TimelineTrack.rows_for_roles(["COLOR_WHEEL", "GOBO"]) == [R.CUES, R.COLOUR], "colour wheel only: no dimmer row")
-	ok(TimelineTrack.rows_for_roles(["DIMMER"]) == [R.CUES, R.DIMMER], "plain dimmer: cues, dimmer")
+	ok(TimelineTrack.rows_for_roles(["COLOR_WHEEL", "GOBO"]) == [R.COLOUR], "colour wheel only: no dimmer row")
+	ok(TimelineTrack.rows_for_roles(["DIMMER"]) == [R.DIMMER], "plain dimmer: just the dimmer")
+	ok(TimelineTrack.rows_for_roles(["PAN"]) == [R.POSITION, R.MOVEMENT], "pan only: position and movement")
 	var tr := TimelineTrack.new()
 	tr.target = TimelineTrack.Target.FIXTURE
 	root.add_child(tr)
-	tr.rows = [R.DIMMER, R.CUES]      # any order in, stacking order kept
-	ok(tr.rows == [R.CUES, R.DIMMER] and tr.custom_minimum_size.y == 90.0, "fewer rows -> shorter track (%.0f)" % tr.custom_minimum_size.y)
+	tr.rows = [R.DIMMER, R.MOVEMENT]      # any order in, stacking order kept
+	ok(tr.rows == [R.MOVEMENT, R.DIMMER] and tr.custom_minimum_size.y == 90.0, "fewer rows -> shorter track (%.0f)" % tr.custom_minimum_size.y)
 	ok(not tr.has_row(R.POSITION) and tr.row_rect(R.POSITION) == Rect2(), "absent rows have no rectangle")
 	tr.queue_free()
 
@@ -256,14 +258,14 @@ func _test_fixture_specs() -> void:
 	var T := TimelineTrack.Target
 	var par := MusicTimeline.fixture_track_specs("0/1", "Par", _par(), 0)
 	ok(par.size() == 1 and par[0]["title"] == "Par" and par[0]["target"] == T.FIXTURE
-		and par[0]["rows"] == [R.CUES, R.COLOUR, R.DIMMER], "a single-head fixture: one timeline")
+		and par[0]["rows"] == [R.COLOUR, R.DIMMER], "a single-head fixture: one timeline")
 	var bar := MusicTimeline.fixture_track_specs("0/2", "Bar", _bar(), 0)
 	ok(bar.size() == 4, "a three-head fixture: its own timeline plus one per head (%d)" % bar.size())
-	ok(bar[0]["target"] == T.FIXTURE and bar[0]["rows"] == [R.STROBE, R.CUES, R.COLOUR, R.DIMMER],
+	ok(bar[0]["target"] == T.FIXTURE and bar[0]["rows"] == [R.STROBE, R.COLOUR, R.DIMMER],
 		"the fixture's covers all its channels")
 	ok(bar[1]["target"] == T.HEAD and bar[1]["title"] == "Bar\nHead 1" and bar[3]["title"] == "Bar\nHead 3",
 		"heads titled in order, \"Head N\" on a second line")
-	ok(bar[1]["rows"] == [R.CUES, R.COLOUR, R.DIMMER], "a head's rows are its own channels' (no strobe)")
+	ok(bar[1]["rows"] == [R.COLOUR, R.DIMMER], "a head's rows are its own channels' (no strobe)")
 	ok(bar[1]["key"] != bar[2]["key"] and bar[0]["key"] == "0/2", "each with its own key")
 
 
@@ -427,44 +429,44 @@ func _test_area_selection() -> void:
 	ok(m.dimmer_nodes.is_empty(), "...without touching the dimmer line")
 	ok(sel.has("master", R.DIMMER, 5.0) and not sel.has("master", R.COLOUR, 5.0), "only that row")
 	# Another plain drag replaces it.
-	_sel_drag(tl, _at(tl, m, R.CUES, 10.5), _at(tl, m, R.CUES, 11.0))
+	_sel_drag(tl, _at(tl, m, R.MOVEMENT, 10.5), _at(tl, m, R.MOVEMENT, 11.0))
 	ok(sel.blocks.size() == 1 and is_equal_approx(sel.blocks[0]["t0"], 10.0) and is_equal_approx(sel.blocks[0]["t1"], 12.0)
-		and sel.blocks[0]["rows"] == PackedStringArray(["master|%d" % R.CUES]), "a new plain drag replaces the selection")
+		and sel.blocks[0]["rows"] == PackedStringArray(["master|%d" % R.MOVEMENT]), "a new plain drag replaces the selection")
 	# Ctrl adds.
 	_sel_drag(tl, _at(tl, m, R.STROBE, 14.2), _at(tl, m, R.STROBE, 14.4), true)
-	ok(sel.blocks.size() == 2 and sel.has("master", R.CUES, 11.0) and sel.has("master", R.STROBE, 15.0),
+	ok(sel.blocks.size() == 2 and sel.has("master", R.MOVEMENT, 11.0) and sel.has("master", R.STROBE, 15.0),
 		"Ctrl adds to it")
 	# Shift: from the last area (strobe, 14–16 s) through the new one.
 	_sel_drag(tl, _at(tl, m, R.DIMMER, 18.5), _at(tl, m, R.DIMMER, 18.6), false, true)
 	var last: Dictionary = sel.blocks[-1]
 	ok(sel.blocks.size() == 2 and is_equal_approx(last["t0"], 14.0) and is_equal_approx(last["t1"], 20.0),
 		"Shift extends the last area through the new one in time (14–20 s)")
-	ok(last["rows"] == PackedStringArray(["master|%d" % R.DIMMER, "master|%d" % R.COLOUR, "master|%d" % R.CUES, "master|%d" % R.STROBE]),
+	ok(last["rows"] == PackedStringArray(["master|%d" % R.DIMMER, "master|%d" % R.COLOUR, "master|%d" % R.MOVEMENT, "master|%d" % R.STROBE]),
 		"...and takes in the rows between (%s)" % str(last["rows"]))
-	ok(sel.has("master", R.CUES, 11.0), "earlier Ctrl-added areas stay")
+	ok(sel.has("master", R.MOVEMENT, 11.0), "earlier Ctrl-added areas stay")
 	# Across tracks: the fixture's dimmer down to the master's position row.
 	_sel_drag(tl, _at(tl, par, R.DIMMER, 4.0), _at(tl, m, R.POSITION, 5.0))
 	var rows: PackedStringArray = sel.blocks[0]["rows"]
-	ok(sel.blocks.size() == 1 and rows.size() == 3 + 5 and rows[0] == "par|%d" % R.DIMMER
-		and rows[2] == "par|%d" % R.CUES and rows[3] == "master|%d" % R.DIMMER and rows[7] == "master|%d" % R.POSITION,
+	ok(sel.blocks.size() == 1 and rows.size() == 2 + 5 and rows[0] == "par|%d" % R.DIMMER
+		and rows[1] == "par|%d" % R.COLOUR and rows[2] == "master|%d" % R.DIMMER and rows[6] == "master|%d" % R.POSITION,
 		"dragging across tracks covers every row between, top to bottom (%d rows)" % rows.size())
 	ok(par.selection == sel and m.selection == sel, "both tracks draw the same selection")
 	# Beat and no snapping.
 	sb.snap = StructureBar.Snap.BEAT
-	_sel_drag(tl, _at(tl, m, R.CUES, 3.1), _at(tl, m, R.CUES, 3.3))
+	_sel_drag(tl, _at(tl, m, R.MOVEMENT, 3.1), _at(tl, m, R.MOVEMENT, 3.3))
 	ok(is_equal_approx(sel.blocks[0]["t0"], 3.0) and is_equal_approx(sel.blocks[0]["t1"], 3.5), "beat snapping: whole beats")
 	sb.snap = StructureBar.Snap.NONE
 	sel.clear()                                  # (a drag inside a selection would move it)
-	_sel_drag(tl, _at(tl, m, R.CUES, 3.1), _at(tl, m, R.CUES, 7.3))
+	_sel_drag(tl, _at(tl, m, R.MOVEMENT, 3.1), _at(tl, m, R.MOVEMENT, 7.3))
 	ok(absf(sel.blocks[0]["t0"] - 3.1) < 0.05 and absf(sel.blocks[0]["t1"] - 7.3) < 0.05,
 		"no snapping: exactly where dragged (%.2f–%.2f)" % [sel.blocks[0]["t0"], sel.blocks[0]["t1"]])
 	# A plain click (no drag) clears it — with snapping, it selects that cell.
-	_press(tl, _at(tl, m, R.CUES, 9.0), true)
-	_press(tl, _at(tl, m, R.CUES, 9.0), false)
+	_press(tl, _at(tl, m, R.MOVEMENT, 9.0), true)
+	_press(tl, _at(tl, m, R.MOVEMENT, 9.0), false)
 	ok(sel.is_empty(), "no snapping: a click clears the selection")
 	sb.snap = StructureBar.Snap.BAR
-	_press(tl, _at(tl, m, R.CUES, 9.0), true)
-	_press(tl, _at(tl, m, R.CUES, 9.0), false)
+	_press(tl, _at(tl, m, R.MOVEMENT, 9.0), true)
+	_press(tl, _at(tl, m, R.MOVEMENT, 9.0), false)
 	ok(sel.blocks.size() == 1 and is_equal_approx(sel.blocks[0]["t0"], 8.0) and is_equal_approx(sel.blocks[0]["t1"], 10.0),
 		"bar snapping: a click selects the bar under it")
 	# A node or the line isn't empty timeline: no selecting there.
@@ -535,7 +537,7 @@ func _test_delete_selection() -> void:
 	par.dimmer_nodes = PackedVector2Array([Vector2(3, 0.8)])
 	var sel := tl.selection()
 	sel.set_blocks([
-		TimelineSelection.block(PackedStringArray(["master|%d" % R.DIMMER, "master|%d" % R.CUES]), 4.0, 8.0),
+		TimelineSelection.block(PackedStringArray(["master|%d" % R.DIMMER, "master|%d" % R.MOVEMENT]), 4.0, 8.0),
 		TimelineSelection.block(PackedStringArray(["master|%d" % R.DIMMER]), 6.0, 12.0),     # overlaps: merged
 		TimelineSelection.block(PackedStringArray(["par|%d" % R.DIMMER]), 10.0, 20.0)])
 	var ev := InputEventKey.new()
@@ -624,11 +626,11 @@ func _test_copy_paste() -> void:
 	var p2 := tl.fixture_tracks()[1]
 	var sel := tl.selection()
 	m.dimmer_nodes = PackedVector2Array([Vector2(4, 0.0), Vector2(6, 1.0), Vector2(8, 0.0)])
-	sel.set_blocks([TimelineSelection.block(PackedStringArray(["master|%d" % R.DIMMER, "master|%d" % R.CUES]), 4.0, 8.0)])
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["master|%d" % R.DIMMER, "master|%d" % R.MOVEMENT]), 4.0, 8.0)])
 	_key(KEY_C)
 	var clip := tl.clipboard()
 	ok(clip.get("length") == 4.0 and clip["tracks"].size() == 1 and clip["tracks"][0]["key"] == "master"
-		and clip["tracks"][0]["rows"].has(R.DIMMER) and clip["tracks"][0]["rows"].has(R.CUES), "Ctrl+C copies the selected rows")
+		and clip["tracks"][0]["rows"].has(R.DIMMER) and clip["tracks"][0]["rows"].has(R.MOVEMENT), "Ctrl+C copies the selected rows")
 	ok(sel.blocks.size() == 1, "copying leaves the selection")
 	# Paste at a selected spot on the same track.
 	sel.set_blocks([TimelineSelection.block(PackedStringArray(["master|%d" % R.DIMMER]), 20.0, 22.0)])
@@ -640,11 +642,11 @@ func _test_copy_paste() -> void:
 		"the pasted area becomes the selection (dimmer and cues rows)")
 	ok(tl.has_unsaved_timelines(), "marked as changed")
 	# One copied track into several selected ones.
-	sel.set_blocks([TimelineSelection.block(PackedStringArray(["p1|%d" % R.COLOUR, "p1|%d" % R.CUES, "p2|%d" % R.DIMMER]), 30.0, 31.0)])
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["p1|%d" % R.COLOUR, "p1|%d" % R.MOVEMENT, "p2|%d" % R.DIMMER]), 30.0, 31.0)])
 	_key(KEY_V)
 	ok(is_equal_approx(p1.dimmer_at(32.0), 1.0) and is_equal_approx(p2.dimmer_at(32.0), 1.0)
 		and p1._dimmer_after(30.0) == 0.0 and p1.dimmer_at(29.0) == 1.0, "one copied track pastes into every selected track")
-	ok(sel.blocks.size() == 4, "each gets its dimmer and cues rows selected")
+	ok(sel.blocks.size() == 2, "each gets its dimmer row selected (pars have no movement row)")
 	# Nothing selected: at the playhead, back into the source track.
 	sel.clear()
 	tl.wave().song_pos = 40.0
@@ -653,7 +655,7 @@ func _test_copy_paste() -> void:
 	# Two copied tracks pair off with the selected tracks.
 	p1.dimmer_nodes = PackedVector2Array([Vector2(0, 0.3)])
 	p2.dimmer_nodes = PackedVector2Array([Vector2(0, 0.7)])
-	sel.set_blocks([TimelineSelection.block(PackedStringArray(["p1|%d" % R.DIMMER, "p1|%d" % R.CUES, "p2|%d" % R.DIMMER]), 0.0, 2.0)])
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["p1|%d" % R.DIMMER, "p1|%d" % R.MOVEMENT, "p2|%d" % R.DIMMER]), 0.0, 2.0)])
 	_key(KEY_C)
 	sel.set_blocks([TimelineSelection.block(PackedStringArray(["master|%d" % R.DIMMER]), 50.0, 51.0),
 		TimelineSelection.block(PackedStringArray(["p1|%d" % R.DIMMER]), 50.0, 51.0)])
@@ -777,7 +779,7 @@ func _test_undo_redo() -> void:
 		and (all[0]["rows"] as PackedStringArray).size() == tl.fixture_tracks()[0].rows.size() + m.rows.size(),
 		"Ctrl+A selects every row of every timeline over the whole song")
 	ok(tl.selection().has("p1", R.DIMMER, 30.0) and tl.selection().has("master", R.POSITION, 59.0), "fixtures and master alike")
-	tl.selection().set_blocks([TimelineSelection.block(PackedStringArray(["master|%d" % R.CUES]), 1.0, 2.0)])
+	tl.selection().set_blocks([TimelineSelection.block(PackedStringArray(["master|%d" % R.MOVEMENT]), 1.0, 2.0)])
 	_key(KEY_A)
 	ok(tl.selection().blocks.size() == 1 and tl.selection().blocks[0]["t1"] == 60.0, "replacing any selection")
 	_key(KEY_A, false)
@@ -979,18 +981,18 @@ func _test_drag_selection() -> void:
 	# A dark span 4–8 s on the master's dimmer (steps at both edges), selected.
 	m.dimmer_nodes = PackedVector2Array([Vector2(0, 0.5), Vector2(4, 0.5), Vector2(4, 0), Vector2(8, 0), Vector2(8, 0.5), Vector2(12, 0.5)])
 	m.dimmer_edited.emit()
-	sel.set_blocks([TimelineSelection.block(PackedStringArray(["master|%d" % R.DIMMER, "master|%d" % R.CUES]), 4.0, 8.0)])
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["master|%d" % R.DIMMER, "master|%d" % R.MOVEMENT]), 4.0, 8.0)])
 	await process_frame
 	# Hovering: the cursor says what a drag would do.
-	var mid_y := (m.get_global_transform() * m.row_rect(R.CUES).get_center()).y
-	var local_end := Vector2(m._t2x(8.0), m.row_rect(R.CUES).get_center().y)
+	var mid_y := (m.get_global_transform() * m.row_rect(R.MOVEMENT).get_center()).y
+	var local_end := Vector2(m._t2x(8.0), m.row_rect(R.MOVEMENT).get_center().y)
 	m._set_hover(-1, false, local_end)
 	ok(m.mouse_default_cursor_shape == Control.CURSOR_HSIZE, "over a selection's edge: left-right arrows")
 	m._set_hover(-1, false, Vector2(m._t2x(6.0), local_end.y))
 	ok(m.mouse_default_cursor_shape == Control.CURSOR_MOVE, "inside it: a move cursor")
 	# Drag the end from 8 s to about 9.7 s: snaps to the bar at 10 s; the
 	# nodes on that edge go with it.
-	_sel_drag(tl, _at(tl, m, R.CUES, 8.0), _at(tl, m, R.CUES, 9.7))
+	_sel_drag(tl, _at(tl, m, R.MOVEMENT, 8.0), _at(tl, m, R.MOVEMENT, 9.7))
 	ok(sel.blocks.size() == 1 and sel.blocks[0]["t0"] == 4.0 and is_equal_approx(sel.blocks[0]["t1"], 10.0),
 		"dragging the end moves it, snapped to the bar (4–%.1f s)" % sel.blocks[0]["t1"])
 	ok(m.dimmer_nodes == PackedVector2Array([Vector2(0, 0.5), Vector2(4, 0.5), Vector2(4, 0), Vector2(10, 0), Vector2(10, 0.5), Vector2(12, 0.5)]),
@@ -1000,27 +1002,27 @@ func _test_drag_selection() -> void:
 	tl.redo()
 	# The start can't pass the next node out (none here) nor the end; past
 	# a neighbouring node it stops there.
-	_sel_drag(tl, _at(tl, m, R.CUES, 10.0), _at(tl, m, R.CUES, 18.0))
+	_sel_drag(tl, _at(tl, m, R.MOVEMENT, 10.0), _at(tl, m, R.MOVEMENT, 18.0))
 	ok(is_equal_approx(sel.blocks[0]["t1"], 12.0) and m.dimmer_nodes[3].x == 12.0,
 		"an edge with nodes stops at the next node along (%.1f)" % sel.blocks[0]["t1"])
 	tl.undo()
-	_sel_drag(tl, _at(tl, m, R.CUES, 4.0), _at(tl, m, R.CUES, 15.0))
+	_sel_drag(tl, _at(tl, m, R.MOVEMENT, 4.0), _at(tl, m, R.MOVEMENT, 15.0))
 	ok(sel.blocks[0]["t0"] < sel.blocks[0]["t1"] and sel.blocks[0]["t0"] <= 10.0, "the start can't pass the end")
 	tl.undo()
-	sel.set_blocks([TimelineSelection.block(PackedStringArray(["master|%d" % R.DIMMER, "master|%d" % R.CUES]), 4.0, 10.0)])
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["master|%d" % R.DIMMER, "master|%d" % R.MOVEMENT]), 4.0, 10.0)])
 	await process_frame
 	# Move the selection: grab it at 6 s, drop it at about 13 s — the start
 	# moves 7 s, snapped to the bar: 4 -> 10 s (rounded from 11).
 	var before := m.dimmer_nodes
-	_press(tl, _at(tl, m, R.CUES, 6.0), true)
-	_move(tl, _at(tl, m, R.CUES, 9.0))
-	_move(tl, _at(tl, m, R.CUES, 13.0))
+	_press(tl, _at(tl, m, R.MOVEMENT, 6.0), true)
+	_move(tl, _at(tl, m, R.MOVEMENT, 9.0))
+	_move(tl, _at(tl, m, R.MOVEMENT, 13.0))
 	ok(is_equal_approx(sel.blocks[0]["t0"], 12.0) and m.dimmer_nodes == before,
 		"while dragging: the selection moves (snapped), the content not yet (%.1f)" % sel.blocks[0]["t0"])
 	ok(m.ghost.get("at") == 12.0 and m.ghost.get("from") == 4.0 and m.ghost["rows"].has(R.DIMMER)
 		and m.ghost["rows"][R.DIMMER][0]["nodes"] is PackedVector2Array and p1.ghost.is_empty(),
 		"...with a ghost of its content where it would land (only on the tracks it covers)")
-	_press(tl, _at(tl, m, R.CUES, 13.0), false)
+	_press(tl, _at(tl, m, R.MOVEMENT, 13.0), false)
 	ok(is_equal_approx(sel.blocks[0]["t0"], 12.0) and is_equal_approx(sel.blocks[0]["t1"], 18.0), "on release: moved to 12–18 s")
 	ok(m.ghost.is_empty(), "the ghost goes on release")
 	ok(m._dimmer_after(12.0) == 0.0 and m.dimmer_at(17.9) == 0.0 and is_equal_approx(m._dimmer_after(18.0), 0.5),
@@ -1030,16 +1032,16 @@ func _test_drag_selection() -> void:
 	tl.undo()
 	ok(m.dimmer_nodes == before, "one undo step puts it all back")
 	# A click inside the selection without dragging: a plain click there.
-	sel.set_blocks([TimelineSelection.block(PackedStringArray(["master|%d" % R.CUES]), 4.0, 10.0)])
-	_press(tl, _at(tl, m, R.CUES, 6.5), true)
-	_move(tl, _at(tl, m, R.CUES, 6.6))
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["master|%d" % R.MOVEMENT]), 4.0, 10.0)])
+	_press(tl, _at(tl, m, R.MOVEMENT, 6.5), true)
+	_move(tl, _at(tl, m, R.MOVEMENT, 6.6))
 	ok(m.ghost.is_empty(), "no ghost until the selection has actually moved")
-	_press(tl, _at(tl, m, R.CUES, 6.5), false)
+	_press(tl, _at(tl, m, R.MOVEMENT, 6.5), false)
 	ok(sel.blocks.size() == 1 and is_equal_approx(sel.blocks[0]["t0"], 6.0) and is_equal_approx(sel.blocks[0]["t1"], 8.0),
 		"a click inside the selection selects the bar under it")
 	# Ctrl / Shift inside the selection still build it.
-	sel.set_blocks([TimelineSelection.block(PackedStringArray(["master|%d" % R.CUES]), 4.0, 10.0)])
-	_sel_drag(tl, _at(tl, m, R.CUES, 6.5), _at(tl, m, R.CUES, 7.0), true)
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["master|%d" % R.MOVEMENT]), 4.0, 10.0)])
+	_sel_drag(tl, _at(tl, m, R.MOVEMENT, 6.5), _at(tl, m, R.MOVEMENT, 7.0), true)
 	ok(sel.blocks.size() == 2, "Ctrl+drag inside: adds an area, doesn't move")
 	# A colour segment moves too.
 	sel.set_blocks([TimelineSelection.block(PackedStringArray(["p1|%d" % R.COLOUR]), 2.0, 4.0)])
@@ -1247,6 +1249,112 @@ func _test_position_row() -> void:
 	lib.clear()
 	_menu_ids(tl.context_items(true))
 	ok(tl._position_menu.is_item_disabled(0), "no positions: a hint, greyed out")
+	tl._dirty = false
+	tl.queue_free()
+	await process_frame
+
+
+func _test_movement_row() -> void:
+	print("- the movement row")
+	var R := TimelineTrack.Row
+	# The shapes.
+	var circle := {"fx": "circle", "period": 2.0, "size": 0.1}
+	ok(TimelineTrack.movement_offset(circle, 0.0).is_equal_approx(Vector2(0.1, 0.0))
+		and TimelineTrack.movement_offset(circle, 0.5).is_equal_approx(Vector2(0.0, 0.1))
+		and TimelineTrack.movement_offset(circle, 1.0).is_equal_approx(Vector2(-0.1, 0.0))
+		and TimelineTrack.movement_offset(circle, 2.0).is_equal_approx(Vector2(0.1, 0.0)), "circle: round once a period, at its size")
+	var eight := {"fx": "figure8", "period": 2.0, "size": 0.1}
+	ok(TimelineTrack.movement_offset(eight, 0.0).is_equal_approx(Vector2.ZERO)
+		and TimelineTrack.movement_offset(eight, 0.5).is_equal_approx(Vector2(0.1, 0.0))
+		and TimelineTrack.movement_offset(eight, 0.25).y > 0.0 and TimelineTrack.movement_offset(eight, 0.75).y < 0.0,
+		"figure 8: across and back, up then down on each side")
+	ok(TimelineTrack.movement_offset({"fx": "pan_sweep", "period": 2.0, "size": 0.1}, 0.5).is_equal_approx(Vector2(0.1, 0.0))
+		and TimelineTrack.movement_offset({"fx": "tilt_sweep", "period": 2.0, "size": 0.1}, 0.5).is_equal_approx(Vector2(0.0, 0.1)),
+		"pan sweep / tilt sweep: one axis")
+	ok(TimelineTrack.movement_offset({"fx": "none"}, 0.7) == Vector2.ZERO, "none: still")
+	# In the timeline.
+	var mover := FixtureProfile.new("mv", "Mover", [{"name": "Pan", "role": "PAN"}, {"name": "Tilt", "role": "TILT"}])
+	var fixtures := [{"key": "mv", "name": "Mover", "profile": mover, "mode": 0}]
+	var tl := MusicTimeline.new()
+	tl.fixtures_provider = func(): return fixtures
+	root.add_child(tl)
+	tl.position = Vector2.ZERO
+	tl.size = Vector2(1100, 700)
+	tl.open("user://_movement_song.wav")
+	var a := SongAnalysis.new()
+	a.duration = 60.0
+	for arr in [a.wave_lo, a.wave_mid, a.wave_hi, a.wave_peak]:
+		arr.resize(6000)
+	tl._set_analysis(a)
+	var beats := PackedFloat32Array()
+	for i in range(140):
+		beats.append(i * 0.45)                # 133 BPM: a bar is 1.8 s
+	tl.wave().set_beat_grid(beats, 4, 0)
+	await process_frame
+	await process_frame
+	tl.wave().set_view(0.0, 20.0)
+	var mv := tl.fixture_tracks()[0]
+	var m := tl.master_track()
+	var sel := tl.selection()
+	ok(mv.has_row(R.MOVEMENT) and TimelineTrack.ROW_NAMES[R.MOVEMENT] == "Movement", "a mover has a Movement row (the old Cues row)")
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["mv|%d" % R.MOVEMENT, "master|%d" % R.MOVEMENT]), 4.0, 8.0)])
+	var items := _menu_ids(tl.context_items(true))
+	ok(items.has("Movement"), "a movement selection: a Movement submenu")
+	ok(_menu_ids(tl._movement_menu) == ["None", "Circle", "Figure 8", "Pan Sweep", "Tilt Sweep",
+		"Small", "Medium", "Large", "½ bar", "1 bar", "2 bars", "Clear Movement"],
+		"None, the shapes, Size, Cycle, Clear Movement (%s)" % str(_menu_ids(tl._movement_menu)))
+	var mm: PopupMenu = tl._movement_menu
+	ok(mm.is_item_radio_checkable(mm.get_item_index(MusicTimeline.MOVEMENT_SIZE_ID))
+		and mm.is_item_checked(mm.get_item_index(MusicTimeline.MOVEMENT_SIZE_ID + 1))
+		and mm.is_item_checked(mm.get_item_index(MusicTimeline.MOVEMENT_CYCLE_ID + 1)), "size / cycle as radio items: Medium, 1 bar to start")
+	tl._movement_menu.id_pressed.emit(1)          # Circle
+	var sg := mv.movement_at(6.0)
+	ok(sg.get("fx") == "circle" and m.movement_at(6.0).get("fx") == "circle" and mv.movement_at(9.0).is_empty(),
+		"Circle across the selected rows")
+	ok(is_equal_approx(sg["period"], 1.8) and is_equal_approx(sg["size"], TimelineTrack.MOVEMENT_SIZE),
+		"one cycle a bar (%.2f s), the default size" % sg["period"])
+	tl._collect()
+	ok(tl.song_data()["tracks"]["mv"]["movement"] == [[4.0, 8.0, "circle", 1.8, TimelineTrack.MOVEMENT_SIZE]], "saved")
+	ok(MusicTimeline._moves_from([[4.0, 8.0, "figure8", 1.8, 0.1]]) == [{"t0": 4.0, "t1": 8.0, "fx": "figure8", "period": 1.8, "size": 0.1}],
+		"and read back")
+	ok(MusicTimeline._moves_from([[4.0, 8.0, "wobble"]]).is_empty(), "an unknown effect is dropped")
+	tl._movement_menu.id_pressed.emit(0)          # None
+	ok(mv.movement_at(6.0).get("fx") == "none", "None: a segment that holds it still")
+	tl.undo()
+	ok(mv.movement_at(6.0).get("fx") == "circle", "undoable")
+	tl.copy_selection()
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["mv|%d" % R.MOVEMENT]), 20.0, 21.0)])
+	tl.paste()
+	ok(mv.movement_at(22.0).get("fx") == "circle" and is_equal_approx(mv.movement_at(22.0)["period"], 1.8), "copies and pastes (with its period)")
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["mv|%d" % R.MOVEMENT]), 4.0, 8.0)])
+	tl.move_selection(sel.blocks.duplicate(true), 2.0)
+	ok(mv.movement_at(5.0).is_empty() and mv.movement_at(9.0).get("fx") == "circle", "moves with the selection")
+	tl._movement_menu.id_pressed.emit(MusicTimeline.MOVEMENT_CLEAR)
+	ok(mv.movement_at(9.0).is_empty(), "Clear Movement")
+	# Size and cycle.
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["mv|%d" % R.MOVEMENT]), 2.0, 6.0)])
+	tl._movement_menu.id_pressed.emit(MusicTimeline.MOVEMENT_SIZE_ID + 2)      # Large
+	tl._movement_menu.id_pressed.emit(MusicTimeline.MOVEMENT_CYCLE_ID + 0)     # ½ bar
+	tl._movement_menu.id_pressed.emit(2)                                        # Figure 8
+	var big := mv.movement_at(4.0)
+	ok(big.get("fx") == "figure8" and is_equal_approx(big["size"], 0.16) and is_equal_approx(big["period"], 0.9),
+		"chosen size / cycle go with a new effect (Large, ½ bar = %.2f s)" % big["period"])
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["mv|%d" % R.MOVEMENT]), 10.0, 12.0)])
+	tl._movement_menu.id_pressed.emit(1)
+	ok(is_equal_approx(mv.movement_at(11.0)["size"], 0.16), "...and stay chosen for the next")
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["mv|%d" % R.MOVEMENT]), 0.0, 14.0)])
+	_menu_ids(tl.context_items(true))
+	ok(mm.is_item_checked(mm.get_item_index(MusicTimeline.MOVEMENT_SIZE_ID + 2))
+		and mm.is_item_checked(mm.get_item_index(MusicTimeline.MOVEMENT_CYCLE_ID + 0)), "the menu shows the selection's size / cycle")
+	tl._movement_menu.id_pressed.emit(MusicTimeline.MOVEMENT_SIZE_ID + 0)      # Small
+	tl._movement_menu.id_pressed.emit(MusicTimeline.MOVEMENT_CYCLE_ID + 2)     # 2 bars
+	ok(is_equal_approx(mv.movement_at(4.0)["size"], 0.04) and is_equal_approx(mv.movement_at(4.0)["period"], 3.6)
+		and mv.movement_at(4.0)["fx"] == "figure8" and is_equal_approx(mv.movement_at(11.0)["size"], 0.04)
+		and mv.movement_at(11.0)["fx"] == "circle", "changing size / cycle changes the selected movements, effects kept")
+	ok(mv.movement_at(8.0).is_empty() and is_equal_approx(mv.movement_at(22.0)["size"], 0.08),
+		"...and leaves the gaps, and movements outside the selection, alone")
+	tl.undo()
+	ok(is_equal_approx(mv.movement_at(4.0)["period"], 0.9), "undoable")
 	tl._dirty = false
 	tl.queue_free()
 	await process_frame

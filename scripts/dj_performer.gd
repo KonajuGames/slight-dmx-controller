@@ -238,8 +238,11 @@ func _loaded(num: int, id: int, data: Dictionary) -> void:
 			var segs := MusicTimeline._segs_from(saved[key].get("colour", []))
 			var strobes := MusicTimeline._spans_from(saved[key].get("strobe", []))
 			var places := MusicTimeline._pos_from(saved[key].get("position", []))
-			if not nodes.is_empty() or not segs.is_empty() or not strobes.is_empty() or not places.is_empty():
-				tracks[String(key)] = {"dimmer": nodes, "colour": segs, "strobe": strobes, "position": places}
+			var moves := MusicTimeline._moves_from(saved[key].get("movement", []))
+			if not nodes.is_empty() or not segs.is_empty() or not strobes.is_empty() or not places.is_empty() \
+					or not moves.is_empty():
+				tracks[String(key)] = {"dimmer": nodes, "colour": segs, "strobe": strobes, "position": places,
+					"movement": moves}
 	d.tracks = tracks
 	d.load_state = Load.LOADED if not tracks.is_empty() else Load.NO_TIMELINES
 	state_changed.emit()
@@ -285,6 +288,10 @@ func layer(n: int) -> Array:
 ##   position: the fixture's position row, else the master's, names a
 ##     position (`positions`); its PAN / TILT go to that position's point
 ##     for the fixture (16-bit with fine channels)
+##   movement: the fixture's movement row, else the master's, moves its
+##     pan / tilt around that position (or, with none, the console's
+##     pan / tilt) — a circle, figure 8, ... (TimelineTrack.movement_offset);
+##     "none" holds it still
 ##   strobe: where the fixture's strobe row or the master's is on, its
 ##     STROBE channel(s) go to a strobing value (from the channel's
 ##     ranges); off, they're left as the console has them
@@ -304,6 +311,7 @@ static func song_output(tracks: Dictionary, t: float, fixtures: Array, bases: Ar
 	var master_colour = TimelineTrack.segment_colour_at(master.get("colour", []), t)
 	var master_strobe := TimelineTrack.speed_at(master.get("strobe", []), t)
 	var master_place := TimelineTrack.position_id_at(master.get("position", []), t)
+	var master_move := TimelineTrack.movement_segment_at(master.get("movement", []), t)
 	for fx in fixtures:
 		var u: int = fx["u"]
 		if u < 0 or u >= n:
@@ -330,8 +338,18 @@ static func song_output(tracks: Dictionary, t: float, fixtures: Array, bases: Ar
 		var place := TimelineTrack.position_id_at(own.get("position", []), t)
 		if place == "":
 			place = master_place
-		if place != "" and positions != null and not positions.find(place).is_empty():
-			var pt := positions.point(place, uid)
+		var placed := place != "" and positions != null and not positions.find(place).is_empty()
+		var move := TimelineTrack.movement_segment_at(own.get("movement", []), t)
+		if move.is_empty():
+			move = master_move
+		var moving := not move.is_empty() and String(move.get("fx", "none")) != "none"
+		if placed or moving:
+			# Where it points: the named position, else the console's pan /
+			# tilt; then the movement around it.
+			var pt: Vector2 = positions.point(place, uid) if placed \
+				else Vector2(_read_axis(base, chans, start, "PAN"), _read_axis(base, chans, start, "TILT"))
+			if moving:
+				pt += TimelineTrack.movement_offset(move, t - float(move["t0"]))
 			_write_axis(out[u], chans, start, "PAN", pt.x)
 			_write_axis(out[u], chans, start, "TILT", pt.y)
 		var strobe := maxi(master_strobe, TimelineTrack.speed_at(own.get("strobe", []), t))
@@ -390,6 +408,22 @@ static func _write_axis(out: Dictionary, chans: Array, start: int, role: String,
 		else:
 			out[start + k] = int(round(lerpf(int(chans[k].get("min", 0)), int(chans[k].get("max", 255)), norm)))
 		return
+
+
+## A PAN / TILT axis's value in `base` (the console's), 0..1 over its
+## range — _write_axis() backwards. 0.5 if the fixture has no such axis.
+static func _read_axis(base: PackedByteArray, chans: Array, start: int, role: String) -> float:
+	for k in range(chans.size()):
+		if String(chans[k]["role"]) != role:
+			continue
+		var fine: bool = k + 1 < chans.size() and (bool(chans[k + 1].get("fine", false))
+			or String(chans[k + 1]["role"]) == role + "_FINE")
+		if fine:
+			return (_byte(base, start + k) * 256 + _byte(base, start + k + 1)) / 65535.0
+		var lo := int(chans[k].get("min", 0))
+		var hi := int(chans[k].get("max", 255))
+		return clampf(float(_byte(base, start + k) - lo) / maxf(hi - lo, 1.0), 0.0, 1.0)
+	return 0.5
 
 
 ## How far through a strobe range each speed goes (slow / medium / fast).
