@@ -410,7 +410,7 @@ func _test_edit_playback() -> void:
 		await process_frame
 	ok(tl.can_play(), "a song open in DJ Edit Mode")
 	tl.master_track().dimmer_nodes = PackedVector2Array([Vector2(0, 0.6), Vector2(6, 0.6)])
-	ok(main._edit_playback_layer(1)[0].is_empty(), "stopped: nothing goes out")
+	ok(main._edit_playback_layer(1)[0].is_empty(), "not playing, in the console view: nothing goes out")
 	tl.play()
 	await create_timer(0.2).timeout
 	var l: Dictionary = main._edit_playback_layer(1)[0]
@@ -420,6 +420,16 @@ func _test_edit_playback() -> void:
 	ok(l.get(2) == int(round(0.2 * 255)), "edits show straight away (dimmer %s)" % str(l.get(2)))
 	ok(root.get_node("ArtNet").layer_providers.has(main._edit_playback_layer), "a layer of the DMX output")
 	tl.pause()
-	ok(main._edit_playback_layer(1)[0].is_empty(), "paused: nothing goes out (the console has the rig)")
+	ok(main._edit_playback_layer(1)[0].is_empty(), "paused in another view: nothing goes out (the console has the rig)")
+	main.music_panel.visible = true
+	tl.master_track().dimmer_nodes = PackedVector2Array([Vector2(0, 0.2), Vector2(3, 0.2), Vector2(3, 0.9), Vector2(6, 0.9)])
+	tl.seek(1.0)
+	l = main._edit_playback_layer(1)[0]
+	ok(l.get(2) == int(round(0.2 * 255)), "paused in DJ Edit Mode: the look at the playhead held (dimmer %s)" % str(l.get(2)))
+	tl.seek(4.0)
+	l = main._edit_playback_layer(1)[0]
+	ok(absi(int(l.get(2, -9)) - 230) <= 1, "...following the playhead as it's moved (dimmer %s)" % str(l.get(2)))
+	main.music_panel.visible = false
+	ok(main._edit_playback_layer(1)[0].is_empty(), "back to the console: nothing goes out")
 	main.queue_free()
 	await process_frame

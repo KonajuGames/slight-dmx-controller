@@ -743,13 +743,15 @@ func _perform_fixtures() -> Array:
 	return out
 
 
-## The DMX layer for ArtNet.tick() while a song plays in DJ Edit Mode: its
+## The DMX layer for ArtNet.tick() from the song open in DJ Edit Mode: its
 ## timelines (edits included, as they stand) at the playhead, the way DJ
-## Perform Mode would play them. Nothing while paused or stopped, and
+## Perform Mode would play them — while it plays, and while it's paused
+## with DJ Edit Mode showing (holding the look at the playhead, following
+## it as it's moved). Nothing in the other views unless it's playing, and
 ## nothing while DJ Perform Mode is on — the live decks own the rig then.
 func _edit_playback_layer(n: int) -> Array:
 	var tl := music_panel.timeline()
-	if not tl.is_playing() or performer.is_active():
+	if not tl.can_play() or not (tl.is_playing() or music_panel.visible) or performer.is_active():
 		var empty: Array = []
 		for i in range(n):
 			empty.append({})

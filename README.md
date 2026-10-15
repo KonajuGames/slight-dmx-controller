@@ -486,7 +486,9 @@ Global controls live in the top bar:
   column title to sort), and a song's lighting timelines to edit (while
   the song plays they go live — the lights and 3D view follow the
   playhead, edits included, as DJ Perform Mode would play them; paused,
-  the console has the rig back) — and
+  the look at the playhead holds — following it as it's moved — while DJ
+  Edit Mode is showing, and the console has the rig back in the other
+  views) — and
   **DJ Perform Mode**, where VirtualDJ plays those timelines (below). The
   console keeps running underneath either; the spacebar GO only works in
   the Console.
