@@ -2315,7 +2315,6 @@ func set_structure_locked(locked: bool) -> void:
 	_update_structure_buttons()
 
 
-## Ask for an Auto Show light show built from the current structure.
 ## Generate a light show into this song's timelines (the Generate button):
 ## from its structure (sections and their energy), its beat grid / tempo,
 ## the fixtures' rows and the named positions (TimelineGenerator). Replaces
@@ -2334,6 +2333,10 @@ func generate_show() -> bool:
 		tracks.append({"key": String(tr.get_meta("key")), "target": tr.target, "rows": tr.rows})
 	var ids: Array = []
 	if positions != null:
+		# Movement needs a position to move around: with none named yet, a
+		# "Centre" one (no points of its own: every fixture centred).
+		if positions.positions.is_empty():
+			positions.rename(String(positions.add()["id"]), "Centre")
 		for pos in positions.positions:
 			ids.append(String(pos["id"]))
 	var show := TimelineGenerator.generate(a.sections, beats, _wave.beats_per_bar, _wave.duration(),

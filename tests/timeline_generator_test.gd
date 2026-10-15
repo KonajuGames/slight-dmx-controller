@@ -96,6 +96,10 @@ func _test_show() -> void:
 	ok(pos.size() == 6 and pos[0]["pos"] == "posA" and pos[1]["pos"] == "posB" and pos[2]["pos"] == "posA",
 		"the named positions in turn, a section each")
 	var mv: Array = m["movement"]
+	var covered := mv.size() == 6
+	for g in mv:
+		covered = covered and pos.any(func(p): return p["t0"] <= g["t0"] and p["t1"] >= g["t1"])
+	ok(covered, "every movement over a position")
 	ok(mv[2]["fx"] == "figure8" and is_equal_approx(mv[2]["size"], 0.16) and is_equal_approx(mv[2]["period"], 1.0),
 		"the loudest: a large figure 8, ½ bar a cycle")
 	ok(mv[0]["fx"] == "tilt_sweep" and is_equal_approx(mv[0]["period"], 4.0) and mv[1]["fx"] == "tilt_sweep",
@@ -140,6 +144,10 @@ func _test_edges() -> void:
 	var md: PackedVector2Array = show["master"]["dimmer"]
 	ok(md.size() >= 3 and md[md.size() - 1] == Vector2(60, 0), "no structure: the whole song as one section")
 	ok(show["master"]["position"].is_empty(), "no named positions: no position segments")
+	ok(show["master"]["movement"].is_empty(), "...and no movement (it needs a position to move around)")
+	show = TimelineGenerator.generate([], PackedFloat32Array(), 4, 60.0,
+		[{"key": "master", "target": T.MASTER, "rows": [R.DIMMER, R.MOVEMENT]}], ["posA"])
+	ok(show["master"]["movement"].is_empty(), "no position row: no movement either")
 	ok(show["master"]["colour"].is_empty(), "a row the track hasn't got: left empty")
 	var flat := [{"start": 0.0, "end": 30.0, "label": "Verse", "energy": 0.5}, {"start": 30.0, "end": 60.0, "label": "Chorus", "energy": 0.5}]
 	show = TimelineGenerator.generate(flat, PackedFloat32Array(), 4, 60.0, [{"key": "master", "target": T.MASTER, "rows": [R.DIMMER]}])

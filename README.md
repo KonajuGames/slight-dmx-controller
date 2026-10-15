@@ -174,7 +174,8 @@ technical reference.
   then fast) over the two bars before a big rise in energy; the named
   positions take a section each in turn; and the master's movement goes
   from a small slow tilt sweep (quiet) through a circle to a large fast
-  figure 8 (loudest).
+  figure 8 (loudest) — only over a position (with none named yet,
+  Generate adds a "Centre" one, every fixture centred).
 - `dj_performer.gd` — the `DjPerformer` class: DJ Perform Mode's engine.
   Runs an `Os2lServer` (subscribed to four decks), follows each deck's
   song, play state, volume fader and position, loads a new song's

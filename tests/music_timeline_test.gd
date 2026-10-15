@@ -598,9 +598,22 @@ func _test_structure() -> void:
 	# cover what goes in).
 	tl.master_track().dimmer_nodes = PackedVector2Array()
 	gen.pressed.emit()
-	ok(tl.master_track().dimmer_nodes.size() > 2 and not tl.master_track().movement_segments.is_empty(),
+	ok(tl.master_track().dimmer_nodes.size() > 2 and not tl.master_track().colour_segments.is_empty(),
 		"generate fills the timelines from this structure")
+	ok(tl.master_track().movement_segments.is_empty(), "no position library: no movement")
 	ok(tl.has_unsaved_timelines() and tl.can_undo(), "as an edit that can be undone")
+	var lib := PositionLibrary.new()
+	tl.positions = lib
+	gen.pressed.emit()
+	ok(lib.positions.size() == 1 and lib.positions[0]["name"] == "Centre" and lib.positions[0]["points"].is_empty(),
+		"no named positions: a \"Centre\" one is made (every fixture centred)")
+	var mpos: Array = tl.master_track().position_segments
+	ok(not mpos.is_empty() and mpos.all(func(p): return p["pos"] == lib.positions[0]["id"])
+		and not tl.master_track().movement_segments.is_empty(), "...and the show moves around it")
+	lib.add()
+	gen.pressed.emit()
+	ok(lib.positions.size() == 2, "with positions already: none added")
+	tl.positions = null
 
 	# Cached per track, edits included.
 	a.sections[0]["label"] = "Bridge"

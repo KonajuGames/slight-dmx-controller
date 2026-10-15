@@ -25,7 +25,8 @@ extends RefCounted
 ##                  two bars, medium then fast (on the master)
 ##   position       the named positions in turn, a section each (master)
 ##   movement       by energy: a small slow tilt sweep, a circle, a large
-##                  fast figure 8 (master; one cycle per ½ / 1 / 2 bars)
+##                  fast figure 8 (master; one cycle per ½ / 1 / 2 bars) —
+##                  only over a position (none without named positions)
 
 ## Energy (rescaled) above which a section is "high" (beat pulses, gradient,
 ## big movement) and "upper-middle" (bar pulses).
@@ -89,7 +90,8 @@ static func generate(sections: Array, beats: PackedFloat32Array, per_bar: int, d
 		if TimelineTrack.Row.POSITION in master["rows"] and not positions.is_empty():
 			for i in range(secs.size()):
 				m["position"].append({"t0": secs[i]["start"], "t1": secs[i]["end"], "pos": String(positions[i % positions.size()])})
-		if TimelineTrack.Row.MOVEMENT in master["rows"]:
+		# Movement moves around a position: only with one (a section each).
+		if TimelineTrack.Row.MOVEMENT in master["rows"] and not m["position"].is_empty():
 			for s in secs:
 				m["movement"].append(_movement_for(s, bar_len))
 
