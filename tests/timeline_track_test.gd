@@ -718,8 +718,8 @@ func _test_undo_redo() -> void:
 	var m := tl.master_track()
 	var p1 := tl.fixture_tracks()[0]
 	ok(not tl.can_undo() and not tl.can_redo(), "a freshly opened song: nothing to undo")
-	ok(m.dimmer_nodes == PackedVector2Array([Vector2(0, 1), Vector2(60, 1)]),
-		"the master's dimmer starts with a node at the start and the end, at 100 %")
+	ok(m.dimmer_nodes == PackedVector2Array([Vector2(0, 0), Vector2(60, 0)]),
+		"the master's dimmer starts with a node at the start and the end, at 0 %")
 	ok(not tl.has_unsaved_timelines(), "...which isn't an edit")
 	# Edit 1: a node added on the master (as the mouse does: change, then report).
 	m.dimmer_nodes = PackedVector2Array([Vector2(10, 0.5)])
@@ -737,7 +737,7 @@ func _test_undo_redo() -> void:
 	_key(KEY_Z)
 	ok(p1.dimmer_nodes.is_empty() and m.dimmer_nodes.size() == 1, "again: the fixture's edit")
 	_key(KEY_Z)
-	ok(m.dimmer_nodes == PackedVector2Array([Vector2(0, 1), Vector2(60, 1)]) and not tl.can_undo(),
+	ok(m.dimmer_nodes == PackedVector2Array([Vector2(0, 0), Vector2(60, 0)]) and not tl.can_undo(),
 		"again: back to how the song opened (the master's default start / end nodes)")
 	ok(not tl.undo(), "nothing more to undo")
 	_key(KEY_Y)

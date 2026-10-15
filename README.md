@@ -219,8 +219,9 @@ technical reference.
   add no edge nodes beyond the line's ends, and the pulses / Smooth on an
   empty row start and end at the level it inherits. The master's line
   runs the whole song: a song without one starts with a node at its
-  start and one at its end, both at 100 % (not counted as an edit — no
-  undo step, nothing to save until something else changes).
+  start and one at its end, both at 0 % — so nothing comes on until the
+  line's raised or a fixture has values of its own (not counted as an
+  edit — no undo step, nothing to save until something else changes).
   A fixture or head with colour channels but no DIMMER channel still gets
   a Dimmer row — its virtual dimmer.
   The dimmer line's nodes are edited with the mouse: drag a node to move

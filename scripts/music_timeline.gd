@@ -2052,12 +2052,13 @@ func _show_song_data() -> void:
 
 
 ## A song whose master has no dimmer line yet gets one: a node at its
-## start and one at its end, at 100 %. Not an edit (nothing to save, no
+## start and one at its end, at 0 % (so nothing comes on until the line is
+## raised or a fixture has values of its own). Not an edit (nothing to save, no
 ## undo step) — it's where the song starts.
 func _default_master_line() -> void:
 	if _path == "" or _master == null or _wave.analysis == null or not _master.dimmer_nodes.is_empty():
 		return
-	_master.dimmer_nodes = PackedVector2Array([Vector2(0.0, 1.0), Vector2(_wave.duration(), 1.0)])
+	_master.dimmer_nodes = PackedVector2Array([Vector2(0.0, 0.0), Vector2(_wave.duration(), 0.0)])
 	_collect()
 	var h := _hist()
 	if h["state"] != null:
