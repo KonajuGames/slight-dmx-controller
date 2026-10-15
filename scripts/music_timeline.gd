@@ -38,7 +38,11 @@ extends VBoxContainer
 ## (selection()): whole bars, beats, or exact times as the structure bar's
 ## snapping says, on every row the drag crosses — rows of several tracks
 ## included. A plain drag replaces the selection, Ctrl adds to it, and
-## Shift extends the last area to take in the new one. Delete clears the
+## Shift extends the last area to take in the new one. A plain drag on a
+## selected area's start / end resizes it (snapped; dimmer nodes on that
+## edge go with it); inside it, moves the whole selection (snapped), its
+## content landing — and overwriting — where it's dropped, on release.
+## Delete clears the
 ## selected areas; Escape or Ctrl+D deselects; Ctrl+A selects everything,
 ## Ctrl+C copies, Ctrl+X cuts
 ## and Ctrl+V pastes (select_all(), copy_selection(), cut_selection(),
@@ -103,6 +107,7 @@ var _clip := {}
 ## edited structure) as _snapshot() takes them.
 const UNDO_LIMIT := 100
 var _history := {}
+var _batching := false          # several edits recorded as one undo step
 var _dirty := false             # the open song's timelines changed since saved
 var _wave: WaveHeatmap
 var _ruler: BarRuler
@@ -662,6 +667,23 @@ func _on_select_drag(_track: TimelineTrack, phase: int, gpos: Vector2, ctrl: boo
 	var rows := _row_list()
 	if rows.is_empty():
 		return
+	if phase == TimelineTrack.SELECT_PRESS and not ctrl and not shift:
+		var edge := _edge_at(_track, gpos)
+		if not edge.is_empty():
+			_sel_drag = edge
+			return
+		var key := String(_track.get_meta("key"))
+		var row := _track.row_at(_track.get_global_transform().affine_inverse() * gpos)
+		if _selection.has(key, row, _time_at(gpos.x)):
+			_sel_drag = {"mode": "move", "from": _time_at(gpos.x), "blocks": _selection.blocks.duplicate(true),
+				"gpos": gpos, "track": _track}
+			return
+	if not _sel_drag.is_empty() and _sel_drag.get("mode") == "edge":
+		_drag_edge(phase, gpos)
+		return
+	if not _sel_drag.is_empty() and _sel_drag.get("mode") == "move":
+		_drag_move(phase, gpos)
+		return
 	if phase == TimelineTrack.SELECT_PRESS:
 		var keep: Array = []
 		var extend := {}
@@ -726,6 +748,13 @@ func delete_selection() -> bool:
 func copy_selection() -> bool:
 	if _selection.is_empty():
 		return false
+	_clip = _copy_clip()
+	return true
+
+
+## The selected areas' content as a clip ({length, tracks}), times
+## relative to the earliest area's start.
+func _copy_clip() -> Dictionary:
 	var start := INF
 	var finish := -INF
 	for b in _selection.blocks:
@@ -751,8 +780,7 @@ func copy_selection() -> bool:
 				rows[row] = parts
 		if not rows.is_empty():
 			tracks.append({"key": key, "rows": rows})
-	_clip = {"length": finish - start, "tracks": tracks}
-	return true
+	return {"length": finish - start, "tracks": tracks}
 
 
 ## Cut the selected areas (Ctrl+X): copy them, then clear them as Delete
@@ -808,6 +836,18 @@ func paste(here_track: TimelineTrack = null, here_time := 0.0) -> bool:
 			var tr := _track_for(String(src["key"]))
 			if tr != null:
 				pairs.append([tr, src])
+	var done := _paste_into(pairs, at)
+	if done["blocks"].is_empty():
+		return false
+	_selection.set_blocks(done["blocks"])
+	if done["changed"]:
+		_mark_dirty()
+	return true
+
+
+## Put each [target track, clip track] pair's content in at `at` seconds.
+## Returns {blocks: the areas it went into (selection blocks), changed}.
+func _paste_into(pairs: Array, at: float) -> Dictionary:
 	var dur := _wave.duration()
 	var blocks: Array = []
 	var changed := false
@@ -828,12 +868,7 @@ func paste(here_track: TimelineTrack = null, here_time := 0.0) -> bool:
 				elif row == TimelineTrack.Row.COLOUR and part.has("segments"):
 					changed = tr.replace_colour(at + part["t0"], at + part["t1"], part["segments"]) or changed
 				blocks.append(TimelineSelection.block(PackedStringArray([TimelineSelection.row_id(key, row)]), t0, t1))
-	if blocks.is_empty():
-		return false
-	_selection.set_blocks(blocks)
-	if changed:
-		_mark_dirty()
-	return true
+	return {"blocks": blocks, "changed": changed}
 
 
 func _track_for(key: String) -> TimelineTrack:
@@ -1164,6 +1199,146 @@ static func _merged(spans: Array) -> Array:
 			out[-1] = Vector2(out[-1].x, maxf(out[-1].y, sp.y))
 		else:
 			out.append(sp)
+	return out
+
+
+## The nearest snapping boundary to `t` (bar / beat starts, by the
+## structure bar's snapping), or `t` with no snapping.
+func snap_nearest(t: float) -> float:
+	var g := _snap_grid()
+	return t if g.is_empty() else StructureBar._nearest(g, t)
+
+
+## A press on a selected area's start / end on `track`'s row under
+## `gpos`: what dragging it needs ({} if not on an edge) — the block,
+## which end, and each selected dimmer row's nodes on that edge (moved
+## with it, kept between their neighbours).
+func _edge_at(track: TimelineTrack, gpos: Vector2) -> Dictionary:
+	var local := track.get_global_transform().affine_inverse() * gpos
+	var row := track.row_at(local)
+	if row < 0:
+		return {}
+	var id := TimelineSelection.row_id(String(track.get_meta("key")), row)
+	for bi in range(_selection.blocks.size()):
+		var b: Dictionary = _selection.blocks[bi]
+		if not id in b["rows"]:
+			continue
+		for which in [0, 1]:
+			var et: float = b["t0"] if which == 0 else b["t1"]
+			if absf(local.x - track._t2x(et)) > TimelineTrack.EDGE_GRAB:
+				continue
+			var lo: float = 0.0 if which == 0 else b["t0"]
+			var hi: float = b["t1"] if which == 0 else _wave.duration()
+			var moving: Array = []       # [{track, nodes (original), idx: [node indices on the edge]}]
+			for rid in b["rows"]:
+				if int(rid.get_slice("|", 1)) != TimelineTrack.Row.DIMMER:
+					continue
+				var tr := _track_for(rid.get_slice("|", 0))
+				if tr == null:
+					continue
+				var idx: Array = []
+				for k in range(tr.dimmer_nodes.size()):
+					var x := tr.dimmer_nodes[k].x
+					if absf(x - et) < 0.001:
+						idx.append(k)
+					elif x < et:
+						lo = maxf(lo, x)
+					else:
+						hi = minf(hi, x)
+				if not idx.is_empty():
+					moving.append({"track": tr, "nodes": tr.dimmer_nodes, "idx": idx})
+			return {"mode": "edge", "block": bi, "which": which, "lo": lo, "hi": hi, "moving": moving}
+	return {}
+
+
+## Dragging a selected area's edge: it follows the pointer, snapped and
+## kept inside its limits; the dimmer nodes on it follow. One undo step
+## when released, if any nodes moved.
+func _drag_edge(phase: int, gpos: Vector2) -> void:
+	var d := _sel_drag
+	var t := clampf(snap_nearest(_time_at(gpos.x)), d["lo"], d["hi"])
+	var blocks: Array = _selection.blocks.duplicate(true)
+	var b: Dictionary = blocks[d["block"]]
+	if d["which"] == 0:
+		t = minf(t, b["t1"] - 0.001)
+		b["t0"] = t
+	else:
+		t = maxf(t, b["t0"] + 0.001)
+		b["t1"] = t
+	_selection.set_blocks(blocks)
+	var moved := false
+	for m in d["moving"]:
+		var nodes: PackedVector2Array = (m["nodes"] as PackedVector2Array).duplicate()
+		for k in m["idx"]:
+			nodes[k].x = t
+		m["track"].dimmer_nodes = nodes
+		moved = moved or nodes != m["nodes"]
+	if phase == TimelineTrack.SELECT_RELEASE:
+		_sel_drag = {}
+		if moved:
+			_mark_dirty()
+
+
+## Dragging the whole selection: the areas follow the pointer (their start
+## snapped, kept within the song); on release the content is cut from
+## where it was and pasted where it's dropped — overwriting what's there —
+## as one undo step. Released without moving: a plain click there.
+func _drag_move(phase: int, gpos: Vector2) -> void:
+	var d := _sel_drag
+	var orig: Array = d["blocks"]
+	var start := INF
+	var finish := -INF
+	for b in orig:
+		start = minf(start, b["t0"])
+		finish = maxf(finish, b["t1"])
+	var new_start := snap_nearest(start + _time_at(gpos.x) - d["from"])
+	new_start = clampf(new_start, 0.0, maxf(_wave.duration() - (finish - start), 0.0))
+	var delta := new_start - start
+	if phase != TimelineTrack.SELECT_RELEASE:
+		_selection.set_blocks(_shifted(orig, delta))
+		return
+	_sel_drag = {}
+	if is_zero_approx(delta):
+		# Just a click inside the selection: as a plain click anywhere — it
+		# replaces the selection with what's under it (cleared first, so
+		# the click isn't taken as inside it again).
+		_selection.clear()
+		_on_select_drag(d["track"], TimelineTrack.SELECT_PRESS, d["gpos"], false, false)
+		_on_select_drag(d["track"], TimelineTrack.SELECT_RELEASE, d["gpos"], false, false)
+		return
+	move_selection(orig, delta)
+
+
+## Move the content of the areas `blocks` by `delta` seconds into the
+## same rows (cut, then pasted — overwriting — at the new place), and
+## select the moved areas. One undo step. Returns whether anything changed.
+func move_selection(blocks: Array, delta: float) -> bool:
+	_selection.set_blocks(blocks)
+	var clip := _copy_clip()
+	var start := INF
+	for b in blocks:
+		start = minf(start, b["t0"])
+	_batching = true
+	var cleared := delete_selection()
+	var pairs: Array = []
+	for src in clip["tracks"]:
+		var tr := _track_for(String(src["key"]))
+		if tr != null:
+			pairs.append([tr, src])
+	var done := _paste_into(pairs, start + delta)
+	_batching = false
+	_selection.set_blocks(_shifted(blocks, delta))
+	if cleared or done["changed"]:
+		_mark_dirty()
+		return true
+	return false
+
+
+## `blocks` moved by `delta` seconds.
+static func _shifted(blocks: Array, delta: float) -> Array:
+	var out: Array = []
+	for b in blocks:
+		out.append(TimelineSelection.block(b["rows"], b["t0"] + delta, b["t1"] + delta))
 	return out
 
 
@@ -1539,7 +1714,8 @@ func _show_song_data() -> void:
 ## before it goes on the undo list.
 func _mark_dirty() -> void:
 	_dirty = true
-	_record_edit()
+	if not _batching:
+		_record_edit()
 
 
 func _on_structure_edited() -> void:

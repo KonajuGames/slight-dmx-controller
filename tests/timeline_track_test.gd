@@ -41,6 +41,7 @@ func _run() -> void:
 	await _test_undo_redo()
 	_test_dimmer_shapes()
 	await _test_context_menu()
+	await _test_drag_selection()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
 
@@ -450,6 +451,7 @@ func _test_area_selection() -> void:
 	_sel_drag(tl, _at(tl, m, R.CUES, 3.1), _at(tl, m, R.CUES, 3.3))
 	ok(is_equal_approx(sel.blocks[0]["t0"], 3.0) and is_equal_approx(sel.blocks[0]["t1"], 3.5), "beat snapping: whole beats")
 	sb.snap = StructureBar.Snap.NONE
+	sel.clear()                                  # (a drag inside a selection would move it)
 	_sel_drag(tl, _at(tl, m, R.CUES, 3.1), _at(tl, m, R.CUES, 7.3))
 	ok(absf(sel.blocks[0]["t0"] - 3.1) < 0.05 and absf(sel.blocks[0]["t1"] - 7.3) < 0.05,
 		"no snapping: exactly where dragged (%.2f–%.2f)" % [sel.blocks[0]["t0"], sel.blocks[0]["t1"]])
@@ -942,3 +944,99 @@ func _test_context_menu() -> void:
 ## Colours equal to 8-bit precision (as they're saved).
 func _near(a, b: Color) -> bool:
 	return a is Color and absf(a.r - b.r) < 0.003 and absf(a.g - b.g) < 0.003 and absf(a.b - b.b) < 0.003
+
+
+func _test_drag_selection() -> void:
+	print("- dragging a selection's edges, and the selection")
+	var R := TimelineTrack.Row
+	var fixtures := [{"key": "p1", "name": "Par 1", "profile": _par(), "mode": 0}]
+	var tl := MusicTimeline.new()
+	tl.fixtures_provider = func(): return fixtures
+	root.add_child(tl)
+	tl.position = Vector2.ZERO
+	tl.size = Vector2(1100, 700)
+	tl.open("user://_move_song.wav")
+	var a := SongAnalysis.new()
+	a.duration = 60.0
+	for arr in [a.wave_lo, a.wave_mid, a.wave_hi, a.wave_peak]:
+		arr.resize(6000)
+	tl._set_analysis(a)
+	var beats := PackedFloat32Array()
+	for i in range(120):
+		beats.append(i * 0.5)                  # bars of 2 s from 0
+	tl.wave().set_beat_grid(beats, 4, 0)
+	await process_frame
+	await process_frame
+	tl.wave().set_view(0.0, 20.0)
+	var m := tl.master_track()
+	var p1 := tl.fixture_tracks()[0]
+	var sel := tl.selection()
+	var sb := tl.structure_bar()
+	sb.snap = StructureBar.Snap.BAR
+	# A dark span 4–8 s on the master's dimmer (steps at both edges), selected.
+	m.dimmer_nodes = PackedVector2Array([Vector2(0, 0.5), Vector2(4, 0.5), Vector2(4, 0), Vector2(8, 0), Vector2(8, 0.5), Vector2(12, 0.5)])
+	m.dimmer_edited.emit()
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["master|%d" % R.DIMMER, "master|%d" % R.CUES]), 4.0, 8.0)])
+	await process_frame
+	# Hovering: the cursor says what a drag would do.
+	var mid_y := (m.get_global_transform() * m.row_rect(R.CUES).get_center()).y
+	var local_end := Vector2(m._t2x(8.0), m.row_rect(R.CUES).get_center().y)
+	m._set_hover(-1, false, local_end)
+	ok(m.mouse_default_cursor_shape == Control.CURSOR_HSIZE, "over a selection's edge: left-right arrows")
+	m._set_hover(-1, false, Vector2(m._t2x(6.0), local_end.y))
+	ok(m.mouse_default_cursor_shape == Control.CURSOR_MOVE, "inside it: a move cursor")
+	# Drag the end from 8 s to about 9.7 s: snaps to the bar at 10 s; the
+	# nodes on that edge go with it.
+	_sel_drag(tl, _at(tl, m, R.CUES, 8.0), _at(tl, m, R.CUES, 9.7))
+	ok(sel.blocks.size() == 1 and sel.blocks[0]["t0"] == 4.0 and is_equal_approx(sel.blocks[0]["t1"], 10.0),
+		"dragging the end moves it, snapped to the bar (4–%.1f s)" % sel.blocks[0]["t1"])
+	ok(m.dimmer_nodes == PackedVector2Array([Vector2(0, 0.5), Vector2(4, 0.5), Vector2(4, 0), Vector2(10, 0), Vector2(10, 0.5), Vector2(12, 0.5)]),
+		"the dimmer nodes on that edge moved with it (%s)" % str(m.dimmer_nodes))
+	tl.undo()
+	ok(m.dimmer_nodes[3].x == 8.0, "one undo step")
+	tl.redo()
+	# The start can't pass the next node out (none here) nor the end; past
+	# a neighbouring node it stops there.
+	_sel_drag(tl, _at(tl, m, R.CUES, 10.0), _at(tl, m, R.CUES, 18.0))
+	ok(is_equal_approx(sel.blocks[0]["t1"], 12.0) and m.dimmer_nodes[3].x == 12.0,
+		"an edge with nodes stops at the next node along (%.1f)" % sel.blocks[0]["t1"])
+	tl.undo()
+	_sel_drag(tl, _at(tl, m, R.CUES, 4.0), _at(tl, m, R.CUES, 15.0))
+	ok(sel.blocks[0]["t0"] < sel.blocks[0]["t1"] and sel.blocks[0]["t0"] <= 10.0, "the start can't pass the end")
+	tl.undo()
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["master|%d" % R.DIMMER, "master|%d" % R.CUES]), 4.0, 10.0)])
+	await process_frame
+	# Move the selection: grab it at 6 s, drop it at about 13 s — the start
+	# moves 7 s, snapped to the bar: 4 -> 10 s (rounded from 11).
+	var before := m.dimmer_nodes
+	_press(tl, _at(tl, m, R.CUES, 6.0), true)
+	_move(tl, _at(tl, m, R.CUES, 9.0))
+	_move(tl, _at(tl, m, R.CUES, 13.0))
+	ok(is_equal_approx(sel.blocks[0]["t0"], 12.0) and m.dimmer_nodes == before,
+		"while dragging: the selection moves (snapped), the content not yet (%.1f)" % sel.blocks[0]["t0"])
+	_press(tl, _at(tl, m, R.CUES, 13.0), false)
+	ok(is_equal_approx(sel.blocks[0]["t0"], 12.0) and is_equal_approx(sel.blocks[0]["t1"], 18.0), "on release: moved to 12–18 s")
+	ok(m._dimmer_after(12.0) == 0.0 and m.dimmer_at(17.9) == 0.0 and is_equal_approx(m._dimmer_after(18.0), 0.5),
+		"the dark span went with it, overwriting what was there")
+	ok(m._dimmer_after(4.0) == 0.0 and m.dimmer_at(9.0) == 0.0 and m.dimmer_at(3.0) == 0.5, "where it was is cleared (as Delete does)")
+	ok(tl.clipboard().is_empty(), "the clipboard's untouched")
+	tl.undo()
+	ok(m.dimmer_nodes == before, "one undo step puts it all back")
+	# A click inside the selection without dragging: a plain click there.
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["master|%d" % R.CUES]), 4.0, 10.0)])
+	_press(tl, _at(tl, m, R.CUES, 6.5), true)
+	_press(tl, _at(tl, m, R.CUES, 6.5), false)
+	ok(sel.blocks.size() == 1 and is_equal_approx(sel.blocks[0]["t0"], 6.0) and is_equal_approx(sel.blocks[0]["t1"], 8.0),
+		"a click inside the selection selects the bar under it")
+	# Ctrl / Shift inside the selection still build it.
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["master|%d" % R.CUES]), 4.0, 10.0)])
+	_sel_drag(tl, _at(tl, m, R.CUES, 6.5), _at(tl, m, R.CUES, 7.0), true)
+	ok(sel.blocks.size() == 2, "Ctrl+drag inside: adds an area, doesn't move")
+	# A colour segment moves too.
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["p1|%d" % R.COLOUR]), 2.0, 4.0)])
+	tl.apply_static_colour(Color(1, 0, 0))
+	tl.move_selection(sel.blocks.duplicate(true), 4.0)
+	ok(p1.colour_at(3.0) == null and p1.colour_at(7.0) == Color(1, 0, 0), "colour moves with the selection")
+	tl._dirty = false
+	tl.queue_free()
+	await process_frame

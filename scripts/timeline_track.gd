@@ -27,6 +27,9 @@ extends Control
 ## colour at each end — the same for a static colour, two for a gradient;
 ## outside its segments the row sets nothing. Right-click asks the owner
 ## for a context menu (context_requested).
+## A plain left-button drag on a selected area's start / end resizes it,
+## and inside it moves it (the owner does both, through select_drag); a
+## dimmer node still wins over the edge, the edge over the dimmer line.
 ## A left-button drag anywhere else selects an area (select_drag: the
 ## track's owner — MusicTimeline — keeps the TimelineSelection, which can
 ## span rows of several tracks; this track draws its rows' part of it).
@@ -60,6 +63,9 @@ const _LABEL := Color(1, 1, 1, 0.28)
 const _LINE := Color(1, 1, 1, 0.9)
 const _FILL_TOP_ALPHA := 0.5
 const _NODE_RADIUS := 3.0
+## How close (px) the pointer must be to a selected area's start / end to
+## grab it.
+const EDGE_GRAB := 5.0
 const _SELECT_FILL := Color(0.35, 0.6, 1.0, 0.28)
 const _SELECT_EDGE := Color(0.55, 0.78, 1.0, 0.9)
 const _NODE_HOVER_RADIUS := 4.5
@@ -500,7 +506,9 @@ func _gui_input(event: InputEvent) -> void:
 			return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		var at: Vector2 = event.position
-		var special := dimmer_editing and (node_at(at) >= 0 or on_line(at))
+		var plain: bool = not event.ctrl_pressed and not event.shift_pressed
+		var edge := plain and on_selection_edge(at)
+		var special := dimmer_editing and (node_at(at) >= 0 or (on_line(at) and not edge))
 		if not special and row_at(at) >= 0:
 			# Empty timeline: start selecting an area.
 			_selecting = true
@@ -508,6 +516,8 @@ func _gui_input(event: InputEvent) -> void:
 			accept_event()
 			return
 	if not dimmer_editing:
+		if event is InputEventMouseMotion:
+			_set_hover(-1, false, event.position)
 		return
 	if event is InputEventMouseMotion:
 		var mm := event as InputEventMouseMotion
@@ -519,7 +529,7 @@ func _gui_input(event: InputEvent) -> void:
 			_drag_line = move_line(_line_t, mm.position.y - _press.y, _orig)
 			accept_event()
 			return
-		_set_hover(node_at(mm.position), on_line(mm.position))
+		_set_hover(node_at(mm.position), on_line(mm.position), mm.position)
 		return
 	if not event is InputEventMouseButton:
 		return
@@ -583,9 +593,37 @@ func _drag_node(pos: Vector2, lock: bool) -> void:
 		dimmer_nodes = nodes
 
 
-func _set_hover(i: int, line := false) -> void:
-	var shape := Control.CURSOR_POINTING_HAND if i >= 0 \
-		else (Control.CURSOR_VSIZE if line else Control.CURSOR_ARROW)
+## Whether `pos` is on the start / end of a selected area on its row.
+func on_selection_edge(pos: Vector2) -> bool:
+	var row := row_at(pos)
+	if row < 0 or selection == null or not has_meta("key"):
+		return false
+	for span in selection.spans_for(String(get_meta("key")), row):
+		if absf(pos.x - _t2x(span.x)) <= EDGE_GRAB or absf(pos.x - _t2x(span.y)) <= EDGE_GRAB:
+			return true
+	return false
+
+
+## Whether `pos` is inside a selected area on its row.
+func in_selection(pos: Vector2) -> bool:
+	var row := row_at(pos)
+	return row >= 0 and selection != null and has_meta("key") \
+		and selection.has(String(get_meta("key")), row, _x2t(pos.x))
+
+
+## The pointer's cursor: a hand over a node, left-right arrows on a
+## selection's edge, up-down on the dimmer line, a move cursor inside a
+## selection. `pos` (track coordinates) for the selection ones.
+func _set_hover(i: int, line := false, pos := Vector2(-1, -1)) -> void:
+	var shape := Control.CURSOR_ARROW
+	if i >= 0:
+		shape = Control.CURSOR_POINTING_HAND
+	elif pos.x >= 0.0 and on_selection_edge(pos):
+		shape = Control.CURSOR_HSIZE
+	elif line:
+		shape = Control.CURSOR_VSIZE
+	elif pos.x >= 0.0 and in_selection(pos):
+		shape = Control.CURSOR_MOVE
 	mouse_default_cursor_shape = shape
 	if i == _hover:
 		return

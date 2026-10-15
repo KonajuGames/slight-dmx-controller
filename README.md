@@ -219,6 +219,19 @@ technical reference.
   them, up to 100 steps. Each song keeps its own history while the show
   is open (switching songs and back keeps it; loading another show
   clears it); a new edit after undoing drops what could be redone.
+  A plain drag on a selected area's **start or end** moves that edge
+  (snapped like a new selection: to the nearest bar or beat, or freely),
+  and any dimmer node sitting on that edge moves with it — kept between
+  its neighbours, and the edge can't pass the other end. A plain drag
+  **inside** the selection moves the whole selection (its start snapped,
+  kept within the song): while dragging only the selection moves; on
+  release its content is cut from where it was (cleared as Delete does)
+  and put down at the new place, overwriting what's there — one undo
+  step, and the clipboard's left alone. A click inside the selection
+  without dragging is a plain click (selects the bar / beat under it);
+  Ctrl / Shift drags still build the selection. A dimmer node takes
+  precedence over a selection edge, and an edge over the dimmer line.
+  The cursor shows left-right arrows on an edge and a move cursor inside.
   The **Colour** row holds colour segments: a span with a colour at each
   end (one colour for a static colour, two for a gradient), drawn as a
   band; outside its segments the row sets nothing. Delete, cut, copy,
