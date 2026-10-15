@@ -41,7 +41,6 @@ func _run() -> void:
 	_test_apply_vdj_grid()
 	_test_structure_snapping()
 	await _test_structure()
-	await _test_generate_show()
 	await _test_layout()
 	await _test_timeline()
 	await _test_playback()
@@ -595,11 +594,13 @@ func _test_structure() -> void:
 		"unlocked: dragging a border on the zoomed bar moves it a bar along (%.2f -> %.2f)" % [b_end, new_end])
 	lock.pressed.emit()
 
-	# Generate.
-	var asked := []
-	tl.generate_show_requested.connect(func(pth, an): asked.append([pth, an]))
+	# Generate: a show into the timelines (TimelineGenerator's own tests
+	# cover what goes in).
+	tl.master_track().dimmer_nodes = PackedVector2Array()
 	gen.pressed.emit()
-	ok(asked.size() == 1 and asked[0][0] == wav and asked[0][1] == a, "generate asks for a show from this structure")
+	ok(tl.master_track().dimmer_nodes.size() > 2 and not tl.master_track().movement_segments.is_empty(),
+		"generate fills the timelines from this structure")
+	ok(tl.has_unsaved_timelines() and tl.can_undo(), "as an edit that can be undone")
 
 	# Cached per track, edits included.
 	a.sections[0]["label"] = "Bridge"
@@ -607,31 +608,6 @@ func _test_structure() -> void:
 	tl.open(wav, song)
 	ok(tl.structure() == a and a.sections[0]["label"] == "Bridge", "reopening keeps the (edited) structure")
 	tl.queue_free()
-
-
-func _test_generate_show() -> void:
-	print("- generating a light show (main scene)")
-	if not ClassDB.class_exists("SongFeatures"):
-		skip("generating a show (native extension not built)")
-		return
-	var main: Control = load("res://main.tscn").instantiate()
-	root.add_child(main)
-	await process_frame
-	var auto_show: Node = root.get_node("AutoShow")
-	var a := SongAnalysis.new()
-	a.duration = 40.0
-	a.bpm = 120.0
-	a.sections = [
-		{"start": 0.0, "end": 16.25, "label": "Verse", "energy": 0.4, "cluster": 0},
-		{"start": 16.25, "end": 40.0, "label": "Chorus", "energy": 0.9, "cluster": 1},
-	]
-	var wav := _synth_wav("user://_generate.wav")
-	main.music_panel.timeline().generate_show_requested.emit(wav, a)
-	ok(auto_show.song_path == wav, "the song becomes Auto Show's")
-	ok(auto_show.analysis == a, "with the timeline's structure as its analysis")
-	ok(auto_show.timeline.size() > 0 and auto_show.looks.size() == 2, "a show built from it (%d events, %d looks)" % [auto_show.timeline.size(), auto_show.looks.size()])
-	ok("Auto Show built" in main.status_label.text, "status says so: %s" % main.status_label.text)
-	main.queue_free()
 
 
 func _test_layout() -> void:

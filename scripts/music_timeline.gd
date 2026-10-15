@@ -56,11 +56,9 @@ extends VBoxContainer
 ## VirtualDJ's beat grid swapped in and the section borders snapped to its
 ## bars when it knows the track). Beside it, two small buttons: lock /
 ## unlock editing the structure (drag a border, right-click a section),
-## and generate an Auto Show light show from it (generate_show_requested).
+## and generate a light show into the timelines from it (generate_show(),
+## TimelineGenerator).
 
-## Ask the shell to build an Auto Show light show for `path` from
-## `analysis` (its possibly-edited structure).
-signal generate_show_requested(path: String, analysis: SongAnalysis)
 ## A song's timelines were saved to the store (flush()).
 signal timelines_saved(path: String)
 ## The show's timelines folder changed (set_timeline_store()).
@@ -267,7 +265,7 @@ func _ready() -> void:
 	buttons.add_child(_lock_btn)
 	_gen_btn = TransportButton.new()
 	_gen_btn.glyph = TransportButton.Glyph.GENERATE
-	_gen_btn.tooltip_text = "Generate an Auto Show light show from this structure"
+	_gen_btn.tooltip_text = "Generate a light show into the timelines from this song's structure, tempo and energy (replaces them; Ctrl+Z undoes)"
 	_gen_btn.pressed.connect(generate_show)
 	buttons.add_child(_gen_btn)
 	for b in [_reset_btn, _play_btn, _lock_btn, _gen_btn]:
@@ -2318,9 +2316,37 @@ func set_structure_locked(locked: bool) -> void:
 
 
 ## Ask for an Auto Show light show built from the current structure.
-func generate_show() -> void:
-	if _structure.analysis != null:
-		generate_show_requested.emit(_path, _structure.analysis)
+## Generate a light show into this song's timelines (the Generate button):
+## from its structure (sections and their energy), its beat grid / tempo,
+## the fixtures' rows and the named positions (TimelineGenerator). Replaces
+## what the timelines had, as one undo step. Returns whether it ran.
+func generate_show() -> bool:
+	var a: SongAnalysis = _structure.analysis
+	if a == null or _wave.analysis == null or _path == "":
+		return false
+	var beats := _wave.grid_beats
+	if beats.is_empty():
+		beats = a.beat_times
+	if beats.is_empty():
+		beats = TimelineGenerator._even_beats(a.bpm, _wave.duration())
+	var tracks: Array = []
+	for tr in [_master] + Array(_fixture_tracks):
+		tracks.append({"key": String(tr.get_meta("key")), "target": tr.target, "rows": tr.rows})
+	var ids: Array = []
+	if positions != null:
+		for pos in positions.positions:
+			ids.append(String(pos["id"]))
+	var show := TimelineGenerator.generate(a.sections, beats, _wave.beats_per_bar, _wave.duration(),
+		tracks, ids, _path.get_file())
+	for tr in [_master] + Array(_fixture_tracks):
+		var c: Dictionary = show.get(String(tr.get_meta("key")), {})
+		tr.dimmer_nodes = c.get("dimmer", PackedVector2Array())
+		tr.colour_segments = c.get("colour", [])
+		tr.strobe_segments = c.get("strobe", [])
+		tr.position_segments = c.get("position", [])
+		tr.movement_segments = c.get("movement", [])
+	_mark_dirty()
+	return true
 
 
 func _update_structure_buttons() -> void:

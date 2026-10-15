@@ -159,6 +159,22 @@ technical reference.
   dragged). Unselecting it, opening another position, or leaving the
   editor (another folder, another view) puts it back exactly as it was,
   pan / tilt included, and a show saved meanwhile keeps its real levels.
+- `timeline_generator.gd` — the `TimelineGenerator` class: the Generate
+  button's show, from the song's structure (its sections and their
+  energy, rescaled across the song so its quietest part is low and its
+  loudest high), its tempo (beat grid, else BPM) and the fixtures' rows.
+  The master's dimmer follows the energy section by section (25–100 %,
+  a beat's fade between sections, faded in at the start and out at the
+  end); fixtures pulse on every beat in the loudest sections — chasing
+  across them — and every bar in the upper-middle ones, following the
+  master elsewhere. Colours come from a palette per kind of section (every
+  chorus alike, shifted per song): the master's main colour, every other
+  fixture's accent, a multi-head fixture's heads blending between them,
+  the loudest sections sweeping main → accent. A strobe builds (medium,
+  then fast) over the two bars before a big rise in energy; the named
+  positions take a section each in turn; and the master's movement goes
+  from a small slow tilt sweep (quiet) through a circle to a large fast
+  figure 8 (loudest).
 - `dj_performer.gd` — the `DjPerformer` class: DJ Perform Mode's engine.
   Runs an `Os2lServer` (subscribed to four decks), follows each deck's
   song, play state, volume fader and position, loads a new song's
@@ -192,9 +208,8 @@ technical reference.
   track opens, on VirtualDJ's beat grid with section borders snapped to
   its bars), with two small buttons beside it: a padlock to unlock
   editing it (drag a border, right-click a section — locked by default),
-  and generate, which makes the track Auto Show's song and builds a light
-  show from the (edited) structure, like the Auto Show tab's Build Light
-  Show; run it with the Auto Show run mode.
+  and **Generate**, which builds a light show into the song's timelines
+  (`timeline_generator.gd`) — replacing what they had, as one undo step.
   The waveform is 90 px tall.
 - `timeline_track.gd` — the `TimelineTrack` class: a lighting timeline
   in the track timeline, for the master (all fixtures), a fixture, or one
