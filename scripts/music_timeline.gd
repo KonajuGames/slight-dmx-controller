@@ -1870,6 +1870,19 @@ func fixture_tracks() -> Array[TimelineTrack]:
 	return _fixture_tracks
 
 
+## What the timelines hold now, edits included, as DjPerformer.song_output()
+## takes it: track key -> {dimmer, colour, strobe, position, movement}.
+## Empty with no song open.
+func live_tracks() -> Dictionary:
+	var out := {}
+	if _path == "":
+		return out
+	for tr in [_master] + Array(_fixture_tracks):
+		out[String(tr.get_meta("key"))] = {"dimmer": tr.dimmer_nodes, "colour": tr.colour_segments,
+			"strobe": tr.strobe_segments, "position": tr.position_segments, "movement": tr.movement_segments}
+	return out
+
+
 func fixture_scroll() -> ScrollContainer:
 	return _fixture_scroll
 

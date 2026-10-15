@@ -118,6 +118,8 @@ func _ready() -> void:
 	music_panel.timeline().timeline_store_changed.connect(func():
 		if performer.is_active():
 			performer.reload_all())
+	# DJ Edit Mode: the open song's timelines go live while it plays.
+	ArtNet.layer_providers.append(_edit_playback_layer)
 	perform_panel = DjPerformPanel.new()
 	perform_panel.performer = performer
 	perform_panel.visible = false
@@ -739,6 +741,24 @@ func _perform_fixtures() -> Array:
 			out.append({"uid": String(fx["uid"]), "u": ui, "start": int(fx["start"]),
 				"profile": fx["profile"], "mode": int(fx.get("mode", 0))})
 	return out
+
+
+## The DMX layer for ArtNet.tick() while a song plays in DJ Edit Mode: its
+## timelines (edits included, as they stand) at the playhead, the way DJ
+## Perform Mode would play them. Nothing while paused or stopped, and
+## nothing while DJ Perform Mode is on — the live decks own the rig then.
+func _edit_playback_layer(n: int) -> Array:
+	var tl := music_panel.timeline()
+	if not tl.is_playing() or performer.is_active():
+		var empty: Array = []
+		for i in range(n):
+			empty.append({})
+		return empty
+	var bases: Array = []
+	for i in range(n):
+		var u := ArtNet.get_universe(i)
+		bases.append(u.dmx_data if u != null else PackedByteArray())
+	return DjPerformer.song_output(tl.live_tracks(), tl.playback_position(), _perform_fixtures(), bases, n, positions)
 
 
 ## Every patched fixture, universe by universe, for the DJ Edit Mode

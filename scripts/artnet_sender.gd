@@ -98,16 +98,17 @@ func set_universe_count(n: int) -> void:
 
 
 ## Recompute every universe's `output` (operator base -> Auto Show section
-## layer -> layer_providers (DJ Perform Mode) -> effect/chase layer ->
-## grand master). When `transmit` is true,
-## also put it on the wire. Call this every refresh tick — computing
+## layer -> layer_providers (DJ Perform Mode, DJ Edit Mode playback) ->
+## effect/chase layer -> grand master). When `transmit` is true, also put
+## it on the wire. Call this every refresh tick — computing
 ## always keeps the 3D visualizer live even while "Sending" is off.
 func tick(transmit: bool = true) -> void:
 	var bases: Array = []
 	for u in universes:
 		bases.append(u.dmx_data)
 	var layers: Array = Fx.compose(universes.size(), bases)
-	# Other playback layers (DJ Perform Mode's song timelines), in order:
+	# Other playback layers (song timelines: DJ Perform Mode, DJ Edit Mode
+	# playback), in order:
 	# under the chase / effect layer, over Auto Show.
 	for provider in layer_providers:
 		if not provider.is_valid():

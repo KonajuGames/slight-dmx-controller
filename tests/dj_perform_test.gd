@@ -37,6 +37,7 @@ func _run() -> void:
 	_test_mix()
 	_test_report_time()
 	await _test_performer()
+	await _test_edit_playback()
 	_clean()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
@@ -366,4 +367,59 @@ func _test_performer() -> void:
 	panel.queue_free()
 	perf.queue_free()
 	u0.dmx_data = keep
+	await process_frame
+
+
+## A silent 6 s WAV.
+func _silent_wav(path: String) -> String:
+	var rate := 22050
+	var data := PackedByteArray()
+	data.resize(rate * 6 * 2)
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	f.store_buffer("RIFF".to_ascii_buffer())
+	f.store_32(36 + data.size())
+	f.store_buffer("WAVEfmt ".to_ascii_buffer())
+	f.store_32(16)
+	f.store_16(1)
+	f.store_16(1)
+	f.store_32(rate)
+	f.store_32(rate * 2)
+	f.store_16(2)
+	f.store_16(16)
+	f.store_buffer("data".to_ascii_buffer())
+	f.store_32(data.size())
+	f.store_buffer(data)
+	f.close()
+	return ProjectSettings.globalize_path(path)
+
+
+func _test_edit_playback() -> void:
+	print("- DJ Edit Mode playback goes live")
+	DirAccess.make_dir_recursive_absolute(DIR)
+	var main: Control = load("res://main.tscn").instantiate()
+	main.last_show_store = DIR + "/last.json"
+	root.add_child(main)
+	await process_frame
+	# A mover at channel 1: pan, tilt, dimmer.
+	main._panels[0].add_patched(_profile("mover", ["PAN", "TILT", "DIMMER"]), 0, 0, "Spot", Vector3.ZERO, Vector3.ZERO)
+	var tl = main.music_panel.timeline()
+	tl.refresh_fixtures()
+	tl.open(_silent_wav(DIR + "/edit.wav"))
+	var t := Time.get_ticks_msec()
+	while tl.is_loading() and Time.get_ticks_msec() - t < 20000:
+		await process_frame
+	ok(tl.can_play(), "a song open in DJ Edit Mode")
+	tl.master_track().dimmer_nodes = PackedVector2Array([Vector2(0, 0.6), Vector2(6, 0.6)])
+	ok(main._edit_playback_layer(1)[0].is_empty(), "stopped: nothing goes out")
+	tl.play()
+	await create_timer(0.2).timeout
+	var l: Dictionary = main._edit_playback_layer(1)[0]
+	ok(tl.is_playing() and l.get(2) == int(round(0.6 * 255)), "playing: the timelines at the playhead (dimmer %s)" % str(l.get(2)))
+	tl.master_track().dimmer_nodes = PackedVector2Array([Vector2(0, 0.2), Vector2(6, 0.2)])
+	l = main._edit_playback_layer(1)[0]
+	ok(l.get(2) == int(round(0.2 * 255)), "edits show straight away (dimmer %s)" % str(l.get(2)))
+	ok(root.get_node("ArtNet").layer_providers.has(main._edit_playback_layer), "a layer of the DMX output")
+	tl.pause()
+	ok(main._edit_playback_layer(1)[0].is_empty(), "paused: nothing goes out (the console has the rig)")
+	main.queue_free()
 	await process_frame
