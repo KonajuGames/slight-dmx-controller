@@ -213,6 +213,7 @@ func _ready() -> void:
 	_master.dimmer_edited.connect(_mark_dirty)
 	_master.selection = _selection
 	_master.select_drag.connect(_on_select_drag)
+	_master.playhead_drag.connect(_on_playhead_drag)
 	_master.context_requested.connect(_on_context)
 	_master.positions = positions
 	wave_col.add_child(_master)
@@ -474,6 +475,17 @@ func end_scrub(t: float) -> void:
 	seek(t)
 
 
+## The playhead line dragged on a timeline: scrub, as on the ruler.
+func _on_playhead_drag(_track: TimelineTrack, phase: int, t: float) -> void:
+	match phase:
+		TimelineTrack.SELECT_PRESS:
+			begin_scrub(t)
+		TimelineTrack.SELECT_MOVE:
+			scrub_to(t)
+		TimelineTrack.SELECT_RELEASE:
+			end_scrub(t)
+
+
 func is_scrubbing() -> bool:
 	return _scrubbing
 
@@ -577,6 +589,9 @@ func _update_cursor() -> void:
 			w.song_pos = t
 		w.queue_redraw()
 	_ruler.queue_redraw()
+	for tr in [_master] + Array(_fixture_tracks):
+		if tr != null:
+			tr.update_playhead()
 
 
 # ------------------------------------------------------ AREA SELECTION --
@@ -1949,6 +1964,7 @@ func _rebuild_fixture_tracks() -> void:
 			tr.dimmer_edited.connect(_mark_dirty)
 			tr.selection = _selection
 			tr.select_drag.connect(_on_select_drag)
+			tr.playhead_drag.connect(_on_playhead_drag)
 			tr.context_requested.connect(_on_context)
 			row.add_child(tr)
 			var plate := TimelineTrack.NamePlate.new()

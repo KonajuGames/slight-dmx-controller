@@ -220,7 +220,10 @@ technical reference.
   transparent at the bottom to 50 % at the top. The master track (every
   row) sits above the song structure and follows the waveform's zoom,
   with the waveform's beat and (bolder) bar lines drawn behind its rows —
-  thin and fainter than on the waveform, so they don't compete with the content;
+  thin and fainter than on the waveform, so they don't compete with the content,
+  and the playhead line running down every track (on a layer of its own,
+  so it moves without redrawing the rows; drag it with the left button
+  to scrub, as on the ruler — a dimmer node under the pointer still wins);
   beside each track, a name plate shows its target's name vertically
   (in a smaller font if that's what fits). The space above the master is
   a vertically scrolling panel with a timeline for every patched fixture

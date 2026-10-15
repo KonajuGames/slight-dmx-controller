@@ -40,6 +40,9 @@ extends Control
 ## A plain left-button drag on a selected area's start / end resizes it,
 ## and inside it moves it (the owner does both, through select_drag); a
 ## dimmer node still wins over the edge, the edge over the dimmer line.
+## A plain left-button press on the playhead line (within PLAYHEAD_GRAB
+## px) drags it (playhead_drag: the owner scrubs) — over everything but a
+## dimmer node.
 ## A left-button drag anywhere else selects an area (select_drag: the
 ## track's owner — MusicTimeline — keeps the TimelineSelection, which can
 ## span rows of several tracks; this track draws its rows' part of it).
@@ -52,6 +55,9 @@ signal dimmer_edited
 ## press.
 signal select_drag(track: TimelineTrack, phase: int, global_pos: Vector2, ctrl: bool, shift: bool)
 enum { SELECT_PRESS, SELECT_MOVE, SELECT_RELEASE }
+## The playhead line dragged: `phase` SELECT_PRESS, _MOVE or _RELEASE, to
+## `time` seconds.
+signal playhead_drag(track: TimelineTrack, phase: int, time: float)
 ## A right-click on `row` (not a Ctrl+right-click on a dimmer node, which
 ## removes it), at `global_pos` / `time` seconds.
 signal context_requested(track: TimelineTrack, row: int, global_pos: Vector2, time: float)
@@ -81,6 +87,8 @@ const _STROBE := Color(1, 1, 1, 0.9)
 ## How close (px) the pointer must be to a selected area's start / end to
 ## grab it.
 const EDGE_GRAB := 5.0
+## How near the playhead line (px) a press picks it up.
+const PLAYHEAD_GRAB := 4.0
 const _SELECT_FILL := Color(0.35, 0.6, 1.0, 0.28)
 const _SELECT_EDGE := Color(0.55, 0.78, 1.0, 0.9)
 const _NODE_HOVER_RADIUS := 4.5
@@ -167,6 +175,7 @@ var selection: TimelineSelection:
 			selection.changed.connect(queue_redraw)
 		queue_redraw()
 var _selecting := false
+var _dragging_playhead := false
 
 var _hover := -1      # node index under the pointer, or -1
 var _drag := -1       # node index being dragged, or -1
@@ -206,6 +215,30 @@ static func rows_for_roles(roles: Array) -> Array:
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_PASS
 	_fit_height()
+	_playhead = Playhead.new()
+	_playhead.track = self
+	_playhead.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_playhead.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_playhead)
+
+
+var _playhead: Playhead
+
+
+## Redraw just the playhead line (it moves every frame while playing; the
+## rows themselves needn't be redrawn for it).
+func update_playhead() -> void:
+	if _playhead != null:
+		_playhead.queue_redraw()
+
+
+## Where the playhead line is drawn across the rows, x in the track; -1
+## when there's none (no song playable, or out of view).
+func playhead_x() -> float:
+	if wave == null or wave.analysis == null or not wave.show_cursor:
+		return -1.0
+	var x := _t2x(wave.song_pos)
+	return x if x >= 0.0 and x <= size.x else -1.0
 
 
 func has_row(r: Row) -> bool:
@@ -785,6 +818,16 @@ func _replace_tagged(spans: Array, t0: float, t1: float, segments: Array, tag: S
 
 
 func _gui_input(event: InputEvent) -> void:
+	# The playhead being dragged: follow it to the release.
+	if _dragging_playhead:
+		if event is InputEventMouseMotion:
+			playhead_drag.emit(self, SELECT_MOVE, _x2t(event.position.x))
+			accept_event()
+		elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+			_dragging_playhead = false
+			playhead_drag.emit(self, SELECT_RELEASE, _x2t(event.position.x))
+			accept_event()
+		return
 	# An area selection under way: follow it to the release.
 	if _selecting:
 		if event is InputEventMouseMotion:
@@ -806,6 +849,11 @@ func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		var at: Vector2 = event.position
 		var plain: bool = not event.ctrl_pressed and not event.shift_pressed
+		if plain and on_playhead(at) and not (dimmer_editing and node_at(at) >= 0):
+			_dragging_playhead = true
+			playhead_drag.emit(self, SELECT_PRESS, _x2t(at.x))
+			accept_event()
+			return
 		var edge := plain and on_selection_edge(at)
 		var special := dimmer_editing and (node_at(at) >= 0 or (on_line(at) and not edge))
 		if not special and row_at(at) >= 0:
@@ -892,6 +940,12 @@ func _drag_node(pos: Vector2, lock: bool) -> void:
 		dimmer_nodes = nodes
 
 
+## Whether `pos` is on the playhead line, on a row.
+func on_playhead(pos: Vector2) -> bool:
+	var x := playhead_x()
+	return x >= 0.0 and absf(pos.x - x) <= PLAYHEAD_GRAB and row_at(pos) >= 0
+
+
 ## Whether `pos` is on the start / end of a selected area on its row.
 func on_selection_edge(pos: Vector2) -> bool:
 	var row := row_at(pos)
@@ -910,14 +964,15 @@ func in_selection(pos: Vector2) -> bool:
 		and selection.has(String(get_meta("key")), row, _x2t(pos.x))
 
 
-## The pointer's cursor: a hand over a node, left-right arrows on a
-## selection's edge, up-down on the dimmer line, a move cursor inside a
-## selection. `pos` (track coordinates) for the selection ones.
+## The pointer's cursor: a hand over a node, left-right arrows on the
+## playhead or a selection's edge, up-down on the dimmer line, a move
+## cursor inside a selection. `pos` (track coordinates) for the playhead
+## and selection ones.
 func _set_hover(i: int, line := false, pos := Vector2(-1, -1)) -> void:
 	var shape := Control.CURSOR_ARROW
 	if i >= 0:
 		shape = Control.CURSOR_POINTING_HAND
-	elif pos.x >= 0.0 and on_selection_edge(pos):
+	elif pos.x >= 0.0 and (on_playhead(pos) or on_selection_edge(pos)):
 		shape = Control.CURSOR_HSIZE
 	elif line:
 		shape = Control.CURSOR_VSIZE
@@ -980,6 +1035,7 @@ func dimmer_polyline() -> PackedVector2Array:
 
 
 func _draw() -> void:
+	update_playhead()               # the view may have moved under it
 	var font := get_theme_default_font()
 	var i := 0
 	for row in rows:
@@ -1317,3 +1373,16 @@ class NamePlate:
 			draw_string(font, Vector2(-w * 0.5, y), line, HORIZONTAL_ALIGNMENT_LEFT, room, fs, TEXT)
 			y += line_h
 		draw_set_transform(Vector2.ZERO)
+
+
+## The playhead line over a track's rows (as on the waveform): its own
+## layer, so moving it doesn't redraw the rows beneath.
+class Playhead:
+	extends Control
+
+	var track: TimelineTrack
+
+	func _draw() -> void:
+		var x := track.playhead_x()
+		if x >= 0.0:
+			draw_line(Vector2(x, 0), Vector2(x, size.y), track.wave.cursor_color, 2.0)

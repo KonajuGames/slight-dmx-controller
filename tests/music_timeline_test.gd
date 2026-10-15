@@ -381,6 +381,51 @@ func _test_ruler() -> void:
 	_ruler_event(r, w.time_to_x(3.0), true)
 	_ruler_event(r, w.time_to_x(3.0), false)
 	ok(absf(tl.playback_position() - 3.0) < 0.01 and absf(w.song_pos - 3.0) < 0.01, "click on the ruler sets the playhead (%.2f)" % tl.playback_position())
+	var mt := tl.master_track()
+	ok(mt._playhead != null and absf(mt.playhead_x() - mt._t2x(3.0)) < 0.5 and mt.playhead_x() > 0.0,
+		"the playhead runs down the timelines too (x %.1f)" % mt.playhead_x())
+	tl.fixtures_provider = func(): return [{"key": "par", "name": "Par", "mode": 0,
+		"profile": FixtureProfile.new("p", "P", [{"name": "Dimmer", "role": "DIMMER"}])}]
+	tl.refresh_fixtures()
+	await process_frame
+	var ft: Array = tl.fixture_tracks()
+	ok(ft.size() == 1 and absf(ft[0].playhead_x() - ft[0]._t2x(3.0)) < 0.5, "...on the fixtures' timelines as well")
+	tl.fixtures_provider = Callable()
+	tl.refresh_fixtures()
+	# Dragging the line on a timeline scrubs, as on the ruler.
+	var cy := mt.row_rect(TimelineTrack.Row.COLOUR).get_center().y
+	var on_line := Vector2(mt.playhead_x() + 2.0, cy)
+	var mv := InputEventMouseMotion.new()
+	mv.position = on_line
+	mt._gui_input(mv)
+	ok(mt.mouse_default_cursor_shape == Control.CURSOR_HSIZE, "over the playhead line: left-right arrows")
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	press.position = on_line
+	mt._gui_input(press)
+	mv = InputEventMouseMotion.new()
+	mv.position = Vector2(mt._t2x(5.0), cy)
+	mt._gui_input(mv)
+	ok(tl.is_scrubbing() and absf(w.song_pos - 5.0) < 0.01 and absf(mt.playhead_x() - mt._t2x(5.0)) < 0.5,
+		"dragging it on a timeline moves the playhead (%.2f)" % w.song_pos)
+	var rel := InputEventMouseButton.new()
+	rel.button_index = MOUSE_BUTTON_LEFT
+	rel.pressed = false
+	rel.position = mv.position
+	mt._gui_input(rel)
+	ok(not tl.is_scrubbing() and absf(tl.playback_position() - 5.0) < 0.01 and tl.selection().is_empty(),
+		"released: the playhead's there, and nothing was selected")
+	press.position = Vector2(mt._t2x(5.0) + 20.0, cy)
+	mt._gui_input(press)
+	ok(mt._selecting and not tl.is_scrubbing(), "a press beside the line still selects")
+	rel.position = Vector2(mt._t2x(7.0), cy)
+	mt._gui_input(rel)
+	tl.selection().clear()
+	tl.seek(3.0)
+	w.set_view(20.0, 10.0)
+	ok(mt.playhead_x() < 0.0, "not drawn when it's out of view")
+	w.set_view(0.0, 10.0)
 	tl.play()
 	await _wait(300)
 	var playing_at := tl.playback_position()
