@@ -1281,7 +1281,7 @@ func set_highlight(fixture_id: int, on: bool) -> void:
 		var targets := _flash_targets(chans)
 		for k in range(chans.size()):
 			if String(chans[k]["role"]) == "STROBE":
-				targets[k] = ShowGenerator._pick_shutter_value(chans[k], false)
+				targets[k] = open_shutter_value(chans[k])
 		var saved := {"vdim": sender.virtual_dimmer_level(fixture_id)}
 		for k in range(chans.size()):
 			saved[start + k] = sender.get_channel(start + k)
@@ -1367,3 +1367,25 @@ func load_look(buf: PackedByteArray) -> void:
 		var a = fixture.get("_apply", null)
 		if a is Callable and (a as Callable).is_valid():
 			a.call(buf)
+
+
+## An open (not strobing, not closed) value for a STROBE / shutter channel:
+## the middle of its "open" range, else of its first range that isn't
+## closed / blackout / strobing, else its declared default, else 255 —
+## never a bare 0, the value real shutters most often treat as closed.
+static func open_shutter_value(ch: Dictionary) -> int:
+	var fallback := -1
+	for r in ch.get("ranges", []):
+		var lbl := String(r.get("label", "")).to_lower()
+		if "clos" in lbl or "black" in lbl or "strob" in lbl or "puls" in lbl:
+			continue
+		var mid := (int(r["lo"]) + int(r["hi"])) / 2
+		if "open" in lbl:
+			return mid
+		if fallback == -1:
+			fallback = mid
+	if fallback != -1:
+		return fallback
+	if ch.get("default", null) != null:
+		return int(ch["default"])
+	return 255

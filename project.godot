@@ -34,7 +34,6 @@ UsbDmx="*res://scripts/usb_dmx_bridge.gd"
 MidiOut="*res://scripts/midi_out_bridge.gd"
 Sound="*res://scripts/sound_engine.gd"
 Fx="*res://scripts/effects_engine.gd"
-AutoShow="*res://scripts/auto_show.gd"
 Triggers="*res://scripts/triggers_engine.gd"
 Library="*res://scripts/fixture_library.gd"
 

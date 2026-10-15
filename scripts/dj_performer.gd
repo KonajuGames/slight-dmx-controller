@@ -16,7 +16,7 @@ extends Node
 ## merged by mix(): HTP (highest takes precedence) for colour, dimmer,
 ## strobe and everything else, an average for movement (pan / tilt). That
 ## goes into the DMX frame as an ArtNet layer (layer()) — under chases and
-## effects, over Auto Show.
+## effects.
 
 ## Something the panel shows changed (connection, a deck's song, state or
 ## timelines).

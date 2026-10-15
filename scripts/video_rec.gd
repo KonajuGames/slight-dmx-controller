@@ -8,7 +8,7 @@ extends RefCounted
 ##
 ## The audio track is whatever's actually audible: an `AudioEffectCapture`
 ## on the Master bus (mixed there since Godot has no "sum everything"
-## bus tap otherwise) picks up AutoShow's music, and `Sound`'s own capture
+## bus tap otherwise) picks up the music played (DJ Edit Mode), and `Sound`'s own capture
 ## (see sound_engine.gd) picks up the mic/line-in — deliberately muted out
 ## of Master so it doesn't feed back through speakers, so it needs its own
 ## tap. `pull_audio()` mixes the two and feeds the recorder every frame;
@@ -123,7 +123,7 @@ func _stop_audio() -> void:
 	_master_cap = null
 
 
-## Mixes the Master-bus tap (AutoShow playback) with Sound's mic/line-in
+## Mixes the Master-bus tap (music playback) with Sound's mic/line-in
 ## tap and feeds the result to the encoder. Call every frame while
 ## recording (not just on the FPS-throttled cadence push() uses) so
 ## neither AudioEffectCapture's buffer fills up and starts dropping audio.

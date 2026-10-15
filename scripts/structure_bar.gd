@@ -14,8 +14,8 @@ extends Control
 ## - Right-click a segment for a menu to change its type, split it at the
 ##   click point (snapped to the nearest bar), or delete it — an adjacent
 ##   segment expands to fill the gap.
-## Edits mutate `analysis.sections` in place (shared with AutoShow/
-## ShowGenerator) and emit `structure_edited` so listeners can refresh.
+## Edits mutate `analysis.sections` in place (shared with the timeline's
+## Generate) and emit `structure_edited` so listeners can refresh.
 ##
 ## `editable` = false locks that editing (clicks just seek). It can also
 ## show only part of the song — `view_start` / `view_len` seconds, set by

@@ -48,7 +48,6 @@ func _ready() -> void:
 	set_process(true)
 	_open_midi()
 	Sound.beat.connect(_on_ext_beat)
-	AutoShow.beat.connect(_on_ext_beat)
 
 
 func _open_midi() -> void:
@@ -172,7 +171,7 @@ func refresh_feedback() -> void:
 	_fb_refresh = 0.0
 
 
-## A beat (live audio in Sound Reactive, the grid in Auto Show): flash
+## A beat (live audio in Sound Reactive): flash
 ## every Beat-watch feedback pad.
 func _on_ext_beat() -> void:
 	if not feedback_enabled:

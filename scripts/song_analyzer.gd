@@ -545,7 +545,7 @@ func _stft() -> Dictionary:
 	}
 
 
-## Whole-song waveform envelope for the Auto Show wave view: WAVE_COLS
+## Whole-song waveform envelope for a coarse wave view: WAVE_COLS
 ## columns spanning the track, each with a loudness peak and a bass / mid /
 ## air balance. Fed straight from the STFT frames (capture time maps
 ## linearly to song time).

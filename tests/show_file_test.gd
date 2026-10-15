@@ -145,6 +145,35 @@ func _test_round_trip() -> void:
 	err = main.load_show_from(bad)
 	ok(err == "" and main._panels[0].patched_fixtures.size() == 2 and main._panels[0].sender.get_channel(0) == 0,
 		"an older show file loads (no live levels)")
+	# One saved in the old Auto Show run mode (gone): opens in Cue Mode.
+	doc["run_mode"] = 2
+	doc["auto_show"] = {"song": "C:/old.mp3"}
+	f = FileAccess.open(bad, FileAccess.WRITE)
+	f.store_string(JSON.stringify(doc))
+	f.close()
+	err = main.load_show_from(bad)
+	ok(err == "" and main.run_mode == 0 and main.run_mode_option.selected == 0,
+		"a show saved in the old Auto Show run mode opens in Cue Mode")
+	var titles: Array = []
+	for tc in main.find_children("*", "TabContainer", true, false):
+		if tc.get_tab_count() > 0 and tc.get_tab_title(0) == "Cues":
+			for i in range(tc.get_tab_count()):
+				titles.append(tc.get_tab_title(i))
+	ok(titles == ["Cues", "Chases", "Effects", "Sound", "Groups"], "no Auto Show tab (%s)" % str(titles))
+	ok(main.run_mode_option.item_count == 2, "run modes: Cue Mode, Sound Reactive")
+	# Triggers' feedback: saved by name now; the old numbers still read.
+	var tr := Trigger.new()
+	tr.fb_enabled = true
+	tr.fb_watch = Trigger.FB_MODE_SOUND
+	var td := tr.to_dict()
+	ok(td.get("fb_watch_key") == "mode_sound" and Trigger.from_dict(td).fb_watch == Trigger.FB_MODE_SOUND,
+		"a trigger's feedback saves and loads by name")
+	var legacy := Trigger.from_dict({"fb_enabled": true, "fb_watch": 6})
+	ok(legacy.fb_watch == Trigger.FB_MODE_SOUND and legacy.fb_enabled, "an old show's number: Sound Reactive (6) still means it")
+	legacy = Trigger.from_dict({"fb_enabled": true, "fb_watch": 4})
+	ok(legacy.fb_watch == Trigger.FB_ACTION and not legacy.fb_enabled, "an old Auto Show feedback (4): turned off")
+	legacy = Trigger.from_dict({"fb_enabled": true, "fb_watch": 3})
+	ok(legacy.fb_watch == Trigger.FB_FX_ANY and legacy.fb_enabled, "...the ones before it unchanged")
 
 	ok(main.remembered_show() == bad, "the last loaded file is remembered")
 	# Ctrl+S saves to the current show file, in either view.

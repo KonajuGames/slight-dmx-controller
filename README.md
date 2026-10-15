@@ -8,7 +8,7 @@ both plain UDP, no plugin needed — or, with the optional `addons/native`
 GDExtension built, straight to a **USB DMX interface** (Enttec, Open DMX,
 uDMX). That same extension bundles four more optional features that
 speed things up or fill in gaps locally: recording the 3D view to MP4,
-decoding and analysing a music file for the Auto Show in C++ instead of
+decoding and analysing a music file for DJ Edit Mode in C++ instead of
 playing it 4× through a capture bus, sending MIDI feedback straight to
 a real port instead of through a Python bridge script, and advertising
 the OS2L server over mDNS so VirtualDJ finds it on its own. It's one shared
@@ -51,9 +51,8 @@ technical reference.
   Sound tab.
 - `structure_bar.gd` / `wave_heatmap.gd` — the analysed-song structure
   strip and a whole-song colour-coded waveform (loudness height, spectral
-  hue), stacked on the Auto Show tab. The waveform can also show part of
-  a song and zoom with the mouse wheel (DJ Edit Mode's timeline
-  uses that). The structure strip is editable:
+  hue), in DJ Edit Mode's timeline, where the waveform shows part of
+  a song and zooms with the mouse wheel. The structure strip is editable:
   drag a section border (snapped to the nearest bar — or beat, or not at
   all: right-click > Snapping) to fix a boundary the analyser placed
   slightly wrong, or right-click a section to relabel, split, or delete
@@ -75,11 +74,6 @@ technical reference.
 - `tools/midi_bridge.py` — forwards sLight's UDP MIDI-feedback packets to
   a real MIDI port. Only needed when `addons/native` isn't built —
   Godot has no built-in MIDI output of its own.
-- `auto_show.gd` — the `AutoShow` autoload: the Auto Show run mode — plays
-  a music file and drives a crossfading section layer (plus the generated
-  chases / effects) from a timeline locked to playback position;
-  `ArtNet.tick()` composites it over the operator's cues. M4A / AAC songs
-  are decoded to PCM on a worker thread first (native extension).
 - `song_analyzer.gd` / `song_detect.gd` / `song_analysis.gd` / `fft.gd` —
   analyses a music file (STFT chroma + timbre, a dynamic-programming beat
   tracker, self-similarity segmentation with verse/chorus repetition
@@ -90,22 +84,11 @@ technical reference.
   waveform front-end runs in C++ on a worker thread — and can read M4A /
   AAC through the OS's decoder (Windows, macOS); otherwise the track
   is played 4× through a muted capture bus first.
-- `show_generator.gd` / `auto_show_panel.gd` — turns an analysis + the
-  patch into a per-kind section-look layer, three chases, six pan/tilt
-  effects and a timeline, and the Auto Show tab. Every section label has
-  a pool of several recipes that cycle by occurrence, so repeats of the
-  same label (multiple choruses, multiple build/drop cycles) don't
-  visibly loop the same look. Recipe colours are then hue-rotated by the
-  song's detected musical key (minor keys a touch less saturated/bright)
-  so the palette follows the song — white "impact" flashes (Build/Drop)
-  are left untouched since they're about brightness, not mood. Colour-
-  wheel fixtures get their nearest matching wheel slot instead of plain
-  RGB, and a shutter channel is opened rather than defaulted closed.
 - `main.tscn` — a single root `Control` node with the GUI script attached.
 - `dmx_controller.gd` — the shell: a top bar (view selector, grand
   master, run mode, Sending, add/remove universe, whole-show + preset
   save/load, MIDI/OSC triggers) above either the console — a split view
-  of playback tabs (Cues / Chases / Effects / Sound / Auto Show / Groups)
+  of playback tabs (Cues / Chases / Effects / Sound / Groups)
   on the left, one universe tab each on the right — or DJ Edit Mode or
   DJ Perform Mode; plus the shared fixture-profile list and the profile
   new/edit/delete flow.
@@ -408,7 +391,7 @@ technical reference.
   `.mp4` (H.264 + an MP3 audio track) through the optional `addons/native`
   GDExtension, or a silent PNG sequence + `ffmpeg` line when it isn't
   built. The audio track mixes whatever's actually audible: an
-  `AudioEffectCapture` on the Master bus (AutoShow's music) plus `Sound`'s
+  `AudioEffectCapture` on the Master bus (DJ Edit Mode's music) plus `Sound`'s
   own mic/line-in tap (deliberately muted out of Master so it doesn't
   feed back through speakers, hence its own capture).
 - `addons/native/` — one optional GDExtension (C++) bundling USB DMX
@@ -519,7 +502,7 @@ Global controls live in the top bar:
   fixture's, else the master's — and otherwise the console's colour
   stands. Only what a song's timelines cover is driven; everything else
   stays as the console has it. The timelines go into the frame under
-  chases and effects and over Auto Show. Leaving DJ Perform Mode stops
+  chases and effects. Leaving DJ Perform Mode stops
   the OS2L listener and the timeline playback. Where a fixture's strobe
   row, or the master's, is on, its STROBE channel goes to a strobing
   value for the speed (the faster of the two) — a fifth of the way up a
@@ -546,7 +529,7 @@ Global controls live in the top bar:
   portable — address, mode, and position / rotation in the visualizer),
   the fixtures' live levels and virtual dimmer settings, the cue list,
   chases, effects, fixture groups, named positions, sound reactions,
-  triggers, Auto Show, run mode and the visualizer's stage. Each fixture has a permanent uid,
+  triggers, run mode and the visualizer's stage. Each fixture has a permanent uid,
   saved with it. The music tracks' lighting timelines go in a folder
   beside the show (`<show>.timelines/`, named in the show file), keyed by
   those uids: Save Show also saves the open song's unsaved timelines,
@@ -566,7 +549,7 @@ Global controls live in the top bar:
   universe 1.
 - **New Show** (also **Ctrl+N**) — after asking, starts an empty show: one
   universe with no fixtures, everything dark, no cues, chases, effects,
-  groups, sound reactions, triggers or Auto Show, the visualizer's stage
+  groups, sound reactions or triggers, the visualizer's stage
   reset and no music timelines (the open song's are saved first).
   Universe 1's output settings (IP / port / sACN / USB) are kept, as
   they belong to this machine rather than the show. The new show is
@@ -598,11 +581,9 @@ driven:
   the **Sound** tab's reactors (and any beat-synced chases) as an
   override layer, on top of whatever base look is standing. Cues still
   hold their last look as that base; the spacebar is disabled.
-- **Auto Show** — a loaded music file plays and fires the generated
-  section cues, chases and movement effects from a timeline locked to the
-  playback position. Set up in the **Auto Show** tab.
-
-The mode is saved in the show file.
+The mode is saved in the show file. (Shows saved in the old Auto Show
+run mode open in Cue Mode — songs' light shows are now built and played
+in DJ Edit Mode / DJ Perform Mode.)
 
 ### Sound tab
 
@@ -658,9 +639,9 @@ binding tick **light this pad** and pick what it **follows** with an
 
 - *this binding's action* — the pad lights while its cue is live / its
   chase or effect is running (needs a Go-to-# / toggle action).
-- *Beat pulse* — a flash on every beat (Sound Reactive / Auto Show).
-- *Sending is on*, *Any chase / effect running*, *Auto Show is playing*,
-  *Run mode: Cue / Sound Reactive / Auto Show* — standalone console-state
+- *Beat pulse* — a flash on every beat (Sound Reactive).
+- *Sending is on*, *Any chase / effect running*,
+  *Run mode: Cue / Sound Reactive* — standalone console-state
   indicators. Set the **Action** to *(nothing — feedback only)* for a pad
   that's only an indicator.
 
@@ -680,57 +661,6 @@ built-in MIDI *output*, so MIDI feedback needs one of two paths:
 
 Bindings and all of the MIDI / OSC / feedback settings are saved in the
 show file.
-
-### Auto Show
-
-Build a light show from a song's structure, then refine it.
-
-- **Load Song…** picks an MP3, OGG or WAV — or an **M4A / AAC** file
-  when the `addons/native` extension is built (Windows with Media
-  Foundation, or macOS): Godot can't play AAC itself, so it's decoded to
-  PCM through the OS's decoder first, in the background (about a second
-  for a typical track; Play is available once it's done). Up to an hour.
-- **Analyse** runs a short-time Fourier transform for a beat-synchronous
-  **chroma** (pitch) and timbre feature stream. From that it estimates the
-  tempo, tracks the beat with dynamic programming (so beats lock to real
-  onsets and don't drift), finds the downbeat, and segments the song with
-  a self-similarity / novelty analysis — then labels the sections by
-  **repetition and energy**: the recurring loud part is the **Chorus**,
-  the recurring quieter part the **Verse**, with Intro / Bridge / Build /
-  Drop / Outro around them. With the `addons/native` GDExtension built,
-  the file is decoded and the front-end runs in C++ on a worker thread — a
-  few seconds, UI stays live. Without it, the track is first played 4×
-  through a muted bus to capture the audio (the **speed** control trades
-  that wait for precision: 1× is the song's length, 4× a quarter of it —
-  chroma survives the octave shift, so 4× is usually fine). It's still an
-  estimate — expect to nudge a boundary or rename a section. The result
-  is shown as a **structure strip** — one coloured block per section with
-  downbeat ticks and a playhead — over a **waveform** of the whole track
-  (bar height is loudness, colour is the bass / mid / air balance, with
-  the section tints behind it). Click either to seek.
-- **Build Light Show** produces a **per-section layer** — it does *not*
-  touch the cue list. Fixtures are sorted by kind — moving head / wash /
-  strobe — and each section draws a **recipe** giving each kind its own
-  look (colour spread, moving-head position, strobe) plus which chase and
-  movement effect to run. Every label has a small pool of recipes that
-  **cycle by occurrence**, so three choruses get three different
-  treatments and consecutive verses don't repeat. It also generates three
-  chases (**Auto Colour Beat**, **Auto Dimmer Pulse**, **Auto Position
-  Sweep**) and six pan/tilt effects (slow / fast circles, a tilt wave, a
-  dimmer breath). A rebuild replaces only the same-named auto chases /
-  effects.
-- With the run mode set to **Auto Show**, the transport (**Play / Pause /
-  Stop**, a seek bar, click the structure strip or a section to jump)
-  plays the song and runs the show **as a layer over your own cues**:
-  `ArtNet.tick()` composites the crossfading section look over whatever
-  the cue list is doing, then the chase / effect layer over that. So you
-  keep programming and running cues by hand and Auto Show rides on top —
-  colour, movement, strobe, section accents, with the auto layer cut for
-  a couple of beats before every drop. Seeking folds the timeline up to
-  that point so a jump lands on the right section and layers.
-
-The chases and effects it makes are normal ones you can edit. The song
-path, analysis, section looks and timeline are saved in the show file.
 
 ### Cue list
 
@@ -1045,7 +975,7 @@ the on-screen controls for an unobstructed view.
   optional `native` GDExtension (minih264 + minimp4 + shine — no
   FFmpeg); without it built, Record falls back to a silent PNG sequence
   + an `assemble.txt` ffmpeg line. The audio track is whatever's actually
-  audible — AutoShow's music plus the mic/line-in — mixed live while
+  audible — DJ Edit Mode's music plus the mic/line-in — mixed live while
   recording; there's no audio in the PNG fallback. Both land in
   `user://render/` and open the folder when done. See
   `addons/native/BUILD.md`.
@@ -1169,16 +1099,9 @@ on a machine without the extension falls back to Art-Net.
   in the cue editor.
 - **Run modes**: **Cue Mode** (cue list drives playback), **Sound
   Reactive** (an audio input drives band → role reactors and beat-synced
-  chases over the standing base look), and **Auto Show** (a music file is
-  analysed — STFT chroma + timbre, DP beat tracking, self-similarity
-  segmentation with verse/chorus repetition, in C++ off-thread with the
-  `addons/native` GDExtension or a 4× capture pass without it — into a per-kind
-  section layer that cycles so sections don't repeat, three chases, six
-  movement effects and a pre-drop blackout, all played from a timeline
-  locked to playback **as a layer over the operator's own cues**, with a
-  click-to-seek structure strip and whole-song waveform).
-  Room to grow: palettes learned from the song's key, MIDI-clock or
-  Ableton-Link sync.
+  chases over the standing base look). Songs' light shows live in DJ
+  Edit Mode's timelines and play in DJ Perform Mode. Room to grow:
+  MIDI-clock or Ableton-Link sync.
 - **3D visualizer**: already implemented — a Forward+ SubViewport with
   volumetric beams + real gobo projectors + bloom, GDTF geometry / glTF
   fixture models, glTF set-piece props, spot shadows, saved camera views,
@@ -1187,8 +1110,8 @@ on a machine without the extension falls back to Art-Net.
   fixtures (one light per RGB triplet, with offset and aim from the
   definition file's geometry matrices), **tear-off into its own OS
   window**, and MVR import/export, all driven by the live output. Room to
-  grow: prism / animation wheels, a deterministic offline render of an
-  Auto Show, an MVR round-trip that survives every consumer.
+  grow: prism / animation wheels, a deterministic offline render of a
+  song's timelines, an MVR round-trip that survives every consumer.
 
 ## License
 

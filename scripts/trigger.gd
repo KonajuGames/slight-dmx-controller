@@ -28,14 +28,18 @@ const ACTION_NEEDS_TARGET := {
 ## What a feedback LED follows. FB_ACTION mirrors this binding's own
 ## action; the rest are standalone console-state indicators.
 enum {
-	FB_ACTION, FB_BEAT, FB_SENDING, FB_FX_ANY, FB_AUTOSHOW,
-	FB_MODE_CUE, FB_MODE_SOUND, FB_MODE_AUTOSHOW,
+	FB_ACTION, FB_BEAT, FB_SENDING, FB_FX_ANY, FB_MODE_CUE, FB_MODE_SOUND,
 }
 const FB_WATCHES := [
 	"this binding's action", "Beat pulse", "Sending is on",
-	"Any chase / effect running", "Auto Show is playing",
-	"Run mode: Cue", "Run mode: Sound Reactive", "Run mode: Auto Show",
+	"Any chase / effect running", "Run mode: Cue", "Run mode: Sound Reactive",
 ]
+## Saved by name (fb_watch_key), so the list can change without old shows'
+## choices shifting.
+const FB_KEYS := ["action", "beat", "sending", "fx_any", "mode_cue", "mode_sound"]
+## The numbers shows used to save (fb_watch) before that, when the list
+## had Auto Show entries (-1: those, gone — the feedback is turned off).
+const _FB_LEGACY := [FB_ACTION, FB_BEAT, FB_SENDING, FB_FX_ANY, -1, FB_MODE_CUE, FB_MODE_SOUND, -1]
 
 var name: String = "Trigger"
 var enabled: bool = true
@@ -83,10 +87,8 @@ func feedback_query() -> Array:
 		FB_BEAT: return ["beat", ""]
 		FB_SENDING: return ["sending", ""]
 		FB_FX_ANY: return ["fx_any", ""]
-		FB_AUTOSHOW: return ["autoshow", ""]
 		FB_MODE_CUE: return ["run_mode", "0"]
 		FB_MODE_SOUND: return ["run_mode", "1"]
-		FB_MODE_AUTOSHOW: return ["run_mode", "2"]
 	# FB_ACTION
 	match action:
 		ACT_CUE_GOTO: return ["cue", target]
@@ -156,7 +158,7 @@ func to_dict() -> Dictionary:
 		"name": name, "enabled": enabled, "source": source,
 		"midi_kind": midi_kind, "midi_channel": midi_channel, "midi_number": midi_number,
 		"osc_address": osc_address, "action": action, "target": target,
-		"fb_enabled": fb_enabled, "fb_watch": fb_watch,
+		"fb_enabled": fb_enabled, "fb_watch_key": FB_KEYS[fb_watch],
 		"fb_on": fb_on, "fb_off": fb_off,
 	}
 
@@ -173,7 +175,13 @@ static func from_dict(d: Dictionary) -> Trigger:
 	t.action = clampi(int(d.get("action", ACT_CUE_GO)), 0, ACTIONS.size() - 1)
 	t.target = String(d.get("target", ""))
 	t.fb_enabled = bool(d.get("fb_enabled", false))
-	t.fb_watch = clampi(int(d.get("fb_watch", FB_ACTION)), 0, FB_WATCHES.size() - 1)
+	if d.has("fb_watch_key"):
+		t.fb_watch = maxi(FB_KEYS.find(String(d["fb_watch_key"])), FB_ACTION)
+	else:
+		var old: int = _FB_LEGACY[clampi(int(d.get("fb_watch", FB_ACTION)), 0, _FB_LEGACY.size() - 1)]
+		if old < 0:
+			t.fb_enabled = false
+		t.fb_watch = maxi(old, FB_ACTION)
 	t.fb_on = clampi(int(d.get("fb_on", 127)), 0, 127)
 	t.fb_off = clampi(int(d.get("fb_off", 0)), 0, 127)
 	return t

@@ -288,7 +288,7 @@ func toggle_by_name(key: String) -> void:
 		set_running_by_name(key, not Fx.effects[idx].running)
 
 
-## Set an effect's run state explicitly (Auto Show timeline). Resolves its
+## Set an effect's run state explicitly. Resolves its
 ## targets from the live patch when starting.
 func set_running_by_name(key: String, on: bool) -> void:
 	var idx := _find_effect(key)

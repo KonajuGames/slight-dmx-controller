@@ -16,12 +16,10 @@ var reactors: Array[SoundReactor] = []
 
 ## True while the console is in Sound Reactive run mode.
 var sound_reactive := false
-## True while the console is in Auto Show run mode.
-var auto_show := false
 
 
 func _beat_driven() -> bool:
-	return sound_reactive or auto_show
+	return sound_reactive
 
 
 func _ready() -> void:

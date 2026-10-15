@@ -1,6 +1,6 @@
 extends SceneTree
 ## Regression test for SongDetect.segment() — the structural section
-## labeler behind the Auto Show tab. Guards against "almost every section
+## labeler behind DJ Edit Mode's song structure. Guards against "almost every section
 ## reads as Chorus" (fixed in commit 5f99997, 2026-09-14):
 ##   1. clustering used to merge a quiet verse with its own chorus because
 ##      they share a chord progression (chroma dominates the similarity)

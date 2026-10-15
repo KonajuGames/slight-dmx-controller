@@ -28,8 +28,7 @@ The window is split into three areas:
   toggle, Add/Remove Universe, Save/Load Show and Preset, and **Triggers…**
   for MIDI/OSC. These are always visible, whatever tab you're on.
 - **Left side — playback tabs**: **Cues**, **Chases**, **Effects**,
-  **Sound**, **Auto Show**, **Groups**. This is where you build and run a
-  show.
+  **Sound**, **Groups**. This is where you build and run a show.
 - **Right side — Patch / 3D Visualizer**: one tab per universe for
   patching fixtures and dialing them in by hand, and a 3D view of your rig
   lit live by whatever the console is currently outputting.
@@ -128,7 +127,7 @@ steps.
 ![The Effects tab with a Pan Sweep effect configured](img/05-effects-tab.png)
 
 Pick the **Role** it drives and which fixtures (a **Universe**, or a
-**Group** — see Step 9), a **Waveform**, **Rate (BPM)**, and **Size**
+**Group** — see Step 8), a **Waveform**, **Rate (BPM)**, and **Size**
 (how far it swings). **Fan (deg)** spreads the phase across the fixture
 list, so instead of every fixture moving in lockstep you get a chase-like
 ripple across the rig — try it with two Pan/Tilt effects 90° out of phase
@@ -152,34 +151,7 @@ four reactors is already here to try — **Bass Pulse**, **Mid Glow**,
 more intense than the others) — edit or delete them, or add your own with
 **New Reactor**. Tick **Run** on the ones you want active.
 
-## Step 8 — Auto-generate a show from a song
-
-The **Auto Show** tab analyses a music file and builds a whole light show
-from its structure automatically.
-
-![The Auto Show tab after analysing and building a show](img/07-auto-show-tab.png)
-
-1. **Load Song…** picks an MP3, OGG, or WAV file — or an M4A / AAC file
-   (the usual iTunes / VirtualDJ format) if the optional native extension
-   is built. An M4A takes a moment to prepare; Play becomes available
-   when it's ready.
-2. **Analyse** works out the tempo, beat grid, and musical key, then
-   segments the song into labelled sections (Intro / Verse / Chorus /
-   Bridge / Build / Drop / Outro) by finding which parts repeat and how
-   loud they are. The result shows as a **structure strip** over a
-   colour-coded **waveform** — click either to seek. If a boundary looks
-   slightly off, drag it (it snaps to the nearest bar); right-click a
-   section to relabel, split, or delete it.
-3. **Build Light Show** turns that structure into a per-section look for
-   every fixture kind, plus three generated chases and six movement
-   effects — the colours themselves follow the song's detected musical
-   key. This is a layer, not a replacement: it plays *over* your own cues.
-
-Set the Run Mode to **Auto Show** and press **Play** — the transport
-tracks playback position, and the whole generated show rides on top of
-whatever your cues are doing underneath.
-
-## Step 9 — Organize fixtures into groups
+## Step 8 — Organize fixtures into groups
 
 The **Groups** tab holds named sets of patched fixtures, so an effect or
 reactor can target just "the movers" or "the front truss" instead of a
@@ -192,7 +164,7 @@ group's name in an effect's or reactor's **Group** field instead of a
 universe filter. **Sync to patch** refreshes the checklist after you add
 or remove fixtures.
 
-## Step 10 — See it in 3D
+## Step 9 — See it in 3D
 
 The **3D Visualizer** tab (right side, next to Patch) shows your rig lit
 live by whatever the console is currently outputting — cues, chases,
@@ -235,8 +207,9 @@ picker instead — pick a real MIDI port directly, no extra script needed.
 ## Saving your work
 
 **Save Show** (top bar) writes everything — every universe's connection
-settings and patch, cues, chases, effects, groups, MIDI/OSC bindings, and
-the Auto Show song/analysis — to one file. **Load Show** brings it all
+settings and patch, cues, chases, effects, groups, named positions and
+MIDI/OSC bindings — to one file, with the songs' lighting timelines in a
+folder beside it. **Load Show** brings it all
 back. **Save/Load Preset** is a lighter-weight snapshot of just the live
 DMX output, for a quick "go back to how it looked a minute ago" without
 touching your cue list.

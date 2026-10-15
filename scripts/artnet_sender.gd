@@ -28,7 +28,7 @@ var universes: Array[ArtNetUniverse] = []
 
 ## More playback layers for tick(): Callables func(n: int) -> Array of n
 ## {channel: value} dictionaries, applied under the chase / effect layer
-## and over Auto Show (the first listed wins where they overlap).
+## (the first listed wins where they overlap).
 var layer_providers: Array[Callable] = []
 
 ## Emitted when a running crossfade reaches all its targets.
@@ -97,19 +97,18 @@ func set_universe_count(n: int) -> void:
 		universes.remove_at(universes.size() - 1)
 
 
-## Recompute every universe's `output` (operator base -> Auto Show section
-## layer -> layer_providers (DJ Perform Mode, DJ Edit Mode playback) ->
-## effect/chase layer -> grand master). When `transmit` is true, also put
-## it on the wire. Call this every refresh tick — computing
-## always keeps the 3D visualizer live even while "Sending" is off.
+## Recompute every universe's `output` (operator base -> layer_providers
+## (DJ Perform Mode, DJ Edit Mode playback) -> effect/chase layer ->
+## grand master). When `transmit` is true, also put it on the wire. Call
+## this every refresh tick — computing always keeps the 3D visualizer live
+## even while "Sending" is off.
 func tick(transmit: bool = true) -> void:
 	var bases: Array = []
 	for u in universes:
 		bases.append(u.dmx_data)
 	var layers: Array = Fx.compose(universes.size(), bases)
 	# Other playback layers (song timelines: DJ Perform Mode, DJ Edit Mode
-	# playback), in order:
-	# under the chase / effect layer, over Auto Show.
+	# playback), in order, under the chase / effect layer.
 	for provider in layer_providers:
 		if not provider.is_valid():
 			continue
@@ -118,14 +117,6 @@ func tick(transmit: bool = true) -> void:
 			for ch in pl[i]:
 				if not layers[i].has(ch):
 					layers[i][ch] = pl[i][ch]
-	if AutoShow.active:
-		# the Auto Show section look sits under the chase / effect layer,
-		# over the operator's cue playback.
-		var al: Array = AutoShow.layer(universes.size())
-		for i in range(mini(universes.size(), al.size())):
-			for ch in al[i]:
-				if not layers[i].has(ch):
-					layers[i][ch] = al[i][ch]
 	for i in range(universes.size()):
 		var ov: Dictionary = layers[i] if i < layers.size() else {}
 		var u := universes[i]

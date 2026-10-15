@@ -30,7 +30,6 @@ var cue_panel: CueListPanel
 var chase_panel: ChaseListPanel
 var fx_panel: EffectsPanel
 var sound_panel: SoundPanel
-var auto_show_panel: AutoShowPanel
 var groups_panel: GroupsPanel
 var viz_panel: VisualizerPanel
 var dmx_output_panel: DmxOutputPanel
@@ -57,9 +56,9 @@ var sending_toggle: CheckButton
 var run_mode_option: OptionButton
 var _triggers_dialog: TriggersDialog
 
-## Console run mode: 0 = Cue Mode (default), 1 = Sound Reactive,
-## 2 = Auto Show (music-file timeline).
-const RUN_MODES := ["Cue Mode", "Sound Reactive", "Auto Show"]
+## Console run mode: 0 = Cue Mode (default), 1 = Sound Reactive. (Shows
+## saved with the old 2 = Auto Show open in Cue Mode.)
+const RUN_MODES := ["Cue Mode", "Sound Reactive"]
 var run_mode := 0
 var add_uni_btn: Button
 var remove_uni_btn: Button
@@ -150,33 +149,22 @@ func _ready() -> void:
 	sound_panel.group_names_provider = _group_names
 	playback_tabs.add_child(_scrollable(sound_panel))
 
-	auto_show_panel = AutoShowPanel.new()
-	auto_show_panel.apply_show_cb = _apply_auto_show
-	auto_show_panel.panels_provider = func(): return _panels
-	playback_tabs.add_child(_scrollable(auto_show_panel))
-
 	playback_tabs.add_child(_scrollable(groups_panel))
 	playback_tabs.set_tab_title(0, "Cues")
 	playback_tabs.set_tab_title(1, "Chases")
 	playback_tabs.set_tab_title(2, "Effects")
 	playback_tabs.set_tab_title(3, "Sound")
-	playback_tabs.set_tab_title(4, "Auto Show")
-	playback_tabs.set_tab_title(5, "Groups")
+	playback_tabs.set_tab_title(4, "Groups")
 
 	groups_panel.groups_changed.connect(fx_panel.refresh_group_options)
 	groups_panel.groups_changed.connect(sound_panel.refresh_group_options)
 	playback_tabs.tab_changed.connect(func(i: int):
-		if i == 5:
+		if i == 4:
 			groups_panel.sync_to_patch()
 		elif i == 2:
 			fx_panel.refresh_group_options()
 		elif i == 3:
 			sound_panel.refresh_group_options())
-
-	AutoShow.section_changed.connect(func(i: int): auto_show_panel.highlight_section(i))
-	AutoShow.chase_set.connect(func(nm: String, on: bool): chase_panel.set_running_by_name(nm, on))
-	AutoShow.effect_set.connect(func(nm: String, on: bool): fx_panel.set_running_by_name(nm, on))
-	AutoShow.beat.connect(Fx._on_beat)
 
 	# Right side: "Patch" (the universe tabs) and the "3D Visualizer".
 	_right_tabs = TabContainer.new()
@@ -817,7 +805,6 @@ func _update_universe_buttons() -> void:
 func _on_blackout_all() -> void:
 	ArtNet.stop_fade()
 	Fx.stop_all()
-	AutoShow.pause()
 	chase_panel.sync_ui()
 	fx_panel.sync_ui()
 	sound_panel.sync_ui()
@@ -832,20 +819,15 @@ func _on_run_mode_changed(idx: int) -> void:
 	_set_run_mode(idx)
 	match run_mode:
 		1: status_label.text = "Sound Reactive — monitoring the audio input. Arm reactors in the Sound tab."
-		2: status_label.text = "Auto Show — load a song in the Auto Show tab, then Play."
 		_: status_label.text = "Cue Mode — cue list drives playback."
 
 
 func _set_run_mode(idx: int) -> void:
-	run_mode = clampi(idx, 0, RUN_MODES.size() - 1)
+	run_mode = idx if idx >= 0 and idx < RUN_MODES.size() else 0
 	if run_mode_option.selected != run_mode:
 		run_mode_option.selected = run_mode
 	Fx.sound_reactive = run_mode == 1
 	Sound.active = run_mode == 1
-	Fx.auto_show = run_mode == 2
-	AutoShow.active = run_mode == 2
-	if run_mode != 2:
-		AutoShow.pause()
 
 
 # ------------------------------------------------------ MIDI / OSC TRIGGERS --
@@ -864,36 +846,10 @@ func _effect_names() -> Array:
 	return out
 
 
-## The Auto Show generator produced a per-section layer, chases, movement
-## effects and a timeline. The cue list is untouched — Auto Show plays as
-## a layer over whatever the operator's cues are doing. Chases / effects
-## replace only same-named auto ones.
-func _apply_auto_show(res: Dictionary) -> void:
-	for chase in res["chases"]:
-		for i in range(Fx.chases.size() - 1, -1, -1):
-			if Fx.chases[i].name == chase.name:
-				Fx.chases.remove_at(i)
-		Fx.chases.append(chase)
-	chase_panel.sync_ui()
-
-	for eff in res["effects"]:
-		for i in range(Fx.effects.size() - 1, -1, -1):
-			if Fx.effects[i].name == eff.name:
-				Fx.effects.remove_at(i)
-		eff.set_targets(_resolve_fx_targets(eff.role, eff.universe, eff.group))
-		Fx.effects.append(eff)
-	fx_panel.sync_ui()
-
-	AutoShow.set_show(res["looks"], res["timeline"])
-	status_label.text = "Auto Show built: %d section looks, %d chases, %d effects — plays over your cues." % [
-		res["looks"].size(), res["chases"].size(), res["effects"].size()]
-
-
 ## "Load to Patch" — write a cue's or chase step's per-universe look into
 ## the fixture controls so it can be edited and re-recorded.
 func _load_look_to_patch(buffers: Array) -> void:
 	ArtNet.stop_fade()
-	AutoShow.pause()
 	for i in range(min(buffers.size(), _panels.size())):
 		_panels[i].load_look(buffers[i])
 
@@ -931,8 +887,6 @@ func _feedback_state(kind: String, target: String) -> bool:
 			return sending_toggle.button_pressed
 		"fx_any":
 			return Fx.any_running()
-		"autoshow":
-			return AutoShow.playing
 	return false
 
 
@@ -1733,7 +1687,7 @@ func _refresh_all_profile_options(select_new: bool) -> void:
 ## universe's connection settings and fixture patch (each fixture's
 ## profile, address, mode, and position / rotation in the visualizer),
 ## the fixtures' live levels and virtual dimmers, the cue list, chases,
-## effects, fixture groups, named positions, sound reactions, triggers, Auto Show, run mode
+## effects, fixture groups, named positions, sound reactions, triggers, run mode
 ## and the visualizer's stage. JSON; saved to any file (SHOW_EXT), or the
 ## default user:// one. The music tracks' lighting timelines go in a
 ## folder beside it (TimelineStore: "<show>.timelines/"), named in the
@@ -1790,7 +1744,6 @@ func show_dict() -> Dictionary:
 		"effects": fx_panel.to_dict(),
 		"sound": sound_panel.to_dict(),
 		"triggers": Triggers.to_dict(),
-		"auto_show": AutoShow.to_dict(),
 		"groups": _groups_to_dict(),
 		"positions": positions.to_dict(),
 		"viz": viz_panel.to_dict(),
@@ -1893,8 +1846,6 @@ func apply_show_dict(parsed) -> void:
 	sound_panel.from_dict(doc.get("sound", {}))
 	sound_panel.refresh_group_options()
 	Triggers.from_dict(doc.get("triggers", {}))
-	AutoShow.from_dict(doc.get("auto_show", {}))
-	auto_show_panel.reload()
 	_set_run_mode(int(doc.get("run_mode", 0)))
 	_on_patch_changed()                       # groups, visualizer, DJ Edit Mode timelines
 	viz_panel.from_dict(doc.get("viz", {}))
@@ -1918,7 +1869,7 @@ func _on_new_show() -> void:
 ## Replace the current show with an empty one: no fixtures (one
 ## universe, keeping universe 1's output settings — those are this
 ## machine's), everything dark, no cues, chases, effects, groups, sound
-## reactions, triggers or Auto Show, the visualizer's stage reset, and no
+## reactions or triggers, the visualizer's stage reset, and no
 ## music timelines. It's untitled until saved (show_path ""); the last
 ## show stays the one reopened at start until then.
 func new_show() -> void:

@@ -1,8 +1,8 @@
 class_name MusicTimeline
 extends VBoxContainer
 ## DJ Edit Mode's track timeline, shown when a track is
-## double-clicked: the track's colour-coded waveform (the Auto Show
-## panel's WaveHeatmap) sitting at the bottom of the view, zoomable with
+## double-clicked: the track's colour-coded waveform (a WaveHeatmap)
+## sitting at the bottom of the view, zoomable with
 ## the mouse wheel, and under it a slimmer copy that always shows the
 ## whole track. A rectangle on that overview marks the part the big
 ## waveform shows: drag it to scroll, or click elsewhere on the overview

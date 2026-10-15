@@ -3,13 +3,13 @@ extends RefCounted
 ## The result of analysing a music file: an estimated tempo, a beat grid,
 ## and a list of structural sections (Intro / Verse / Chorus / Bridge /
 ## Build / Drop / Outro) with a 0..1 energy figure. Produced by
-## SongAnalyzer, consumed by ShowGenerator and AutoShow.
+## SongAnalyzer, consumed by DJ Edit Mode (MusicTimeline, TimelineGenerator).
 
 var path: String = ""
 var duration: float = 0.0        # seconds
 var bpm: float = 120.0
 ## Musical key, from SongDetect.detect_key(): root pitch class (0=C .. 11=B)
-## and "major"/"minor". Auto Show derives its section palettes from this.
+## and "major"/"minor".
 var key_root: int = 0
 var key_mode: String = "major"
 var beat_times: PackedFloat32Array = PackedFloat32Array()

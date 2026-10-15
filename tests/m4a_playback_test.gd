@@ -1,7 +1,6 @@
 extends SceneTree
 ## Tests for playing M4A / AAC: SongFeatures.decode_pcm16 (the native
-## extension), SongAnalyzer.decode_os_stream / load_stream, and Auto Show
-## loading an M4A song in the background and playing it.
+## extension) and SongAnalyzer.decode_os_stream / load_stream.
 ##
 ##   godot --headless --script tests/m4a_playback_test.gd
 ##
@@ -45,7 +44,6 @@ func _run() -> void:
 		_test_decode_pcm16()
 		await _test_stream()
 		_test_beat_alignment()
-		await _test_auto_show()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
 
@@ -165,51 +163,3 @@ func _test_beat_alignment() -> void:
 	var median: int = offs[offs.size() / 2]
 	ok(absi(median) <= 10, "onsets on the beats: median %+d ms over %d beats" % [median, offs.size()])
 	ok(absf(d.duration - song.length) < 0.02, "length matches VirtualDJ's (%.3f vs %.3f s)" % [d.duration, song.length])
-
-
-func _test_auto_show() -> void:
-	print("- Auto Show")
-	var auto_show: Node = root.get_node("AutoShow")
-	var failures := []
-	auto_show.song_load_failed.connect(func(m): failures.append(m))
-	ok(not auto_show.load_song(ProjectSettings.globalize_path("user://_nope.mp3")), "missing MP3 refused")
-	if not FileAccess.file_exists(M4A) or not SongAnalyzer.os_decoding_available():
-		skip("real M4A / OS AAC decoder not available here")
-		return
-	ok(auto_show.load_song(M4A), "load_song(M4A) accepted")
-	ok(auto_show.loading and auto_show.song_length() == 0.0, "decoding in the background")
-	auto_show.play()
-	ok(not auto_show.playing, "Play does nothing until it's decoded")
-	var t := Time.get_ticks_msec()
-	while auto_show.loading and Time.get_ticks_msec() - t < 30000:
-		await process_frame
-	ok(not auto_show.loading and absf(auto_show.song_length() - M4A_SECONDS) < 0.001,
-		"loaded: %.2f s" % auto_show.song_length())
-	ok(failures.is_empty(), "no load errors %s" % str(failures))
-	auto_show.seek(30.0)
-	auto_show.play()
-	var t0 := Time.get_ticks_msec()
-	while Time.get_ticks_msec() - t0 < 1000:
-		await process_frame
-	var pos: float = auto_show.position()
-	ok(auto_show.playing and pos > 30.5 and pos < 32.0, "Auto Show plays it from 30 s (at %.2f s)" % pos)
-	auto_show.stop()
-
-	# A show file naming an M4A song reloads it in the background.
-	var d: Dictionary = auto_show.to_dict()
-	auto_show.from_dict({})
-	ok(auto_show.song_length() == 0.0, "cleared")
-	auto_show.from_dict(d)
-	ok(auto_show.loading, "show load decodes the M4A in the background")
-	t = Time.get_ticks_msec()
-	while auto_show.loading and Time.get_ticks_msec() - t < 30000:
-		await process_frame
-	ok(absf(auto_show.song_length() - M4A_SECONDS) < 0.001, "...and it's playable")
-
-	# Loading another song mid-decode cancels the first.
-	auto_show.load_song(M4A)
-	var wav := _wav("user://_pcm_switch.wav", 2, 6.0)
-	t = Time.get_ticks_msec()
-	ok(auto_show.load_song(wav) and not auto_show.loading, "switching song cancels the decode (%d ms)" % (Time.get_ticks_msec() - t))
-	ok(absf(auto_show.song_length() - 6.0) < 0.01, "and the new song is loaded")
-	auto_show.stop()

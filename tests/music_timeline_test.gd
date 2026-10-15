@@ -113,7 +113,7 @@ func _test_wave_view() -> void:
 	w.zoomable = false
 	w.set_view(0.0, 0.0)
 	_wheel(w, MOUSE_BUTTON_WHEEL_UP, 500.0)
-	ok(w.visible_length() == 100.0, "not zoomable: wheel ignored (the Auto Show panel)")
+	ok(w.visible_length() == 100.0, "not zoomable: wheel ignored")
 	w.queue_free()
 
 

@@ -44,8 +44,8 @@ func capture() -> void:
 
 
 ## Set the cue's look directly from per-universe { channel:int -> value }
-## dictionaries (used by the Auto Show generator, which builds looks
-## without touching live output). Zero values are dropped.
+## dictionaries (building a look without touching live output). Zero
+## values are dropped.
 func set_levels(per_universe: Array) -> void:
 	levels = []
 	for d in per_universe:

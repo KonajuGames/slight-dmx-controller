@@ -252,7 +252,7 @@ func toggle_by_name(key: String) -> void:
 		set_running_by_name(key, not Fx.chases[idx].running)
 
 
-## Set a chase's run state explicitly (Auto Show timeline).
+## Set a chase's run state explicitly.
 func set_running_by_name(key: String, on: bool) -> void:
 	var idx := _find_chase(key)
 	if idx == -1 or Fx.chases[idx].running == on:
