@@ -106,6 +106,9 @@ func _ready() -> void:
 	music_panel.positions = positions
 	music_panel.timeline().positions = positions
 	music_panel.position_editor().fixtures_provider = _position_fixtures
+	music_panel.position_editor().highlight_changed.connect(highlight_fixtures)
+	# Points moved (dragged on the pad): the lit fixtures follow.
+	positions.changed.connect(func(): highlight_fixtures(music_panel.position_editor().highlighted_uids()))
 
 	# DJ Perform Mode: started / stopped with its view.
 	performer = DjPerformer.new()
@@ -702,6 +705,20 @@ func _on_patch_changed() -> void:
 	if music_panel:
 		music_panel.timeline().refresh_fixtures()
 		music_panel.position_editor().refresh_fixtures()
+
+
+## Light these fixtures (by uid) full white and point them at the
+## position being edited — the position editor's selection — and put
+## every other fixture that was lit back as it was.
+func highlight_fixtures(uids: Array) -> void:
+	var editor := music_panel.position_editor()
+	for p in _panels:
+		for fx in p.patched_fixtures:
+			var uid := String(fx["uid"])
+			var id := int(fx["id"])
+			p.set_highlight(id, uid in uids)
+			if uid in uids and editor.position_id != "":
+				p.aim(id, positions.point(editor.position_id, uid))
 
 
 ## Every patched fixture for the position editor (it lists those with pan

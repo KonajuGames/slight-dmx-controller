@@ -29,6 +29,7 @@ func _run() -> void:
 	await _test_editor()
 	await _test_browser()
 	await _test_show()
+	await _test_highlight()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
 
@@ -327,3 +328,69 @@ func _test_show() -> void:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(f))
 	if DirAccess.dir_exists_absolute("user://_positions_test.timelines"):
 		DirAccess.remove_absolute("user://_positions_test.timelines")
+
+
+func _test_highlight() -> void:
+	print("- selected fixtures lit full white")
+	var main: Control = load("res://main.tscn").instantiate()
+	main.last_show_store = "user://_positions_test_last.json"
+	root.add_child(main)
+	await process_frame
+	var spot := FixtureProfile.new("spot", "Spot", [{"name": "Pan", "role": "PAN"}, {"name": "Tilt", "role": "TILT"},
+		{"name": "Shutter", "role": "STROBE", "ranges": [{"lo": 0, "hi": 9, "label": "Closed"}, {"lo": 10, "hi": 19, "label": "Open"},
+			{"lo": 20, "hi": 255, "label": "Strobe"}]},
+		{"name": "Dimmer", "role": "DIMMER"}, {"name": "Red", "role": "RED"}, {"name": "Green", "role": "GREEN"}, {"name": "Blue", "role": "BLUE"}])
+	var rgb_mover := FixtureProfile.new("rgbm", "RGB mover", [{"name": "Pan", "role": "PAN"}, {"name": "Tilt", "role": "TILT"},
+		{"name": "Red", "role": "RED"}, {"name": "Green", "role": "GREEN"}, {"name": "Blue", "role": "BLUE"}])
+	var panel = main._panels[0]
+	panel.add_patched(spot, 0, 0, "Spot", Vector3.ZERO, Vector3.ZERO)
+	panel.add_patched(rgb_mover, 10, 0, "Wash", Vector3.ZERO, Vector3.ZERO)
+	await process_frame
+	var u = panel.sender
+	var look := PackedByteArray([100, 120, 0, 40, 255, 0, 0])      # spot: pan, tilt, shutter closed, 40 dim, red
+	for i in range(look.size()):
+		u.set_channel(i, look[i])
+	for i in range(5):
+		u.set_channel(10 + i, [30, 60, 0, 0, 200][i])                # wash: blue
+	var wash_id := int(panel.patched_fixtures[1]["id"])
+	u.set_virtual_dimmer_level(wash_id, 0.25)
+	var spot_uid := String(panel.patched_fixtures[0]["uid"])
+	var wash_uid := String(panel.patched_fixtures[1]["uid"])
+	var p: Dictionary = main.positions.add()
+	main.set_view(1)
+	main.music_panel.open_position(p["id"])
+	await process_frame
+	var ed = main.music_panel.position_editor()
+	ok(u.get_channel(3) == 40, "nothing selected: nothing changes")
+	ed.select_uids([spot_uid])
+	ok(u.get_channel(3) == 255 and u.get_channel(4) == 255 and u.get_channel(5) == 255 and u.get_channel(6) == 255,
+		"selected: dimmer full, colour white")
+	ok(u.get_channel(2) >= 10 and u.get_channel(2) <= 19, "...shutter open (%d)" % u.get_channel(2))
+	ok(u.get_channel(0) == 128 and u.get_channel(1) == 128, "...and pointed at the position (no point yet: centred) (%d / %d)" % [u.get_channel(0), u.get_channel(1)])
+	main.positions.set_point(p["id"], spot_uid, Vector2(0.2, 0.9))
+	ok(absi(u.get_channel(0) - 51) <= 1 and absi(u.get_channel(1) - 230) <= 1,
+		"moving its point (dragging on the pad) moves it (%d / %d)" % [u.get_channel(0), u.get_channel(1)])
+	ok(u.get_channel(12) == 0 and u.get_channel(14) == 200, "the unselected one untouched")
+	var live: Dictionary = panel.live_dict()
+	ok(int(live["channels"].get("3", 0)) == 40 and int(live["channels"].get("4", 0)) == 255 and not live["channels"].has("5")
+		and int(live["channels"].get("0", 0)) == 100 and int(live["channels"].get("1", 0)) == 120,
+		"saving the show meanwhile saves its real levels, not the white")
+	ed.select_uids([spot_uid, wash_uid])
+	ok(u.get_channel(10 + 2) == 255 and u.get_channel(14) == 255 and is_equal_approx(u.virtual_dimmer_level(wash_id), 1.0),
+		"no dimmer channel: white, and its virtual dimmer full")
+	ed.select_uids([wash_uid])
+	ok(u.get_channel(3) == 40 and u.get_channel(4) == 255 and u.get_channel(5) == 0 and u.get_channel(2) == 0
+		and u.get_channel(0) == 100 and u.get_channel(1) == 120, "unselected: back exactly as it was, pan / tilt too")
+	ok(u.get_channel(10) == 128 and u.get_channel(11) == 128, "the other selected one is pointed at the position too")
+	ok(is_equal_approx(panel.live_dict()["virtual_dimmers"][1], 0.25), "the virtual dimmer's own level is what's saved")
+	main.music_panel.show_track_list()
+	ok(u.get_channel(14) == 200 and u.get_channel(12) == 0 and is_equal_approx(u.virtual_dimmer_level(wash_id), 0.25),
+		"leaving the editor puts every lit fixture back")
+	main.music_panel.open_position(p["id"])
+	ed.select_uids([spot_uid])
+	ok(u.get_channel(3) == 255, "(lit again)")
+	main.set_view(0)
+	ok(u.get_channel(3) == 40, "switching to another view puts it back too")
+	main.queue_free()
+	await process_frame
+	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://_positions_test_last.json"))

@@ -7,7 +7,13 @@ extends HBoxContainer
 ## (Ctrl / Shift for several): their points are highlighted on the pad,
 ## in the position's colour, and dragging one moves them all; the other
 ## fixtures' points stay visible, dimmed. Clicking a dimmed point selects
-## that fixture.
+## that fixture. The selected fixtures are lit full white and pointed at
+## the position while they're selected and the editor's showing
+## (highlight_changed: the owner does it, and puts the others back).
+
+## The fixtures to light up to find them: the selected ones while the
+## editor's showing, else none.
+signal highlight_changed(uids: Array)
 
 const SIDE_WIDTH := 260.0
 
@@ -67,8 +73,9 @@ func _ready() -> void:
 	_list = ItemList.new()
 	_list.select_mode = ItemList.SELECT_MULTI
 	_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_list.multi_selected.connect(func(_i: int, _sel: bool): _pad.queue_redraw())
-	_list.item_selected.connect(func(_i: int): _pad.queue_redraw())
+	_list.multi_selected.connect(func(_i: int, _sel: bool): _selection_changed())
+	_list.item_selected.connect(func(_i: int): _selection_changed())
+	visibility_changed.connect(_selection_changed)
 	side.add_child(_list)
 	_none = Label.new()
 	_none.text = "No patched fixture has pan and tilt channels."
@@ -97,7 +104,7 @@ func refresh_fixtures() -> void:
 		if String(fx["uid"]) in keep:
 			_list.select(i, false)
 	_none.visible = _list.item_count == 0
-	_pad.queue_redraw()
+	_selection_changed()
 
 
 ## The patched fixtures with both pan and tilt: [{uid, name}].
@@ -128,7 +135,7 @@ func select_uids(uids: Array) -> void:
 	for i in range(_list.item_count):
 		if String(_list.get_item_metadata(i)) in uids:
 			_list.select(i, false)
-	_pad.queue_redraw()
+	_selection_changed()
 
 
 ## The position's name field and pad (for the browser / tests).
@@ -138,6 +145,21 @@ func name_edit() -> LineEdit:
 
 func pad() -> PositionPad:
 	return _pad
+
+
+## The fixtures lit up now (the selected ones while the editor's showing).
+func highlighted_uids() -> Array:
+	return selected_uids() if is_visible_in_tree() else []
+
+
+func _selection_changed() -> void:
+	if _pad != null:
+		_pad.queue_redraw()
+	highlight_changed.emit(highlighted_uids())
+
+
+func _exit_tree() -> void:
+	highlight_changed.emit([])
 
 
 func _show_header() -> void:

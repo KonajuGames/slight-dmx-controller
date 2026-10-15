@@ -151,7 +151,14 @@ technical reference.
   highlights their points in the position's colour, with their names;
   the others show dimmed. Dragging a highlighted point moves it — and
   every other selected one with it; clicking a dimmed point selects
-  that fixture.
+  that fixture. While selected (and the editor's showing), a fixture is
+  lit full white to find it — as the patch's Flash does: dimmer and red /
+  green / blue / white full, amber / UV off, a colour wheel open, plus
+  its shutter open and its virtual dimmer full — and pointed at the
+  position (its pan / tilt at its point, following live as points are
+  dragged). Unselecting it, opening another position, or leaving the
+  editor (another folder, another view) puts it back exactly as it was,
+  pan / tilt included, and a show saved meanwhile keeps its real levels.
 - `dj_performer.gd` — the `DjPerformer` class: DJ Perform Mode's engine.
   Runs an `Os2lServer` (subscribed to four decks), follows each deck's
   song, play state, volume fader and position, loads a new song's

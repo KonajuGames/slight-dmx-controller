@@ -22,6 +22,9 @@ var available_profiles: Array = []       # shared reference, owned by the shell
 var profile_action_cb := Callable()
 
 var patched_fixtures: Array = []
+## Fixtures lit full white for finding them (set_highlight()): fixture id
+## -> {channel: the value it had, "vdim": the virtual dimmer level it had}.
+var _highlighted := {}
 var _next_fixture_id := 0
 
 # UI refs
@@ -555,6 +558,7 @@ func add_patched(profile: FixtureProfile, p_start: int, p_mode: int, p_name: Str
 
 
 func _on_remove_fixture(fixture_id: int) -> void:
+	set_highlight(fixture_id, false)
 	for i in range(patched_fixtures.size()):
 		if patched_fixtures[i]["id"] == fixture_id:
 			patched_fixtures.remove_at(i)
@@ -1234,10 +1238,82 @@ func live_dict() -> Dictionary:
 	var vdims: Array = []
 	for fixture in patched_fixtures:
 		var id := int(fixture["id"])
-		vdims.append(sender.virtual_dimmer_level(id) if sender.has_virtual_dimmer(id) else null)
+		var level = sender.virtual_dimmer_level(id) if sender.has_virtual_dimmer(id) else null
+		if level != null and _highlighted.has(id):
+			level = _highlighted[id]["vdim"]          # its own level, not the highlight's
+		vdims.append(level)
 	var d := buffer_dict()
+	# Highlighted fixtures: the values they really have, not the white.
+	for id in _highlighted:
+		for ch in _highlighted[id]:
+			if ch is int:
+				var v: int = _highlighted[id][ch]
+				if v != 0:
+					d["channels"][str(ch)] = v
+				else:
+					d["channels"].erase(str(ch))
 	d["virtual_dimmers"] = vdims
 	return d
+
+
+## Light fixture `fixture_id` full white (on) to find it — as Flash does:
+## dimmer and red / green / blue / white full, amber / UV off where there's
+## a white, a colour wheel open; plus its shutter open and its virtual
+## dimmer full — or put back exactly what it had (off: every channel, so
+## an aim() is undone too).
+func set_highlight(fixture_id: int, on: bool) -> void:
+	if on == _highlighted.has(fixture_id):
+		return
+	if not on:
+		var saved: Dictionary = _highlighted[fixture_id]
+		_highlighted.erase(fixture_id)
+		for ch in saved:
+			if ch is int:
+				sender.set_channel(ch, saved[ch])
+		if sender.has_virtual_dimmer(fixture_id):
+			sender.set_virtual_dimmer_level(fixture_id, saved["vdim"])
+		return
+	for fixture in patched_fixtures:
+		if int(fixture["id"]) != fixture_id:
+			continue
+		var start: int = fixture["start"]
+		var chans: Array = (fixture["profile"] as FixtureProfile).channels_for_mode(int(fixture.get("mode", 0)))
+		var targets := _flash_targets(chans)
+		for k in range(chans.size()):
+			if String(chans[k]["role"]) == "STROBE":
+				targets[k] = ShowGenerator._pick_shutter_value(chans[k], false)
+		var saved := {"vdim": sender.virtual_dimmer_level(fixture_id)}
+		for k in range(chans.size()):
+			saved[start + k] = sender.get_channel(start + k)
+		for k in targets:
+			sender.set_channel(start + k, targets[k])
+		if sender.has_virtual_dimmer(fixture_id):
+			sender.set_virtual_dimmer_level(fixture_id, 1.0)
+		_highlighted[fixture_id] = saved
+		return
+
+
+## Point highlighted fixture `fixture_id`'s pan / tilt at `norm` (0..1
+## over each axis, tilt bottom-up — a named position's point): 16-bit with
+## fine channels, else over the channel's range.
+func aim(fixture_id: int, norm: Vector2) -> void:
+	if not _highlighted.has(fixture_id):
+		return
+	for fixture in patched_fixtures:
+		if int(fixture["id"]) != fixture_id:
+			continue
+		var start: int = fixture["start"]
+		var chans: Array = (fixture["profile"] as FixtureProfile).channels_for_mode(int(fixture.get("mode", 0)))
+		var values := {}
+		DjPerformer._write_axis(values, chans, start, "PAN", norm.x)
+		DjPerformer._write_axis(values, chans, start, "TILT", norm.y)
+		for ch in values:
+			sender.set_channel(ch, values[ch])
+		return
+
+
+func is_highlighted(fixture_id: int) -> bool:
+	return _highlighted.has(fixture_id)
 
 
 ## Restore live_dict() after the patch is in place: the levels go into the
