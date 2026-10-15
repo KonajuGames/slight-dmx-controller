@@ -44,6 +44,7 @@ func _run() -> void:
 	await _test_drag_selection()
 	_test_strobe_model()
 	await _test_strobe_editing()
+	await _test_position_row()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
 
@@ -1160,6 +1161,92 @@ func _test_strobe_editing() -> void:
 	ok(_menu_ids(tl.context_items(true)).has("Strobe"), "(still selected)")
 	tl._strobe_menu.id_pressed.emit(100)            # Strobe Off
 	ok(not mv.strobe_at(16.0), "Strobe Off")
+	tl._dirty = false
+	tl.queue_free()
+	await process_frame
+
+
+func _test_position_row() -> void:
+	print("- the position row")
+	var R := TimelineTrack.Row
+	var lib := PositionLibrary.new()
+	var crowd := lib.add()
+	lib.rename(crowd["id"], "Crowd")
+	var stage := lib.add()
+	lib.rename(stage["id"], "Stage")
+	var mover := FixtureProfile.new("mv", "Mover", [{"name": "Pan", "role": "PAN"}, {"name": "Tilt", "role": "TILT"},
+		{"name": "Dimmer", "role": "DIMMER"}])
+	var fixtures := [{"key": "mv", "name": "Mover", "profile": mover, "mode": 0}]
+	var tl := MusicTimeline.new()
+	tl.fixtures_provider = func(): return fixtures
+	tl.positions = lib
+	root.add_child(tl)
+	tl.position = Vector2.ZERO
+	tl.size = Vector2(1100, 700)
+	tl.open("user://_position_song.wav")
+	var a := SongAnalysis.new()
+	a.duration = 60.0
+	for arr in [a.wave_lo, a.wave_mid, a.wave_hi, a.wave_peak]:
+		arr.resize(6000)
+	tl._set_analysis(a)
+	var beats := PackedFloat32Array()
+	for i in range(120):
+		beats.append(i * 0.5)
+	tl.wave().set_beat_grid(beats, 4, 0)
+	await process_frame
+	await process_frame
+	tl.wave().set_view(0.0, 20.0)
+	var mv := tl.fixture_tracks()[0]
+	var m := tl.master_track()
+	var sel := tl.selection()
+	ok(mv.has_row(R.POSITION) and mv.positions == lib and m.positions == lib, "a mover has a position row; the tracks know the positions")
+	# The model.
+	ok(mv.replace_position(2.0, 4.0, [{"t0": 0.0, "t1": 2.0, "pos": crowd["id"]}]) and mv.position_at(3.0) == crowd["id"]
+		and mv.position_at(5.0) == "", "a position across a span")
+	mv.replace_position(4.0, 6.0, [{"t0": 0.0, "t1": 2.0, "pos": crowd["id"]}])
+	ok(mv.position_segments == [{"t0": 2.0, "t1": 6.0, "pos": crowd["id"]}], "the same position touching: joined")
+	mv.replace_position(6.0, 8.0, [{"t0": 0.0, "t1": 2.0, "pos": stage["id"]}])
+	ok(mv.position_segments.size() == 2 and mv.position_at(7.0) == stage["id"], "a different one: kept apart")
+	ok(mv.position_segment(5.0, 7.0) == [{"t0": 0.0, "t1": 1.0, "pos": crowd["id"]}, {"t0": 1.0, "t1": 2.0, "pos": stage["id"]}],
+		"a stretch copied, with its positions")
+	mv.position_segments = []
+	# The Position submenu.
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["mv|%d" % R.POSITION, "master|%d" % R.POSITION]), 4.0, 8.0)])
+	var items := _menu_ids(tl.context_items(true))
+	ok(items.has("Position") and not items.has("Strobe"), "a position selection: a Position submenu (%s)" % str(items))
+	var pm: PopupMenu = tl._position_menu
+	ok(_menu_ids(pm) == ["Crowd", "Stage", "Clear Position"], "each named position, then Clear Position (%s)" % str(_menu_ids(pm)))
+	ok(pm.get_item_icon(0) == PositionEditor.triangle_icon(crowd["colour"]) and pm.get_item_icon(1) == PositionEditor.triangle_icon(stage["colour"]),
+		"with its coloured icon")
+	pm.id_pressed.emit(1)
+	ok(mv.position_at(6.0) == stage["id"] and m.position_at(6.0) == stage["id"] and mv.position_at(9.0) == "", "picking one puts it across the selected rows")
+	tl.undo()
+	ok(mv.position_at(6.0) == "", "undoable")
+	tl.redo()
+	tl._collect()
+	ok(tl.song_data()["tracks"]["mv"]["position"] == [[4.0, 8.0, stage["id"]]], "saved as [[t0, t1, position id]]")
+	ok(MusicTimeline._pos_from([[4.0, 8.0, stage["id"]]]) == [{"t0": 4.0, "t1": 8.0, "pos": stage["id"]}], "and read back")
+	# Copy / paste, move, edge drag, clear.
+	tl.copy_selection()
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["mv|%d" % R.POSITION]), 20.0, 21.0)])
+	tl.paste()
+	ok(mv.position_at(22.0) == stage["id"] and m.position_at(22.0) == "", "copies and pastes")
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["mv|%d" % R.POSITION]), 4.0, 8.0)])
+	await process_frame
+	_sel_drag(tl, _at(tl, mv, R.POSITION, 8.0), _at(tl, mv, R.POSITION, 9.8))
+	ok(is_equal_approx(mv.position_segments[0]["t1"], 10.0), "dragging an edge moves the segment's end")
+	tl.move_selection(sel.blocks.duplicate(true), 2.0)
+	ok(mv.position_at(5.0) == "" and mv.position_at(11.0) == stage["id"], "moving the selection moves it")
+	tl._position_menu.id_pressed.emit(MusicTimeline.POSITION_CLEAR)
+	ok(mv.position_at(11.0) == "", "Clear Position")
+	# A deleted position: still there, drawn grey.
+	tl.apply_position(crowd["id"])
+	lib.remove(crowd["id"])
+	ok(mv.position_at(8.0) == crowd["id"], "a deleted position's segments stay (drawn grey)")
+	# No positions at all.
+	lib.clear()
+	_menu_ids(tl.context_items(true))
+	ok(tl._position_menu.is_item_disabled(0), "no positions: a hint, greyed out")
 	tl._dirty = false
 	tl.queue_free()
 	await process_frame

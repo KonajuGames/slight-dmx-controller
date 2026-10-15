@@ -90,6 +90,15 @@ var _fixture_scroll: ScrollContainer
 var _fixture_list: VBoxContainer
 var _fixture_empty: Label
 var _fixture_tracks: Array[TimelineTrack] = []
+## The show's named positions (set by the shell): the Position submenu's
+## choices, and what the position rows draw in.
+var positions: PositionLibrary:
+	set(v):
+		positions = v
+		if _master != null:
+			_master.positions = v
+		for tr in _fixture_tracks:
+			tr.positions = v
 ## The current show's timelines folder (set by the shell; null = none,
 ## timelines live only in memory).
 var timeline_store: TimelineStore
@@ -206,6 +215,7 @@ func _ready() -> void:
 	_master.selection = _selection
 	_master.select_drag.connect(_on_select_drag)
 	_master.context_requested.connect(_on_context)
+	_master.positions = positions
 	wave_col.add_child(_master)
 	_master.item_rect_changed.connect(_place_buttons)
 	# The song's structure, above the bar ruler and as tall.
@@ -734,6 +744,9 @@ func delete_selection() -> bool:
 					TimelineTrack.Row.COLOUR:
 						if tr.replace_colour(span.x, span.y, []):
 							changed = true
+					TimelineTrack.Row.POSITION:
+						if tr.replace_position(span.x, span.y, []):
+							changed = true
 					TimelineTrack.Row.STROBE:
 						if tr.replace_strobe(span.x, span.y, []):
 							changed = true
@@ -778,6 +791,8 @@ func _copy_clip() -> Dictionary:
 						part["segments"] = tr.colour_segment(span.x, span.y)
 					TimelineTrack.Row.STROBE:
 						part["strobes"] = tr.strobe_segment(span.x, span.y)
+					TimelineTrack.Row.POSITION:
+						part["positions"] = tr.position_segment(span.x, span.y)
 					_:
 						pass        # Position / Cues: nothing to copy yet
 				parts.append(part)
@@ -874,6 +889,8 @@ func _paste_into(pairs: Array, at: float) -> Dictionary:
 					changed = tr.replace_colour(at + part["t0"], at + part["t1"], part["segments"]) or changed
 				elif row == TimelineTrack.Row.STROBE and part.has("strobes"):
 					changed = tr.replace_strobe(at + part["t0"], at + part["t1"], part["strobes"]) or changed
+				elif row == TimelineTrack.Row.POSITION and part.has("positions"):
+					changed = tr.replace_position(at + part["t0"], at + part["t1"], part["positions"]) or changed
 				blocks.append(TimelineSelection.block(PackedStringArray([TimelineSelection.row_id(key, row)]), t0, t1))
 	return {"blocks": blocks, "changed": changed}
 
@@ -903,12 +920,14 @@ var _menu: PopupMenu
 var _dimmer_menu: PopupMenu
 var _colour_menu: PopupMenu
 var _strobe_menu: PopupMenu
+var _position_menu: PopupMenu
+const POSITION_CLEAR := 1000
 var _ctx := {}                  # the right-click: {track, row, time}
 
 
 ## A right-click on a timeline: the actions that fit where it was — on
 ## the selection: Delete, Undo / Redo, Cut / Copy / Paste and, for the
-## kinds of row selected, a Dimmer, Colour and Strobe submenu; elsewhere: Undo /
+## kinds of row selected, a Dimmer, Colour, Strobe and Position submenu; elsewhere: Undo /
 ## Redo, Paste Here, Select All.
 func _on_context(track: TimelineTrack, row: int, gpos: Vector2, time: float) -> void:
 	if _wave.analysis == null:
@@ -943,7 +962,8 @@ func context_items(on_selection: bool) -> PopupMenu:
 			_menu.add_item("Paste Here", M_PASTE_HERE)
 	if on_selection:
 		var kinds := selected_row_kinds()
-		if kinds.has(TimelineTrack.Row.DIMMER) or kinds.has(TimelineTrack.Row.COLOUR) or kinds.has(TimelineTrack.Row.STROBE):
+		if kinds.has(TimelineTrack.Row.DIMMER) or kinds.has(TimelineTrack.Row.COLOUR) or kinds.has(TimelineTrack.Row.STROBE) \
+				or kinds.has(TimelineTrack.Row.POSITION):
 			_menu.add_separator()
 		if kinds.has(TimelineTrack.Row.DIMMER):
 			_fill_dimmer_menu()
@@ -958,6 +978,9 @@ func context_items(on_selection: bool) -> PopupMenu:
 			_strobe_menu.add_separator()
 			_strobe_menu.add_item("Strobe Off", 100)
 			_menu.add_submenu_node_item("Strobe", _strobe_menu)
+		if kinds.has(TimelineTrack.Row.POSITION):
+			_fill_position_menu()
+			_menu.add_submenu_node_item("Position", _position_menu)
 	_menu.add_separator()
 	_menu.add_item("Select All", M_SELECT_ALL, ctrl | KEY_A)
 	if not _selection.is_empty():
@@ -989,6 +1012,13 @@ func _ensure_menus() -> void:
 	_strobe_menu = PopupMenu.new()
 	_strobe_menu.id_pressed.connect(func(id: int): apply_strobe(STROBE_OFF if id == 100 else id))
 	_menu.add_child(_strobe_menu)
+	_position_menu = PopupMenu.new()
+	_position_menu.id_pressed.connect(func(id: int):
+		if id == POSITION_CLEAR:
+			apply_position("")
+		elif positions != null and id < positions.positions.size():
+			apply_position(String(positions.positions[id]["id"])))
+	_menu.add_child(_position_menu)
 
 
 func _fill_dimmer_menu() -> void:
@@ -1184,6 +1214,37 @@ func apply_colour_segments(make: Callable) -> bool:
 	return changed
 
 
+## The Position submenu: each named position with its icon, then Clear
+## Position. (Item ids: the position's index; POSITION_CLEAR.)
+func _fill_position_menu() -> void:
+	_position_menu.clear()
+	if positions != null:
+		for i in range(positions.positions.size()):
+			var pos: Dictionary = positions.positions[i]
+			_position_menu.add_icon_item(PositionEditor.triangle_icon(pos["colour"]), String(pos["name"]), i)
+	if _position_menu.item_count == 0:
+		_position_menu.add_item("(no positions — add some under Positions)", -1)
+		_position_menu.set_item_disabled(0, true)
+	_position_menu.add_separator()
+	_position_menu.add_item("Clear Position", POSITION_CLEAR)
+
+
+## Put named position `id` across every selected position span ("" clears
+## them). Returns whether anything changed.
+func apply_position(id: String) -> bool:
+	var changed := false
+	for tr in [_master] + Array(_fixture_tracks):
+		var key := String(tr.get_meta("key"))
+		if not tr.has_row(TimelineTrack.Row.POSITION):
+			continue
+		for span in _merged(_selection.spans_for(key, TimelineTrack.Row.POSITION)):
+			if tr.replace_position(span.x, span.y, [] if id == "" else [{"t0": 0.0, "t1": span.y - span.x, "pos": id}]):
+				changed = true
+	if changed:
+		_mark_dirty()
+	return changed
+
+
 ## Turn the strobe on at `speed` (TimelineTrack.Strobe), or off
 ## (STROBE_OFF), across every selected strobe span. Returns whether
 ## anything changed.
@@ -1274,11 +1335,12 @@ func _edge_at(track: TimelineTrack, gpos: Vector2) -> Dictionary:
 				var tr := _track_for(rid.get_slice("|", 0))
 				if tr == null:
 					continue
-				if kind == TimelineTrack.Row.COLOUR or kind == TimelineTrack.Row.STROBE:
-					# Colour / strobe segment boundaries on the edge move with
+				if kind in [TimelineTrack.Row.COLOUR, TimelineTrack.Row.STROBE, TimelineTrack.Row.POSITION]:
+					# Colour / strobe / position segment boundaries on the edge move with
 					# it; the segments' other ends (and their neighbours)
 					# limit it.
-					var prop := "colour_segments" if kind == TimelineTrack.Row.COLOUR else "strobe_segments"
+					var prop: String = {TimelineTrack.Row.COLOUR: "colour_segments", TimelineTrack.Row.STROBE: "strobe_segments",
+						TimelineTrack.Row.POSITION: "position_segments"}[kind]
 					var segs_now: Array = tr.get(prop)
 					var ends: Array = []
 					for k in range(segs_now.size()):
@@ -1696,6 +1758,8 @@ func _rebuild_fixture_tracks() -> void:
 			tr.dimmer_nodes = _nodes_from(saved.get(spec["key"], {}).get("dimmer", []))
 			tr.colour_segments = _segs_from(saved.get(spec["key"], {}).get("colour", []))
 			tr.strobe_segments = _spans_from(saved.get(spec["key"], {}).get("strobe", []))
+			tr.position_segments = _pos_from(saved.get(spec["key"], {}).get("position", []))
+			tr.positions = positions
 			tr.dimmer_edited.connect(_mark_dirty)
 			tr.selection = _selection
 			tr.select_drag.connect(_on_select_drag)
@@ -1775,6 +1839,10 @@ func _collect() -> void:
 			entry.erase("colour")
 		else:
 			entry["colour"] = _segs_to(tr.colour_segments)
+		if tr.position_segments.is_empty():
+			entry.erase("position")
+		else:
+			entry["position"] = _pos_to(tr.position_segments)
 		if tr.strobe_segments.is_empty():
 			entry.erase("strobe")
 		else:
@@ -1793,6 +1861,7 @@ func _show_song_data() -> void:
 		_master.dimmer_nodes = _nodes_from(tracks.get("master", {}).get("dimmer", []))
 		_master.colour_segments = _segs_from(tracks.get("master", {}).get("colour", []))
 		_master.strobe_segments = _spans_from(tracks.get("master", {}).get("strobe", []))
+		_master.position_segments = _pos_from(tracks.get("master", {}).get("position", []))
 	_rebuild_fixture_tracks()
 	if _path != "" and _struct_cache.has(_path):
 		_apply_saved_structure(_path, _struct_cache[_path])
@@ -1895,6 +1964,7 @@ func _restore(snap: Dictionary) -> void:
 		tr.dimmer_nodes = _nodes_from(tracks.get(String(tr.get_meta("key")), {}).get("dimmer", []))
 		tr.colour_segments = _segs_from(tracks.get(String(tr.get_meta("key")), {}).get("colour", []))
 		tr.strobe_segments = _spans_from(tracks.get(String(tr.get_meta("key")), {}).get("strobe", []))
+		tr.position_segments = _pos_from(tracks.get(String(tr.get_meta("key")), {}).get("position", []))
 	if _struct_cache.has(_path):
 		_apply_saved_structure(_path, _struct_cache[_path])
 		_set_structure(_struct_cache[_path])
@@ -1927,6 +1997,23 @@ static func _segs_to(segs: Array) -> Array:
 	for sg in segs:
 		out.append([snappedf(sg["t0"], 0.001), snappedf(sg["t1"], 0.001),
 			(sg["c0"] as Color).to_html(false), (sg["c1"] as Color).to_html(false)])
+	return out
+
+
+## Position segments to / from their saved form: [[t0, t1, position id], ...].
+static func _pos_to(spans: Array) -> Array:
+	var out := []
+	for sg in spans:
+		out.append([snappedf(sg["t0"], 0.001), snappedf(sg["t1"], 0.001), String(sg.get("pos", ""))])
+	return out
+
+
+static func _pos_from(arr) -> Array:
+	var out: Array = []
+	if arr is Array:
+		for e in arr:
+			if e is Array and e.size() >= 3 and float(e[1]) > float(e[0]):
+				out.append({"t0": float(e[0]), "t1": float(e[1]), "pos": str(e[2])})
 	return out
 
 

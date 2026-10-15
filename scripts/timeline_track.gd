@@ -116,6 +116,22 @@ var strobe_segments: Array = []:
 	set(v):
 		strobe_segments = v
 		queue_redraw()
+## The position row's segments, in time order, not overlapping:
+## [{t0, t1, pos: a named position's id}].
+var position_segments: Array = []:
+	set(v):
+		position_segments = v
+		queue_redraw()
+## The show's named positions (their colours, for drawing the position
+## row). Null = none.
+var positions: PositionLibrary:
+	set(v):
+		if positions != null and positions.changed.is_connected(queue_redraw):
+			positions.changed.disconnect(queue_redraw)
+		positions = v
+		if positions != null:
+			positions.changed.connect(queue_redraw)
+		queue_redraw()
 ## While the selection's being moved: its content, drawn translucent where
 ## it would land — {rows: {Row: [parts — {t0, t1, nodes? / segments?},
 ## relative to the clip's start]}, at: where the clip would start, from:
@@ -541,13 +557,7 @@ static func span_at(spans: Array, t: float) -> bool:
 ## The strobe segments from `t0` to `t1` (for copying), cut to that span
 ## and made relative to t0.
 func strobe_segment(t0: float, t1: float) -> Array:
-	var out: Array = []
-	for sg in strobe_segments:
-		if sg["t1"] <= t0 or sg["t0"] >= t1:
-			continue
-		out.append({"t0": maxf(sg["t0"], t0) - t0, "t1": minf(sg["t1"], t1) - t0,
-			"speed": int(sg.get("speed", Strobe.MEDIUM))})
-	return out
+	return tagged_segment(strobe_segments, t0, t1, "speed", Strobe.MEDIUM)
 
 
 ## Replace the strobe row from `t0` to `t1` with `segments` (relative to
@@ -555,40 +565,96 @@ func strobe_segment(t0: float, t1: float) -> Array:
 ## to its edges; touching segments of the same speed are joined. Cut off
 ## at the song's end. Returns whether anything changed.
 func replace_strobe(t0: float, t1: float, segments: Array) -> bool:
+	var out := _replace_tagged(strobe_segments, t0, t1, segments, "speed", Strobe.MEDIUM)
+	if out == strobe_segments:
+		return false
+	strobe_segments = out
+	return true
+
+
+# -------------------------------------------------------------- POSITION --
+
+## The named position's id at `t` seconds, or "" where none is.
+func position_at(t: float) -> String:
+	return position_id_at(position_segments, t)
+
+
+static func position_id_at(spans: Array, t: float) -> String:
+	for sg in spans:
+		if t >= sg["t0"] and t <= sg["t1"]:
+			return String(sg.get("pos", ""))
+	return ""
+
+
+## The position segments from `t0` to `t1` (for copying), cut and relative
+## to t0.
+func position_segment(t0: float, t1: float) -> Array:
+	return tagged_segment(position_segments, t0, t1, "pos", "")
+
+
+## Replace the position row from `t0` to `t1` with `segments` (relative to
+## t0, each {t0, t1, pos: a named position's id}; [] clears it there).
+## Touching segments of the same position join. Returns whether anything
+## changed.
+func replace_position(t0: float, t1: float, segments: Array) -> bool:
+	var out := _replace_tagged(position_segments, t0, t1, segments, "pos", "")
+	if out == position_segments:
+		return false
+	position_segments = out
+	return true
+
+
+# ---------------------------------------------------------- TAGGED SPANS --
+# Strobe and position segments are spans with one tag each ({t0, t1,
+# <tag>}): a speed, a position's id.
+
+## The segments of `spans` from `t0` to `t1`, cut to that span and made
+## relative to t0, keeping their `tag` (`default` where it's missing).
+static func tagged_segment(spans: Array, t0: float, t1: float, tag: String, default) -> Array:
+	var out: Array = []
+	for sg in spans:
+		if sg["t1"] <= t0 or sg["t0"] >= t1:
+			continue
+		out.append({"t0": maxf(sg["t0"], t0) - t0, "t1": minf(sg["t1"], t1) - t0, tag: sg.get(tag, default)})
+	return out
+
+
+## `spans` with `t0`..`t1` replaced by `segments` (relative to t0): the
+## spans overlapping it cut back to its edges, the new ones put in (cut
+## to the span and the song's end), and touching spans with the same tag
+## joined.
+func _replace_tagged(spans: Array, t0: float, t1: float, segments: Array, tag: String, default) -> Array:
 	var end := wave.duration() if wave != null and wave.analysis != null else INF
 	var shift := t0
 	t0 = maxf(t0, 0.0)
 	t1 = minf(t1, end)
 	if t1 <= t0:
-		return false
+		return spans
 	var out: Array = []
-	for sg in strobe_segments:
+	for sg in spans:
 		if sg["t1"] <= t0 or sg["t0"] >= t1:
 			out.append(sg.duplicate())
 			continue
-		var speed := int(sg.get("speed", Strobe.MEDIUM))
+		var v = sg.get(tag, default)
 		if sg["t0"] < t0:
-			out.append({"t0": sg["t0"], "t1": t0, "speed": speed})
+			out.append({"t0": sg["t0"], "t1": t0, tag: v})
 		if sg["t1"] > t1:
-			out.append({"t0": t1, "t1": sg["t1"], "speed": speed})
+			out.append({"t0": t1, "t1": sg["t1"], tag: v})
 	for sg in segments:
 		var a := maxf(sg["t0"] + shift, t0)
 		var b := minf(sg["t1"] + shift, t1)
 		if b > a:
-			out.append({"t0": a, "t1": b, "speed": int(sg.get("speed", Strobe.MEDIUM))})
+			out.append({"t0": a, "t1": b, tag: sg.get(tag, default)})
 	out.sort_custom(func(x, y): return x["t0"] < y["t0"])
 	var joined: Array = []
 	for sg in out:
-		if not sg.has("speed"):
-			sg["speed"] = Strobe.MEDIUM
-		if not joined.is_empty() and sg["t0"] <= joined[-1]["t1"] + 0.0005 and sg["speed"] == joined[-1]["speed"]:
+		if not sg.has(tag):
+			sg[tag] = default
+		if not joined.is_empty() and sg["t0"] <= joined[-1]["t1"] + 0.0005 and sg[tag] == joined[-1][tag]:
 			joined[-1]["t1"] = maxf(joined[-1]["t1"], sg["t1"])
 		else:
 			joined.append(sg)
-	if joined == strobe_segments:
-		return false
-	strobe_segments = joined
-	return true
+	return joined
 
 
 func _gui_input(event: InputEvent) -> void:
@@ -795,6 +861,8 @@ func _draw() -> void:
 			_draw_colour(r)
 		elif row == Row.STROBE:
 			_draw_strobe(r, strobe_segments, 0.0, _STROBE)
+		elif row == Row.POSITION:
+			_draw_position(r, position_segments, 0.0, 1.0)
 		# The name, sized to fit the row (8 px in the 10 px rows), at the top
 		# of the dimmer row.
 		var fs := 10 if row == Row.DIMMER else 8
@@ -834,6 +902,8 @@ func _draw_ghost(row: Row, r: Rect2) -> void:
 					draw_dashed_line(line[k], line[k + 1], _GHOST_LINE, 1.5, 4.0)
 		if part.has("strobes"):
 			_draw_strobe(r, part["strobes"], start, _GHOST_LINE)
+		if part.has("positions"):
+			_draw_position(r, part["positions"], start, 0.6)
 		if part.has("segments"):
 			for sg in part["segments"]:
 				var a := _t2x(start + sg["t0"])
@@ -912,6 +982,34 @@ func _draw_strobe(r: Rect2, segs: Array, shift: float, col: Color) -> void:
 		var d1 := clampf(x1, 0.0, size.x)
 		if d1 > d0:
 			draw_dashed_line(Vector2(d0, mid), Vector2(d1, mid), col, 1.0, 3.0)
+
+
+## Position segments (offset by `shift` seconds, at `alpha`): the
+## position's triangle in its colour at the start, and a line in that
+## colour across the span; grey where the position's been deleted.
+func _draw_position(r: Rect2, segs: Array, shift: float, alpha: float) -> void:
+	var v := _view()
+	var mid := r.position.y + r.size.y * 0.5
+	var h := r.size.y - 2.0
+	for sg in segs:
+		var a: float = sg["t0"] + shift
+		var b: float = sg["t1"] + shift
+		if b < v.x or a > v.x + v.y:
+			continue
+		var pos := positions.find(String(sg.get("pos", ""))) if positions != null else {}
+		var col: Color = pos["colour"] if not pos.is_empty() else Color(0.55, 0.55, 0.6)
+		col.a *= alpha
+		var x0 := _t2x(a)
+		var x1 := _t2x(b)
+		var d0 := clampf(x0 + h * 0.7, 0.0, size.x)
+		var d1 := clampf(x1, 0.0, size.x)
+		if d1 > d0:
+			draw_line(Vector2(d0, mid), Vector2(d1, mid), Color(col.r, col.g, col.b, col.a * 0.7), 2.0)
+		if x1 >= 0.0 and x1 <= size.x:
+			draw_line(Vector2(x1, r.position.y + 2), Vector2(x1, r.end.y - 1), Color(col.r, col.g, col.b, col.a * 0.7), 1.0)
+		if x0 + h >= 0.0 and x0 <= size.x:
+			draw_colored_polygon(PackedVector2Array([Vector2(x0, r.position.y + 1), Vector2(x0 + h * 0.85, mid),
+				Vector2(x0, r.end.y - 1)]), col)
 
 
 ## The height of a strobe segment's dashed line in the row `r`, by speed.

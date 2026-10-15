@@ -291,8 +291,15 @@ technical reference.
   **Strobe Off** (strobes saved before speeds read as Medium); Delete, cut / copy / paste, moving the selection
   (with its ghost), dragging a selection edge (a strobe's start / end on
   it moves too), undo and saving cover it like the colour row. Touching
-  strobe segments of the same speed join into one. So far the Position and Cues rows are
-  empty.
+  strobe segments of the same speed join into one.
+  The **Position** row holds position segments, each naming one of the
+  show's named positions: drawn as the position's triangle in its colour
+  at the start, with a line in that colour across the span (grey if the
+  position's since been deleted). Its right-click **Position** submenu
+  lists every named position with its icon, then **Clear Position**;
+  Delete, cut / copy / paste, moving (with the ghost), edge drags, undo
+  and saving cover it like the strobe row, and touching segments of the
+  same position join. So far the Cues row is empty.
 - `timeline_store.gd` — the `TimelineStore` class: a show's music
   timelines, in a folder beside the show file (`MyShow.slight` →
   `MyShow.timelines/`): one JSON file per song, named by the song's
@@ -458,8 +465,12 @@ Global controls live in the top bar:
   value for the speed (the faster of the two) — a fifth of the way up a
   range labelled strobe / pulse for slow, just over half way for
   medium, its fast end for fast; without such a range, the same through
-  20–240 — and is otherwise left as the console has it. So far the dimmer, colour
-  and strobe rows are the ones with content.
+  20–240 — and is otherwise left as the console has it. Where a
+  fixture's position row (else the master's) names a position, its PAN
+  and TILT go to that position's point for the fixture — 16-bit across
+  coarse and fine channels, else over the channel's min–max — and decks
+  moving the same fixture are averaged. So far the Cues row is the only
+  one without content.
 
 - **Grand Master** — one 0–255 fader that scales *every* universe's
   output on send (non-destructive: the per-channel values you dialed

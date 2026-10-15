@@ -42,7 +42,7 @@ class Deck:
 	var ticks := 0                  # Time.get_ticks_msec() of that report
 	var rate := 1.0                 # song seconds per real second, from the reports
 	var load_state := Load.NONE
-	var tracks := {}                # track key -> {dimmer: PackedVector2Array, colour: [segments], strobe: [spans]}
+	var tracks := {}                # track key -> {dimmer: PackedVector2Array, colour: [segments], strobe: [spans], position: [spans]}
 	var load_id := 0
 
 	## Seconds into the song now.
@@ -64,6 +64,8 @@ var advertise := true
 var fixtures_provider := Callable()
 ## Returns the show's TimelineStore (or null: no timelines folder).
 var store_provider := Callable()
+## The show's named positions (what the position rows refer to).
+var positions: PositionLibrary
 
 var os2l: Os2lServer
 var decks: Array = []
@@ -235,8 +237,9 @@ func _loaded(num: int, id: int, data: Dictionary) -> void:
 			var nodes := MusicTimeline._nodes_from(saved[key].get("dimmer", []))
 			var segs := MusicTimeline._segs_from(saved[key].get("colour", []))
 			var strobes := MusicTimeline._spans_from(saved[key].get("strobe", []))
-			if not nodes.is_empty() or not segs.is_empty() or not strobes.is_empty():
-				tracks[String(key)] = {"dimmer": nodes, "colour": segs, "strobe": strobes}
+			var places := MusicTimeline._pos_from(saved[key].get("position", []))
+			if not nodes.is_empty() or not segs.is_empty() or not strobes.is_empty() or not places.is_empty():
+				tracks[String(key)] = {"dimmer": nodes, "colour": segs, "strobe": strobes, "position": places}
 	d.tracks = tracks
 	d.load_state = Load.LOADED if not tracks.is_empty() else Load.NO_TIMELINES
 	state_changed.emit()
@@ -262,7 +265,7 @@ func layer(n: int) -> Array:
 	var outputs: Array = []
 	for d in decks:
 		if d.live():
-			outputs.append(song_output(d.tracks, d.position(), fixtures, bases, n))
+			outputs.append(song_output(d.tracks, d.position(), fixtures, bases, n, positions))
 	if outputs.is_empty():
 		var empty: Array = []
 		for i in range(n):
@@ -279,6 +282,9 @@ func layer(n: int) -> Array:
 ##     a head's that head
 ##   colour: a head's colour row, else its fixture's, else the master's,
 ##     sets that head's red / green / blue (where a segment covers `t`)
+##   position: the fixture's position row, else the master's, names a
+##     position (`positions`); its PAN / TILT go to that position's point
+##     for the fixture (16-bit with fine channels)
 ##   strobe: where the fixture's strobe row or the master's is on, its
 ##     STROBE channel(s) go to a strobing value (from the channel's
 ##     ranges); off, they're left as the console has them
@@ -287,7 +293,8 @@ func layer(n: int) -> Array:
 ## on one without, the colour channels — the timeline's colour, or the
 ## console's (`bases`) — are scaled by master x fixture x head (its
 ## virtual dimmer). Only what the timelines cover is driven.
-static func song_output(tracks: Dictionary, t: float, fixtures: Array, bases: Array, n: int) -> Array:
+static func song_output(tracks: Dictionary, t: float, fixtures: Array, bases: Array, n: int,
+		positions: PositionLibrary = null) -> Array:
 	var out: Array = []
 	for i in range(n):
 		out.append({})
@@ -296,6 +303,7 @@ static func song_output(tracks: Dictionary, t: float, fixtures: Array, bases: Ar
 	var lm := TimelineTrack.level_at(master_line, t)
 	var master_colour = TimelineTrack.segment_colour_at(master.get("colour", []), t)
 	var master_strobe := TimelineTrack.speed_at(master.get("strobe", []), t)
+	var master_place := TimelineTrack.position_id_at(master.get("position", []), t)
 	for fx in fixtures:
 		var u: int = fx["u"]
 		if u < 0 or u >= n:
@@ -319,6 +327,13 @@ static func song_output(tracks: Dictionary, t: float, fixtures: Array, bases: Ar
 				break
 		if dim >= 0 and fixture_dimmed:
 			out[u][start + dim] = int(round(255.0 * clampf(lf, 0.0, 1.0)))
+		var place := TimelineTrack.position_id_at(own.get("position", []), t)
+		if place == "":
+			place = master_place
+		if place != "" and positions != null and not positions.find(place).is_empty():
+			var pt := positions.point(place, uid)
+			_write_axis(out[u], chans, start, "PAN", pt.x)
+			_write_axis(out[u], chans, start, "TILT", pt.y)
 		var strobe := maxi(master_strobe, TimelineTrack.speed_at(own.get("strobe", []), t))
 		if strobe >= 0:                     # the faster of the master's and its own
 			for k in range(chans.size()):
@@ -355,6 +370,26 @@ static func song_output(tracks: Dictionary, t: float, fixtures: Array, bases: Ar
 				if not in_head.has(k):
 					out[u][start + k] = _scaled(base, start + k, lf)
 	return out
+
+
+## Set a PAN / TILT axis to `norm` (0..1 over its range): 16-bit across
+## it and its fine partner (the next channel, flagged fine or <ROLE>_FINE)
+## as 0..65535, else the channel's min..max — as the fixture panel's XY pad
+## does.
+static func _write_axis(out: Dictionary, chans: Array, start: int, role: String, norm: float) -> void:
+	for k in range(chans.size()):
+		if String(chans[k]["role"]) != role:
+			continue
+		norm = clampf(norm, 0.0, 1.0)
+		var fine: bool = k + 1 < chans.size() and (bool(chans[k + 1].get("fine", false))
+			or String(chans[k + 1]["role"]) == role + "_FINE")
+		if fine:
+			var v := int(round(norm * 65535.0))
+			out[start + k] = (v >> 8) & 0xFF
+			out[start + k + 1] = v & 0xFF
+		else:
+			out[start + k] = int(round(lerpf(int(chans[k].get("min", 0)), int(chans[k].get("max", 255)), norm)))
+		return
 
 
 ## How far through a strobe range each speed goes (slow / medium / fast).

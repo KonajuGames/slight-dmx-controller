@@ -104,12 +104,14 @@ func _ready() -> void:
 	music_panel.timeline().fixtures_provider = _timeline_fixtures
 	music_panel.timeline().set_timeline_store(TimelineStore.new(TimelineStore.folder_for_show(show_path)))
 	music_panel.positions = positions
+	music_panel.timeline().positions = positions
 	music_panel.position_editor().fixtures_provider = _position_fixtures
 
 	# DJ Perform Mode: started / stopped with its view.
 	performer = DjPerformer.new()
 	performer.fixtures_provider = _perform_fixtures
 	performer.store_provider = func(): return music_panel.timeline().timeline_store
+	performer.positions = positions
 	add_child(performer)
 	music_panel.timeline().timeline_store_changed.connect(func():
 		if performer.is_active():

@@ -161,6 +161,34 @@ func _test_song_output() -> void:
 	ok(P.song_output({"s": on}, 12.0, [strober], bases, 1)[0].is_empty(), "outside a strobe segment: left alone")
 	o = P.song_output({"master": on}, 5.0, [strober, plain] + fx, bases, 1)[0]
 	ok(o.get(80) == 240 and o.get(90) == 240 and not o.has(0), "the master's strobe: every fixture with a strobe channel")
+	# Positions: pan / tilt.
+	var lib := PositionLibrary.new()
+	var left := lib.add()
+	var right := lib.add()
+	var spot16 := {"uid": "h", "u": 0, "start": 100, "mode": 0, "profile": FixtureProfile.new("s16", "s16", [
+		{"name": "Pan", "role": "PAN"}, {"name": "Pan fine", "role": "PAN_FINE", "fine": true},
+		{"name": "Tilt", "role": "TILT"}, {"name": "Tilt fine", "role": "TILT_FINE", "fine": true}, {"name": "Dimmer", "role": "DIMMER"}])}
+	lib.set_point(left["id"], "h", Vector2(0.25, 0.75))
+	lib.set_point(left["id"], "d", Vector2(0.5, 1.0))
+	lib.set_point(right["id"], "d", Vector2(1.0, 0.0))
+	var at_left := {"position": [{"t0": 0.0, "t1": 10.0, "pos": left["id"]}]}
+	o = P.song_output({"master": at_left}, 5.0, [spot16] + fx, bases, 1, lib)[0]
+	var pan16: int = o.get(100) * 256 + o.get(101)
+	var tilt16: int = o.get(102) * 256 + o.get(103)
+	ok(pan16 == int(round(0.25 * 65535)) and tilt16 == int(round(0.75 * 65535)),
+		"a 16-bit mover: pan / tilt across coarse and fine (%d / %d)" % [pan16, tilt16])
+	ok(o.get(40) == 128 and o.get(41) == 255, "an 8-bit mover: its point for that position (%s / %s)" % [o.get(40), o.get(41)])
+	ok(not o.has(104) and not o.has(42), "dimmers untouched")
+	o = P.song_output({"master": at_left, "d": {"position": [{"t0": 0.0, "t1": 10.0, "pos": right["id"]}]}}, 5.0, fx, bases, 1, lib)[0]
+	ok(o.get(40) == 255 and o.get(41) == 0, "a fixture's own position row beats the master's")
+	ok(P.song_output({"master": at_left}, 12.0, fx, bases, 1, lib)[0].is_empty(), "outside a position segment: left alone")
+	ok(P.song_output({"master": at_left}, 5.0, fx, bases, 1, null)[0].is_empty(), "no positions library: nothing")
+	var gone := {"position": [{"t0": 0.0, "t1": 10.0, "pos": "deleted"}]}
+	ok(P.song_output({"master": gone}, 5.0, fx, bases, 1, lib)[0].is_empty(), "a deleted position: nothing")
+	var avg: Array = P.average_channels(fx, 1)
+	var mixed: Array = P.mix([P.song_output({"master": at_left}, 5.0, fx, bases, 1, lib),
+		P.song_output({"d": {"position": [{"t0": 0.0, "t1": 10.0, "pos": right["id"]}]}}, 5.0, fx, bases, 1, lib)], avg, 1)
+	ok(mixed[0][40] == 192 and mixed[0][41] == 128, "two decks moving it: the average (%s / %s)" % [mixed[0][40], mixed[0][41]])
 
 
 func _test_mix() -> void:
