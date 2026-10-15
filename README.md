@@ -123,6 +123,25 @@ technical reference.
   as an indexed song that isn't at its path — it may have been moved —
   is fingerprinted, in the background. The icons update when a song's
   timelines are first saved and when another show is loaded.
+  Below the folders, a **Positions** header lists the show's named
+  positions for moving fixtures, each after a right-facing triangle in
+  its own colour, with **+** last to add one ("Position N", the next
+  colour — hues stepped round by the golden ratio, so no two match).
+  Picking one opens the position editor in place of the track list.
+- `position_library.gd` — the `PositionLibrary` class: a show's named
+  positions — each an id, a name, a colour and a pan / tilt per fixture
+  (by fixture uid, normalised 0..1 over each axis' range, tilt
+  bottom-up; a fixture without one sits in the centre). Saved with the
+  show.
+- `position_editor.gd` — the `PositionEditor` class: one position's
+  editor. A large pan / tilt pad fills the space, kept square (the cue
+  mode XY pad's look, at size); on its right, the position's name —
+  editable, after its colour's triangle — over a list of every fixture
+  with pan and tilt. Selecting fixtures (Ctrl / Shift for several)
+  highlights their points in the position's colour, with their names;
+  the others show dimmed. Dragging a highlighted point moves it — and
+  every other selected one with it; clicking a dimmed point selects
+  that fixture.
 - `dj_performer.gd` — the `DjPerformer` class: DJ Perform Mode's engine.
   Runs an `Os2lServer` (subscribed to four decks), follows each deck's
   song, play state, volume fader and position, loads a new song's
@@ -442,8 +461,8 @@ Global controls live in the top bar:
   and fixture patch (each fixture's profile — embedded, so the file is
   portable — address, mode, and position / rotation in the visualizer),
   the fixtures' live levels and virtual dimmer settings, the cue list,
-  chases, effects, fixture groups, sound reactions, triggers, Auto Show,
-  run mode and the visualizer's stage. Each fixture has a permanent uid,
+  chases, effects, fixture groups, named positions, sound reactions,
+  triggers, Auto Show, run mode and the visualizer's stage. Each fixture has a permanent uid,
   saved with it. The music tracks' lighting timelines go in a folder
   beside the show (`<show>.timelines/`, named in the show file), keyed by
   those uids: Save Show also saves the open song's unsaved timelines,

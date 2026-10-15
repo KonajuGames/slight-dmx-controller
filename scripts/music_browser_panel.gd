@@ -10,6 +10,10 @@ extends HSplitContainer
 ## its decks use), falling back to the file name. The database and lists
 ## load the first time the view is shown, not at app start.
 ##
+## Below the folders, the show's named positions (a PositionLibrary): each
+## with its colour's triangle, then a "+" to add one. Picking a position
+## replaces the right side with its PositionEditor.
+##
 ## A track with saved lighting timelines in the current show gets a small
 ## node-line icon (timeline_icon()) before its title. Most are told from
 ## the show's timelines index alone; a song that might have been moved
@@ -40,6 +44,20 @@ var _list: Tree                 # right: the tracks
 var _heading: Label
 var _list_view: Control         # the heading + track list
 var _timeline: MusicTimeline    # replaces _list_view while a track is open
+var _editor: PositionEditor     # replaces it while a position is open
+var _positions: ItemList        # the named positions, then "+"
+const ADD_POSITION := "+"
+## The show's named positions (set by the shell).
+var positions: PositionLibrary:
+	set(v):
+		if positions != null and positions.changed.is_connected(refresh_positions):
+			positions.changed.disconnect(refresh_positions)
+		positions = v
+		if positions != null:
+			positions.changed.connect(refresh_positions)
+		if _editor != null:
+			_editor.library = v
+		refresh_positions()
 var _db: VirtualDjDatabase = null
 var _lists: Array = []          # [VirtualDjList]
 var _loaded := false
@@ -57,8 +75,13 @@ func _ready() -> void:
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
 	split_offset = 260
 
+	# The left column: the folders tree, then the named positions.
+	var left := VBoxContainer.new()
+	left.custom_minimum_size = Vector2(220, 0)
+	left.add_theme_constant_override("separation", 4)
 	_tree = Tree.new()
-	_tree.custom_minimum_size = Vector2(220, 0)
+	_tree.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_tree.size_flags_stretch_ratio = 3.0
 	_tree.hide_root = true
 	_tree.select_mode = Tree.SELECT_SINGLE
 	_tree.item_collapsed.connect(_on_item_collapsed)
@@ -66,7 +89,18 @@ func _ready() -> void:
 	# Clicking the folder that's already selected doesn't re-select it, but
 	# should still leave a track's timeline for the list.
 	_tree.item_mouse_selected.connect(func(_pos: Vector2, _button: int): _on_folder_clicked())
-	add_child(_tree)
+	left.add_child(_tree)
+	var head := Label.new()
+	head.text = "Positions"
+	head.add_theme_font_size_override("font_size", 15)
+	left.add_child(head)
+	_positions = ItemList.new()
+	_positions.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_positions.size_flags_stretch_ratio = 1.0
+	_positions.custom_minimum_size = Vector2(0, 110)
+	_positions.item_selected.connect(_on_position_selected)
+	left.add_child(_positions)
+	add_child(left)
 
 	# The right side shows either the track list or a track's timeline.
 	var right_holder := VBoxContainer.new()
@@ -83,6 +117,11 @@ func _ready() -> void:
 	_timeline = MusicTimeline.new()
 	_timeline.visible = false
 	right_holder.add_child(_timeline)
+	_editor = PositionEditor.new()
+	_editor.visible = false
+	_editor.library = positions
+	right_holder.add_child(_editor)
+	refresh_positions()
 	_timeline.timelines_saved.connect(func(path: String):
 		_has_timelines[path] = true
 		_show_mark(path))
@@ -277,13 +316,16 @@ func _on_track_activated() -> void:
 ## Replace the track list with `row`'s timeline.
 func open_track(row: Dictionary) -> void:
 	_list_view.visible = false
+	_editor.visible = false
 	_timeline.visible = true
 	_timeline.open(row["path"], _db.find_song(row["path"]) if _db != null else null)
 
 
-## Back from a track's timeline to the track list.
+## Back from a track's timeline (or a position) to the track list.
 func show_track_list() -> void:
 	_timeline.visible = false
+	_editor.visible = false
+	_positions.deselect_all()
 	_list_view.visible = true
 
 
@@ -294,6 +336,59 @@ func is_timeline_shown() -> bool:
 
 func timeline() -> MusicTimeline:
 	return _timeline
+
+
+# ------------------------------------------------------------- POSITIONS --
+
+func position_editor() -> PositionEditor:
+	return _editor
+
+
+func positions_list() -> ItemList:
+	return _positions
+
+
+## List the named positions (each after its colour's triangle), then "+".
+func refresh_positions() -> void:
+	if _positions == null:
+		return
+	_positions.clear()
+	if positions != null:
+		for pos in positions.positions:
+			var i := _positions.add_item(String(pos["name"]), PositionEditor.triangle_icon(pos["colour"]))
+			_positions.set_item_metadata(i, String(pos["id"]))
+			if _editor.visible and _editor.position_id == pos["id"]:
+				_positions.select(i)
+	var add := _positions.add_item(ADD_POSITION)
+	_positions.set_item_metadata(add, ADD_POSITION)
+	_positions.set_item_tooltip(add, "Add a position")
+	if _editor.visible and positions != null and positions.find(_editor.position_id).is_empty():
+		show_track_list()                   # its position's gone (another show loaded)
+
+
+## Picking a position opens it in the editor; "+" adds one first.
+func _on_position_selected(i: int) -> void:
+	var id := String(_positions.get_item_metadata(i))
+	if id == ADD_POSITION:
+		if positions == null:
+			return
+		id = positions.add()["id"]           # refreshes the list
+	open_position(id)
+
+
+## Show position `id` in the editor, in place of the track list / timeline.
+func open_position(id: String) -> void:
+	_list_view.visible = false
+	_timeline.visible = false
+	_editor.visible = true
+	_editor.open(id)
+	for i in range(_positions.item_count):
+		if String(_positions.get_item_metadata(i)) == id:
+			_positions.select(i)
+
+
+func is_position_shown() -> bool:
+	return _editor.visible
 
 
 # ------------------------------------------------------------------ LIST --

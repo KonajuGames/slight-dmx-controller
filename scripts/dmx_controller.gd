@@ -44,6 +44,8 @@ const VIEWS := ["Console", "DJ Edit Mode", "DJ Perform Mode"]
 ## DJ Perform Mode: VirtualDJ over OS2L playing the songs' timelines
 ## (running only while that view is showing), and its panel.
 var performer: DjPerformer
+## The show's named positions for moving fixtures (edited in DJ Edit Mode).
+var positions := PositionLibrary.new()
 var perform_panel: DjPerformPanel
 ## The right-hand tabs (Patch + 3D Visualizer) and, while the visualizer
 ## is popped out, its own window.
@@ -101,6 +103,8 @@ func _ready() -> void:
 	music_panel.timeline().generate_show_requested.connect(_generate_show_from_library)
 	music_panel.timeline().fixtures_provider = _timeline_fixtures
 	music_panel.timeline().set_timeline_store(TimelineStore.new(TimelineStore.folder_for_show(show_path)))
+	music_panel.positions = positions
+	music_panel.position_editor().fixtures_provider = _position_fixtures
 
 	# DJ Perform Mode: started / stopped with its view.
 	performer = DjPerformer.new()
@@ -695,6 +699,18 @@ func _on_patch_changed() -> void:
 		viz_panel.rebuild()
 	if music_panel:
 		music_panel.timeline().refresh_fixtures()
+		music_panel.position_editor().refresh_fixtures()
+
+
+## Every patched fixture for the position editor (it lists those with pan
+## and tilt).
+func _position_fixtures() -> Array:
+	var out: Array = []
+	for ui in range(_panels.size()):
+		for fx in _panels[ui].patched_fixtures:
+			out.append({"uid": String(fx["uid"]), "name": "U%d · %s" % [ui + 1, fx["name"]],
+				"profile": fx["profile"], "mode": int(fx.get("mode", 0))})
+	return out
 
 
 ## Every patched fixture for DJ Perform Mode's timeline playback.
@@ -1692,7 +1708,7 @@ func _refresh_all_profile_options(select_new: bool) -> void:
 ## universe's connection settings and fixture patch (each fixture's
 ## profile, address, mode, and position / rotation in the visualizer),
 ## the fixtures' live levels and virtual dimmers, the cue list, chases,
-## effects, fixture groups, sound reactions, triggers, Auto Show, run mode
+## effects, fixture groups, named positions, sound reactions, triggers, Auto Show, run mode
 ## and the visualizer's stage. JSON; saved to any file (SHOW_EXT), or the
 ## default user:// one. The music tracks' lighting timelines go in a
 ## folder beside it (TimelineStore: "<show>.timelines/"), named in the
@@ -1751,6 +1767,7 @@ func show_dict() -> Dictionary:
 		"triggers": Triggers.to_dict(),
 		"auto_show": AutoShow.to_dict(),
 		"groups": _groups_to_dict(),
+		"positions": positions.to_dict(),
 		"viz": viz_panel.to_dict(),
 		"viz_window": _viz_window_dict(),
 		"sacn_cid": Marshalls.raw_to_base64(ArtNet.sacn_cid),
@@ -1844,6 +1861,8 @@ func apply_show_dict(parsed) -> void:
 	chase_panel.from_dict(doc.get("chases", {}))
 	_groups_from_dict(doc.get("groups", {}))   # fills the shared `groups`
 	groups_panel.sync_to_patch()
+	var pos_doc = doc.get("positions", {})
+	positions.from_dict(pos_doc if pos_doc is Dictionary else {})
 	fx_panel.from_dict(doc.get("effects", {}))
 	fx_panel.refresh_group_options()
 	sound_panel.from_dict(doc.get("sound", {}))
