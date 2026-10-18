@@ -2373,8 +2373,9 @@ func generate_show() -> bool:
 		# "Centre" one (no points of its own: every fixture centred).
 		if positions.positions.is_empty():
 			positions.rename(String(positions.add()["id"]), "Centre")
+		# Each with how widely it spreads the beams (narrow -> wide by energy).
 		for pos in positions.positions:
-			ids.append(String(pos["id"]))
+			ids.append({"id": String(pos["id"]), "spread": _spread(pos["points"])})
 	# Which beat starts a bar: the grid's, or the analysis's first downbeat.
 	var bar_phase := 0
 	if beats == _wave.grid_beats:
@@ -2384,7 +2385,8 @@ func generate_show() -> bool:
 	var variation: int = _generated.get(_path, 0)
 	_generated[_path] = variation + 1
 	var show := TimelineGenerator.generate(a.sections, beats, _wave.beats_per_bar, _wave.duration(),
-		tracks, ids, _path.get_file(), variation, bar_phase)
+		tracks, ids, _path.get_file(), variation, bar_phase,
+		{"peak": a.wave_peak, "lo": a.wave_lo, "hi": a.wave_hi})
 	for tr in [_master] + Array(_fixture_tracks):
 		var c: Dictionary = show.get(String(tr.get_meta("key")), {})
 		tr.dimmer_nodes = c.get("dimmer", PackedVector2Array())
@@ -2394,6 +2396,21 @@ func generate_show() -> bool:
 		tr.movement_segments = c.get("movement", [])
 	_mark_dirty()
 	return true
+
+
+## How far apart a position's points are: their mean distance from
+## their middle (0 with fewer than two).
+static func _spread(points: Dictionary) -> float:
+	if points.size() < 2:
+		return 0.0
+	var mid := Vector2.ZERO
+	for v in points.values():
+		mid += v
+	mid /= points.size()
+	var d := 0.0
+	for v in points.values():
+		d += (v as Vector2).distance_to(mid)
+	return d / points.size()
 
 
 func _update_structure_buttons() -> void:

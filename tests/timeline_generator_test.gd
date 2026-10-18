@@ -29,6 +29,9 @@ func _run() -> void:
 	_test_patterns()
 	_test_variety()
 	_test_escalation()
+	_test_envelope()
+	_test_contrast()
+	_test_positions()
 	_test_valid()
 	_test_edges()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
@@ -104,8 +107,8 @@ func _test_show() -> void:
 	ok(TimelineTrack.speed_at(st, 30.0) < 0 and TimelineTrack.speed_at(st, 106.0) < 0, "no strobe in the verse or outro")
 	# Positions and movement.
 	var pos: Array = m["position"]
-	ok(pos.size() == 6 and pos[0]["pos"] == "posA" and pos[1]["pos"] == "posB" and pos[2]["pos"] == "posA",
-		"the named positions in turn, a section each")
+	ok(not pos.is_empty() and pos.all(func(p): return p["pos"] in ["posA", "posB"]) and is_equal_approx(pos[0]["t0"], 0.0)
+		and is_equal_approx(pos[pos.size() - 1]["t1"], 120.0), "named positions across the song")
 	var mv: Array = m["movement"]
 	var covered := not mv.is_empty()
 	for g in mv:
@@ -273,7 +276,8 @@ func _test_valid() -> void:
 	print("- well-formed over 30 variations")
 	var bad := ""
 	for v in range(30):
-		var show := _show(v, "valid.mp3")
+		var show := _show(v, "valid.mp3") if v % 2 == 0 else TimelineGenerator.generate(_sections(), _beats(), 4, 120.0,
+			_tracks(), _spread_positions(), "valid.mp3", v, 0, _env())
 		for k in show:
 			var c: Dictionary = show[k]
 			var line: PackedVector2Array = c["dimmer"]
@@ -288,6 +292,161 @@ func _test_valid() -> void:
 					if segs[i]["t1"] <= segs[i]["t0"] or (i > 0 and segs[i]["t0"] < segs[i - 1]["t1"] - 0.0001):
 						bad = "%s %s (variation %d)" % [k, row, v]
 	ok(bad == "", "lines in time order, levels 0..1, segments ordered and not overlapping %s" % bad)
+
+
+## An envelope over the 120 s song: loudness by section energy, with the
+## first chorus dropping out from 48 s to 52 s and the second verse bar
+## (18-20 s) quieter; bass strong on every other beat; bright 84-92 s.
+func _env() -> Dictionary:
+	var peak := PackedFloat32Array()
+	var lo := PackedFloat32Array()
+	var hi := PackedFloat32Array()
+	for c in range(1200):
+		var t := c * 0.1
+		var e := 0.5
+		for sec in _sections():
+			if t >= sec["start"] and t < sec["end"]:
+				e = sec["energy"]
+		if t >= 48.0 and t < 52.0:
+			e = 0.1
+		if t >= 18.0 and t < 20.0:
+			e *= 0.6
+		peak.append(e)
+		lo.append(0.8 if fmod(t, 1.0) < 0.5 else 0.2)
+		hi.append(0.9 if t >= 84.0 and t < 92.0 else 0.3)
+	return {"peak": peak, "lo": lo, "hi": hi}
+
+
+func _spread_positions() -> Array:
+	return [{"id": "wide", "spread": 0.4}, {"id": "narrow", "spread": 0.0}, {"id": "mid", "spread": 0.2}, {"id": "wider", "spread": 0.3}]
+
+
+func _test_envelope() -> void:
+	print("- the envelope")
+	var show := TimelineGenerator.generate(_sections(), _beats(), 4, 120.0, _tracks(), ["posA", "posB"], "song.mp3", 0, 0, _env())
+	var m: Dictionary = show["master"]
+	var md: PackedVector2Array = m["dimmer"]
+	ok(TimelineTrack.level_at(md, 18.5) < TimelineTrack.level_at(md, 22.5) - 0.02, "the master rides the loudness: lower in a quieter bar (%.2f < %.2f)"
+		% [TimelineTrack.level_at(md, 18.5), TimelineTrack.level_at(md, 22.5)])
+	var none := _show()
+	ok(TimelineTrack.level_at(none["master"]["dimmer"], 18.5) == TimelineTrack.level_at(none["master"]["dimmer"], 22.5), "...without one, flat across the section")
+	# A dip inside the chorus: its own phrase, the return too.
+	var secs := TimelineGenerator._normalised(_sections(), 120.0)
+	var en := TimelineGenerator._envelope(_env(), 120.0)
+	var bars := TimelineGenerator._bar_starts(_beats(), 4, 0)
+	var evs := TimelineGenerator._events(secs, bars, 2.0, en)
+	ok(evs.has(2) and evs[2].any(func(e): return e["kind"] == "dip" and is_equal_approx(e["t"], 48.0))
+		and evs[2].any(func(e): return e["kind"] == "drop" and is_equal_approx(e["t"], 52.0)), "the chorus drops out at 48 s and comes back at 52 s")
+	var ph := TimelineGenerator._phrases(secs, bars, 2.0, evs)
+	var dip: Array = ph.filter(func(p): return is_equal_approx(p["t0"], 48.0))
+	var back: Array = ph.filter(func(p): return is_equal_approx(p["t0"], 52.0))
+	ok(dip.size() == 1 and dip[0]["dip"] and back.size() == 1 and back[0]["drop"], "...each starting a phrase (the dip marked, the return too)")
+	ok(TimelineTrack.speed_at(m["strobe"], 52.2) == TimelineTrack.Strobe.FAST and TimelineTrack.speed_at(m["strobe"], 53.0) < 0,
+		"a strobe hit on the beat it comes back")
+	ok(TimelineTrack.level_at(md, 50.0) < TimelineTrack.level_at(md, 44.0), "the master dips with it")
+	# Bass accents: hits follow the bass.
+	var ctx := {"beats": _beats(40), "beat_len": 0.5, "bar_len": 2.0, "per_bar": 4, "bar_phase": 0,
+		"master": PackedVector2Array([Vector2(0, 1), Vector2(20, 1)]), "env": en}
+	var line := TimelineGenerator._pattern("every_beat", 0.0, 4.0, 0, 2, {"tier": 3, "sparkle": []}, ctx)
+	ok(_level_after(line, 1.0) > 0.99 and absf(_level_after(line, 1.5) - (0.55 + 0.45 * 0.25)) < 0.02,
+		"every beat: strong bass at full, weak at %.2f" % _level_after(line, 1.5))
+	# Sparkle: thicker where it's brighter.
+	var order: Array = []
+	for j in range(40):
+		order.append([0, 1, 2, 3, 4, 5, 6, 7, 8])
+	var bright := 0
+	var dull := 0
+	for i in range(9):
+		var sp := TimelineGenerator._pattern("sparkle", 84.0, 86.0, i, 9, {"tier": 3, "sparkle": order}, _ctx_at(84.0, en))
+		var sq := TimelineGenerator._pattern("sparkle", 60.0, 62.0, i, 9, {"tier": 3, "sparkle": order}, _ctx_at(60.0, en))
+		bright += 1 if _level_after(sp, 84.0) > 0.01 else 0
+		dull += 1 if _level_after(sq, 60.0) > 0.01 else 0
+	ok(bright > dull and dull >= 1, "sparkle: %d fixtures lit where it's bright, %d where it isn't" % [bright, dull])
+	var pool := TimelineGenerator._weighted(TimelineGenerator.DIM_PATTERNS[2], {"lo": 1.5, "hi": 0.8}, 2)
+	var w := {}
+	for o in pool:
+		w[o[0]] = o[1]
+	ok(w["bar_hits"] == 4.0 and w["half_time"] == 4.0 and w["wave"] == 2.0 and w.has("every_beat"), "a bass-heavy phrase favours the beat patterns")
+
+
+func _ctx_at(t: float, en: Dictionary) -> Dictionary:
+	var b := PackedFloat32Array()
+	for i in range(8):
+		b.append(t + i * 0.5)
+	return {"beats": b, "beat_len": 0.5, "bar_len": 2.0, "per_bar": 4, "bar_phase": 0,
+		"master": PackedVector2Array([Vector2(0, 1), Vector2(120, 1)]), "env": en}
+
+
+func _test_contrast() -> void:
+	print("- contrast")
+	var secs := TimelineGenerator._normalised(_sections(), 120.0)
+	ok(secs[3]["breakdown"] and not secs[1]["breakdown"] and not secs[5]["breakdown"], "the quiet bridge between the choruses: a breakdown")
+	var show := _show()
+	var m: Dictionary = show["master"]
+	var md: PackedVector2Array = m["dimmer"]
+	var e: float = secs[3]["e"]
+	ok(is_equal_approx(TimelineTrack.level_at(md, 72.0), 0.6 * (0.25 + 0.75 * e)), "...darker")
+	var c: Color = _colour_at(m["colour"], 70.0)
+	ok(absf(fposmod(c.h - TimelineGenerator.COOL_HUE + 0.5, 1.0) - 0.5) < 0.16, "...cooler (hue %.2f)" % c.h)
+	var bars := TimelineGenerator._bar_starts(_beats(), 4, 0)
+	TimelineGenerator._mark_repeats(secs)
+	var ph := TimelineGenerator._phrases(secs, bars, 2.0)
+	var rng := RandomNumberGenerator.new()
+	var plan := TimelineGenerator._plan(secs, ph, rng, 5, 0.5)
+	var calm := true
+	for p in range(ph.size()):
+		if ph[p]["s"] == 3:
+			calm = calm and plan[p]["dim"] in ["solo_dark", "duo", "breathe_slow"] and plan[p]["fill"] == "" and plan[p]["fan"] == ""
+	ok(calm, "...one or two fixtures at a time or slow swells, no fills, no fanning")
+	var dctx := {"beats": _beats(20), "beat_len": 0.5, "bar_len": 2.0, "per_bar": 4, "bar_phase": 0,
+		"master": PackedVector2Array([Vector2(0, 1), Vector2(10, 1)])}
+	var a := TimelineGenerator._pattern("duo", 0.0, 8.0, 0, 4, {"tier": 0, "sparkle": []}, dctx)
+	var b := TimelineGenerator._pattern("duo", 0.0, 8.0, 1, 4, {"tier": 0, "sparkle": []}, dctx)
+	ok(TimelineTrack.level_at(a, 1.0) > 0.99 and TimelineTrack.level_at(b, 1.0) < 0.01 and TimelineTrack.level_at(b, 5.0) > 0.99,
+		"duo: a pair lit, two bars each, the rest dark")
+	# The riser into the first chorus (the verse's last four bars).
+	ok(TimelineTrack.level_at(md, 38.5) > TimelineTrack.level_at(md, 33.0) + 0.3 and TimelineTrack.level_at(md, 33.0) < 0.7,
+		"a riser: the master climbs to full into the build (%.2f -> %.2f)" % [TimelineTrack.level_at(md, 33.0), TimelineTrack.level_at(md, 38.5)])
+	var early := 0
+	var late := 0
+	for k in ["par1", "par2", "bar", "spot", "spot2"]:
+		early += _step_ups(show[k]["dimmer"], 32.0, 34.0)
+		late += _step_ups(show[k]["dimmer"], 38.0, 39.5)
+	ok(late >= 2 * early and early >= 3, "...the chase speeding up (%d hits in its first bar, %d in its last)" % [early, late])
+	var c0: Color = TimelineTrack.segment_colour_at(m["colour"], 32.1)
+	var c1: Color = TimelineTrack.segment_colour_at(m["colour"], 39.4)
+	ok(c1.s < c0.s - 0.3, "...the colour fading towards white (saturation %.2f -> %.2f)" % [c0.s, c1.s])
+
+
+func _test_positions() -> void:
+	print("- positions by energy")
+	ok(TimelineGenerator._ranked(_spread_positions()) == ["narrow", "mid", "wider", "wide"], "ranked narrow -> wide by spread")
+	ok(TimelineGenerator._ranked(["b", "a"]) == ["b", "a"], "...ids alone keep their order")
+	ok(is_equal_approx(MusicTimeline._spread({"a": Vector2(0.4, 0.5), "b": Vector2(0.6, 0.5)}), 0.1) and MusicTimeline._spread({"a": Vector2(0.4, 0.5)}) == 0.0,
+		"a position's spread: its points' mean distance from their middle")
+	var show := TimelineGenerator.generate(_sections(), _beats(), 4, 120.0, _tracks(), _spread_positions(), "song.mp3")
+	var pos: Array = show["master"]["position"]
+	ok(TimelineTrack.position_id_at(pos, 70.0) == "narrow", "the breakdown: the narrowest")
+	ok(TimelineTrack.position_id_at(pos, 85.0) in ["wider", "wide"] and TimelineTrack.position_id_at(pos, 100.0) in ["wider", "wide"],
+		"the finale: the widest")
+	ok(TimelineTrack.position_id_at(pos, 41.0) != TimelineTrack.position_id_at(pos, 57.0), "a loud section: a new one each phrase")
+	var changes := 0
+	for sg in pos:
+		if sg["t0"] > 16.0 and sg["t0"] < 40.0:
+			changes += 1
+	ok(changes == 0 and TimelineTrack.position_id_at(pos, 5.0) in ["narrow", "mid"], "a quieter one: one per section (the intro narrow)")
+
+
+func _level_after(line: PackedVector2Array, t: float) -> float:
+	return TimelineTrack.level_at(line, t + 0.0001)
+
+
+func _step_ups(line: PackedVector2Array, a: float, b: float) -> int:
+	var n := 0
+	for i in range(1, line.size()):
+		if line[i].x >= a and line[i].x < b and is_equal_approx(line[i].x, line[i - 1].x) and line[i].y > line[i - 1].y + 0.05:
+			n += 1
+	return n
 
 
 func _test_edges() -> void:

@@ -240,15 +240,22 @@ and see each moment.
 
 **Let sLight start it for you.** Click **Generate** (beside the
 padlock) to build a complete show from the song's structure and
-energy. The master's dimmer follows the music section by section, and
-every 8 bars the look changes: the fixtures breathe, take turns, hit
-on the bar or chase across the rig on the beat as the energy rises,
-often with a fill in the last bar; each kind of section has its own
-colours, laid across the fixtures in splits, gradients, sweeps or
-chases; a strobe builds before big rises in energy, sometimes ending
-on a beat of blackout before the drop; and moving heads travel between
-your named positions with movement that grows with the energy, the
-heads sometimes fanned out across it. Sections that come back build
+energy. The master's dimmer follows the music section by section,
+rising and falling with its loudness bar by bar, and every 8 bars the
+look changes: the fixtures breathe, take turns, hit on the bar or
+chase across the rig on the beat as the energy rises, often with a
+fill in the last bar. Their hits follow the bass, and bright, trebly
+passages sparkle. Where the music drops out within a section the
+lights calm down with it, and kick back in when it returns. Each kind
+of section has its own colours, laid across the fixtures in splits,
+gradients, sweeps or chases. Before a big rise in energy the lights
+build: the master climbs to full, the chases speed up, the colours
+fade towards white and a strobe runs, sometimes ending on a beat of
+blackout before the drop. Breakdowns go dark and cool, with one or two
+fixtures at a time or slow swells. Moving heads move to your named
+positions by energy — the ones that spread the beams widest for the
+loudest parts — changing every 8 bars when it's loud, with movement
+that grows with the energy, the heads sometimes fanned out across it. Sections that come back build
 each time, and the last time the loudest one comes round is the
 finale, with everything. Not keen on the result? Click **Generate**
 again for another variation. Each press replaces what the timelines
@@ -321,7 +328,8 @@ instead.)
 ![The position editor with four movers aimed at "Stage Left"](img/13-position-editor.png)
 
 Use them in a timeline's Position row (right-click > **Position**), or
-let **Generate** spread them across the song's sections.
+let **Generate** spread them across the song: it saves the positions
+that put the beams furthest apart for the loudest parts.
 
 ## Step 11 — Play it live with VirtualDJ (DJ Perform Mode)
 
