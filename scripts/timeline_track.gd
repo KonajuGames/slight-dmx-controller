@@ -137,7 +137,8 @@ var position_segments: Array = []:
 		queue_redraw()
 ## The movement row's segments, in time order, not overlapping:
 ## [{t0, t1, fx: Movement name ("none", "circle", ...), period: seconds
-## per cycle, size: 0..1 of the pan / tilt range}].
+## per cycle, size: 0..1 of the pan / tilt range, phase?: 0..1 of a cycle
+## it starts into (fixtures fanned out across one movement)}].
 var movement_segments: Array = []:
 	set(v):
 		movement_segments = v
@@ -712,11 +713,12 @@ static func movement_segment_at(spans: Array, t: float) -> Dictionary:
 
 
 ## Where a movement puts the pan / tilt, relative to its centre, `dt`
-## seconds into its segment: the shape's point at that phase of its cycle,
-## times its size (pan right, tilt up). None: no offset.
+## seconds into its segment: the shape's point at that phase of its cycle
+## (plus the segment's own phase), times its size (pan right, tilt up).
+## None: no offset.
 static func movement_offset(sg: Dictionary, dt: float) -> Vector2:
 	var period := maxf(float(sg.get("period", MOVEMENT_PERIOD)), 0.05)
-	var a := TAU * fposmod(dt / period, 1.0)
+	var a := TAU * fposmod(dt / period + float(sg.get("phase", 0.0)), 1.0)
 	var size := float(sg.get("size", MOVEMENT_SIZE))
 	match String(sg.get("fx", "none")):
 		"circle":

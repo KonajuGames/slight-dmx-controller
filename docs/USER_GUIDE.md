@@ -240,12 +240,19 @@ and see each moment.
 
 **Let sLight start it for you.** Click **Generate** (beside the
 padlock) to build a complete show from the song's structure and
-energy: the master's dimmer follows the music section by section,
-fixtures pulse on the beat in the loudest parts, colours change with
-each kind of section, a strobe builds before big rises in energy, and
-moving heads travel between your named positions with movement that
-grows with the energy. It replaces what the timelines had, as a single
-undo step — a good starting point to edit by hand.
+energy. The master's dimmer follows the music section by section, and
+every 8 bars the look changes: the fixtures breathe, take turns, hit
+on the bar or chase across the rig on the beat as the energy rises,
+often with a fill in the last bar; each kind of section has its own
+colours, laid across the fixtures in splits, gradients, sweeps or
+chases; a strobe builds before big rises in energy, sometimes ending
+on a beat of blackout before the drop; and moving heads travel between
+your named positions with movement that grows with the energy, the
+heads sometimes fanned out across it. Sections that come back build
+each time, and the last time the loudest one comes round is the
+finale, with everything. Not keen on the result? Click **Generate**
+again for another variation. Each press replaces what the timelines
+had, as a single undo step — a good starting point to edit by hand.
 
 **Each timeline has rows** for what its fixture can do:
 

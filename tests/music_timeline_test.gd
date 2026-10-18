@@ -646,6 +646,9 @@ func _test_structure() -> void:
 	ok(tl.master_track().dimmer_nodes.size() > 2 and not tl.master_track().colour_segments.is_empty(),
 		"generate fills the timelines from this structure")
 	ok(tl.master_track().movement_segments.is_empty(), "no position library: no movement")
+	var first_show := str(tl.master_track().colour_segments)
+	gen.pressed.emit()
+	ok(str(tl.master_track().colour_segments) != first_show, "pressing it again: another variation")
 	ok(tl.has_unsaved_timelines() and tl.can_undo(), "as an edit that can be undone")
 	var lib := PositionLibrary.new()
 	tl.positions = lib

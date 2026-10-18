@@ -126,6 +126,7 @@ var _lock_btn: TransportButton
 var _gen_btn: TransportButton
 var _structure_locked := true
 var _struct_cache: Dictionary = {}   # path -> SongAnalysis (with any edits)
+var _generated: Dictionary = {}      # path -> times Generate has run on it (the next variation)
 var _button_col: Control
 var _overview: WaveHeatmap
 var _box: ViewBox
@@ -266,7 +267,7 @@ func _ready() -> void:
 	buttons.add_child(_lock_btn)
 	_gen_btn = TransportButton.new()
 	_gen_btn.glyph = TransportButton.Glyph.GENERATE
-	_gen_btn.tooltip_text = "Generate a light show into the timelines from this song's structure, tempo and energy (replaces them; Ctrl+Z undoes)"
+	_gen_btn.tooltip_text = "Generate a light show into the timelines from this song's structure, tempo and energy — press again for another variation (replaces them; Ctrl+Z undoes)"
 	_gen_btn.pressed.connect(generate_show)
 	buttons.add_child(_gen_btn)
 	for b in [_reset_btn, _play_btn, _lock_btn, _gen_btn]:
@@ -2224,13 +2225,16 @@ static func _segs_to(segs: Array) -> Array:
 
 
 ## Movement segments to / from their saved form: [[t0, t1, effect,
-## period, size], ...].
+## period, size(, phase)], ...] — the phase only where it isn't 0.
 static func _moves_to(spans: Array) -> Array:
 	var out := []
 	for sg in spans:
-		out.append([snappedf(sg["t0"], 0.001), snappedf(sg["t1"], 0.001), String(sg.get("fx", "none")),
+		var e := [snappedf(sg["t0"], 0.001), snappedf(sg["t1"], 0.001), String(sg.get("fx", "none")),
 			snappedf(float(sg.get("period", TimelineTrack.MOVEMENT_PERIOD)), 0.0001),
-			snappedf(float(sg.get("size", TimelineTrack.MOVEMENT_SIZE)), 0.0001)])
+			snappedf(float(sg.get("size", TimelineTrack.MOVEMENT_SIZE)), 0.0001)]
+		if float(sg.get("phase", 0.0)) != 0.0:
+			e.append(snappedf(float(sg["phase"]), 0.0001))
+		out.append(e)
 	return out
 
 
@@ -2242,6 +2246,8 @@ static func _moves_from(arr) -> Array:
 				out.append({"t0": float(e[0]), "t1": float(e[1]), "fx": str(e[2]),
 					"period": float(e[3]) if e.size() > 3 else TimelineTrack.MOVEMENT_PERIOD,
 					"size": float(e[4]) if e.size() > 4 else TimelineTrack.MOVEMENT_SIZE})
+				if e.size() > 5:
+					out[out.size() - 1]["phase"] = float(e[5])
 	return out
 
 
@@ -2346,8 +2352,9 @@ func set_structure_locked(locked: bool) -> void:
 
 ## Generate a light show into this song's timelines (the Generate button):
 ## from its structure (sections and their energy), its beat grid / tempo,
-## the fixtures' rows and the named positions (TimelineGenerator). Replaces
-## what the timelines had, as one undo step. Returns whether it ran.
+## the fixtures' rows and the named positions (TimelineGenerator). Each
+## press makes another variation of the song's show. Replaces what the
+## timelines had, as one undo step. Returns whether it ran.
 func generate_show() -> bool:
 	var a: SongAnalysis = _structure.analysis
 	if a == null or _wave.analysis == null or _path == "":
@@ -2368,8 +2375,16 @@ func generate_show() -> bool:
 			positions.rename(String(positions.add()["id"]), "Centre")
 		for pos in positions.positions:
 			ids.append(String(pos["id"]))
+	# Which beat starts a bar: the grid's, or the analysis's first downbeat.
+	var bar_phase := 0
+	if beats == _wave.grid_beats:
+		bar_phase = _wave.bar_phase
+	elif not a.downbeats.is_empty():
+		bar_phase = clampi(beats.bsearch(a.downbeats[0] - 0.01), 0, beats.size() - 1)
+	var variation: int = _generated.get(_path, 0)
+	_generated[_path] = variation + 1
 	var show := TimelineGenerator.generate(a.sections, beats, _wave.beats_per_bar, _wave.duration(),
-		tracks, ids, _path.get_file())
+		tracks, ids, _path.get_file(), variation, bar_phase)
 	for tr in [_master] + Array(_fixture_tracks):
 		var c: Dictionary = show.get(String(tr.get_meta("key")), {})
 		tr.dimmer_nodes = c.get("dimmer", PackedVector2Array())

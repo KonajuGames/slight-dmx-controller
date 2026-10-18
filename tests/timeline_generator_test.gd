@@ -25,6 +25,11 @@ func _initialize() -> void:
 func _run() -> void:
 	print("== Timeline generator ==")
 	_test_show()
+	_test_phrases()
+	_test_patterns()
+	_test_variety()
+	_test_escalation()
+	_test_valid()
 	_test_edges()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
@@ -32,6 +37,7 @@ func _run() -> void:
 
 const R := TimelineTrack.Row
 const T := TimelineTrack.Target
+
 
 
 ## A song: 120 BPM (bars of 2 s), six sections.
@@ -46,9 +52,9 @@ func _sections() -> Array:
 	]
 
 
-func _beats() -> PackedFloat32Array:
+func _beats(n := 240) -> PackedFloat32Array:
 	var b := PackedFloat32Array()
-	for i in range(240):
+	for i in range(n):
 		b.append(i * 0.5)
 	return b
 
@@ -63,13 +69,18 @@ func _tracks() -> Array:
 		{"key": "bar/h1", "target": T.HEAD, "rows": [R.COLOUR, R.DIMMER]},
 		{"key": "bar/h2", "target": T.HEAD, "rows": [R.COLOUR, R.DIMMER]},
 		{"key": "spot", "target": T.FIXTURE, "rows": [R.POSITION, R.MOVEMENT, R.DIMMER]},
+		{"key": "spot2", "target": T.FIXTURE, "rows": [R.POSITION, R.MOVEMENT, R.DIMMER]},
 	]
+
+
+func _show(variation := 0, seed := "song.mp3") -> Dictionary:
+	return TimelineGenerator.generate(_sections(), _beats(), 4, 120.0, _tracks(), ["posA", "posB"], seed, variation)
 
 
 func _test_show() -> void:
 	print("- a show from the structure")
-	var show := TimelineGenerator.generate(_sections(), _beats(), 4, 120.0, _tracks(), ["posA", "posB"], "song.mp3")
-	ok(show.size() == 8, "content for every timeline")
+	var show := _show()
+	ok(show.size() == 9, "content for every timeline")
 	var m: Dictionary = show["master"]
 	# Master dimmer.
 	var md: PackedVector2Array = m["dimmer"]
@@ -80,61 +91,203 @@ func _test_show() -> void:
 	ok(chorus > verse and verse > intro and is_equal_approx(chorus, 0.25 + 0.75 * (0.9 - 0.2) / 0.75),
 		"its level follows the energy (intro %.2f < verse %.2f < chorus %.2f)" % [intro, verse, chorus])
 	ok(is_equal_approx(TimelineTrack.level_at(md, 101.0), 1.0), "the loudest section: 100 %")
-	# Colour.
+	# Colour: the master's main colour per section kind (both choruses alike).
 	var cs: Array = m["colour"]
-	ok(cs.size() == 6 and cs[2]["c0"] == cs[4]["c0"] and cs[1]["c0"] != cs[2]["c0"],
-		"a colour per section, the same kind of section alike (both choruses)")
-	ok(cs[2]["c0"] != cs[2]["c1"] and cs[1]["c0"] == cs[1]["c1"], "the loudest sections sweep main -> accent; the others hold")
+	var c1 = _colour_at(cs, 45.0)
+	ok(c1 != null and c1 == _colour_at(cs, 85.0) and c1 != _colour_at(cs, 20.0),
+		"a palette per kind of section: both choruses start in the same colour, the verse another")
 	# Strobe builds: into each chorus, none into the outro.
 	var st: Array = m["strobe"]
-	ok(st.size() == 4 and is_equal_approx(st[0]["t0"], 36.0) and st[0]["speed"] == TimelineTrack.Strobe.MEDIUM
-		and is_equal_approx(st[1]["t0"], 38.0) and is_equal_approx(st[1]["t1"], 40.0) and st[1]["speed"] == TimelineTrack.Strobe.FAST,
-		"a strobe build in the two bars before each chorus: medium, then fast (%s)" % str(st))
-	ok(not TimelineTrack.span_at(st, 103.0), "none into a quieter section")
+	ok(TimelineTrack.speed_at(st, 37.0) == TimelineTrack.Strobe.MEDIUM and TimelineTrack.speed_at(st, 38.5) == TimelineTrack.Strobe.FAST
+		and TimelineTrack.speed_at(st, 77.0) == TimelineTrack.Strobe.MEDIUM and TimelineTrack.speed_at(st, 78.5) == TimelineTrack.Strobe.FAST,
+		"a strobe build in the two bars before each chorus: medium, then fast")
+	ok(TimelineTrack.speed_at(st, 30.0) < 0 and TimelineTrack.speed_at(st, 106.0) < 0, "no strobe in the verse or outro")
 	# Positions and movement.
 	var pos: Array = m["position"]
 	ok(pos.size() == 6 and pos[0]["pos"] == "posA" and pos[1]["pos"] == "posB" and pos[2]["pos"] == "posA",
 		"the named positions in turn, a section each")
 	var mv: Array = m["movement"]
-	var covered := mv.size() == 6
+	var covered := not mv.is_empty()
 	for g in mv:
-		covered = covered and pos.any(func(p): return p["t0"] <= g["t0"] and p["t1"] >= g["t1"])
+		covered = covered and pos.any(func(p): return p["t0"] <= g["t0"] + 0.001 and p["t1"] >= g["t1"] - 0.001)
 	ok(covered, "every movement over a position")
-	ok(mv[2]["fx"] == "figure8" and is_equal_approx(mv[2]["size"], 0.16) and is_equal_approx(mv[2]["period"], 1.0),
-		"the loudest: a large figure 8, ½ bar a cycle")
-	ok(mv[0]["fx"] == "tilt_sweep" and is_equal_approx(mv[0]["period"], 4.0) and mv[1]["fx"] == "tilt_sweep",
-		"the quiet: a small slow tilt sweep, 2 bars a cycle")
-	# Fixture dimmers: a beat chase in the choruses.
+	var quiet := TimelineTrack.movement_segment_at(mv, 8.0)
+	var loud := TimelineTrack.movement_segment_at(mv, 50.0)
+	ok(quiet["fx"] in ["tilt_sweep", "pan_sweep"] and is_equal_approx(quiet["period"], 8.0) and loud["size"] > quiet["size"]
+		and loud["period"] < quiet["period"], "quiet: a small slow sweep; loud: bigger and faster")
+	# Fixture dimmers.
 	var p1: PackedVector2Array = show["par1"]["dimmer"]
 	var p2: PackedVector2Array = show["par2"]["dimmer"]
-	ok(TimelineTrack.line_defined_at(p1, 41.0) and not TimelineTrack.line_defined_at(p1, 20.0),
-		"fixtures: nothing in the quiet sections before (they follow the master)")
-	ok(_step_up_at(p1, 40.0) and not _step_up_at(p1, 40.5) and _step_up_at(p1, 42.0),
-		"in a chorus: a pulse on every 4th beat for the first fixture (40 s, 42 s)")
-	ok(_step_up_at(p2, 40.5) and not _step_up_at(p2, 40.0), "...the next one beat later: a chase")
-	ok(is_equal_approx(TimelineTrack.level_at(p1, 72.0), TimelineTrack.level_at(md, 72.0)),
-		"between the choruses the fixture's line copies the master's (no dark gap)")
-	# Colours: every other fixture the accent; a bar's heads blend.
-	ok(show["par1"]["colour"].is_empty() and show["par2"]["colour"].size() == 6, "the first fixture takes the master's colour, the second the accent")
-	var h0: Array = show["bar/h0"]["colour"]
-	var h2: Array = show["bar/h2"]["colour"]
-	ok(h0.size() == 6 and h0[1]["c0"] == cs[1]["c0"] and h2[1]["c0"] != h0[1]["c0"] and show["bar"]["colour"].is_empty(),
-		"a multi-head fixture's heads blend main -> accent")
-	ok(show["spot"]["position"].is_empty() and show["spot"]["movement"].is_empty(), "positions and movement on the master (fixtures follow it)")
+	var brighter := -1.0
+	for span in [Vector2(0, 40), Vector2(64, 80), Vector2(104, 120)]:
+		var t: float = span.x
+		while t < span.y:
+			if TimelineTrack.line_defined_at(p1, t) and TimelineTrack.level_at(p1, t) > TimelineTrack.level_at(md, t) + 0.02:
+				brighter = t
+			t += 0.1
+	ok(brighter < 0.0, "fixtures in the quieter sections: never brighter than the master (%.1f s)" % brighter)
+	ok(_peak(p1, 40.0, 64.0) > 0.99 and _differs(p1, p2, 40.0, 64.0), "in a chorus: full-level hits, the fixtures not all alike")
+	ok(_is_sorted(p1) and _is_sorted(p2), "the lines in time order")
 	# Repeatable; a different song, different colours.
-	var again := TimelineGenerator.generate(_sections(), _beats(), 4, 120.0, _tracks(), ["posA", "posB"], "song.mp3")
-	ok(again["master"]["colour"][2]["c0"] == cs[2]["c0"], "the same song: the same show")
-	var other := TimelineGenerator.generate(_sections(), _beats(), 4, 120.0, _tracks(), ["posA", "posB"], "another.mp3")
-	ok(other["master"]["colour"][2]["c0"] != cs[2]["c0"], "another song: its colours shifted")
+	ok(str(_show()) == str(show), "the same song and variation: the same show")
+	ok(_colour_at(_show(0, "another.mp3")["master"]["colour"], 45.0) != c1, "another song: other colours")
 
 
-func _step_up_at(line: PackedVector2Array, t: float) -> bool:
-	for i in range(line.size() - 1):
-		if is_equal_approx(line[i].x, t) and is_equal_approx(line[i + 1].x, t) and line[i + 1].y > line[i].y:
-			return true
-		if is_equal_approx(line[i].x, t) and i == 0 and line[i].y >= 0.99:
-			return true
-	return false
+func _test_phrases() -> void:
+	print("- phrases")
+	var secs := TimelineGenerator._normalised([{"start": 0.0, "end": 64.0, "label": "Verse", "energy": 0.5}], 64.0)
+	var bars := PackedFloat32Array()
+	for i in range(32):
+		bars.append(i * 2.0)
+	var ph := TimelineGenerator._phrases(secs, bars, 2.0)
+	ok(ph.size() == 4 and is_equal_approx(ph[1]["t0"], 16.0) and is_equal_approx(ph[3]["t1"], 64.0),
+		"a 32-bar section: four 8-bar phrases")
+	ok((ph[0]["bars"] as PackedFloat32Array).size() == 8 and is_equal_approx(ph[0]["fill"], 14.0), "...each knowing its bars and its last bar (a fill's place)")
+	secs = TimelineGenerator._normalised([{"start": 0.0, "end": 22.0, "label": "Verse", "energy": 0.5}], 22.0)
+	ph = TimelineGenerator._phrases(secs, bars, 2.0)
+	ok(ph.size() == 1, "an 11-bar section: one phrase (a 3-bar leftover joins it)")
+	# Bar lines from the bar phase: beat 1 of each bar.
+	var bs := TimelineGenerator._bar_starts(_beats(80), 4, 1)
+	ok(is_equal_approx(bs[0], 0.5) and is_equal_approx(bs[1], 2.5), "bars start on the bar phase's beat (0.5 s, 2.5 s — not 0 s)")
+	ph = TimelineGenerator._phrases(TimelineGenerator._normalised([{"start": 0.5, "end": 40.5, "label": "Verse", "energy": 0.5}], 40.5), bs, 2.0)
+	ok(ph.size() == 3 and is_equal_approx(ph[1]["t0"], 16.5) and is_equal_approx(ph[2]["t0"], 32.5), "...and the phrases cut on them (20 bars: 8 + 8 + 4)")
+
+
+func _test_patterns() -> void:
+	print("- patterns")
+	var seq: Array = []
+	for j in range(6):
+		for i in range(6):
+			if TimelineGenerator._step_on("chase", j, i, 6):
+				seq.append(i)
+	ok(seq == [0, 1, 2, 3, 4, 5], "a chase travels across all the fixtures (six, not four)")
+	seq = []
+	for j in range(5):
+		for i in range(3):
+			if TimelineGenerator._step_on("ping_pong", j, i, 3):
+				seq.append(i)
+	ok(seq == [0, 1, 2, 1, 0], "ping-pong: there and back")
+	var lit0: Array = []
+	var lit1: Array = []
+	for i in range(4):
+		if TimelineGenerator._step_on("centre_out", 0, i, 4):
+			lit0.append(i)
+		if TimelineGenerator._step_on("centre_out", 1, i, 4):
+			lit1.append(i)
+	ok(lit0 == [1, 2] and lit1 == [0, 3], "centre out: the middle pair, then the outer pair")
+	# Bar hits on the real bar lines.
+	var ctx := {"beats": _beats(40), "beat_len": 0.5, "bar_len": 2.0, "per_bar": 4, "bar_phase": 1,
+		"master": PackedVector2Array([Vector2(0, 1), Vector2(20, 1)])}
+	var line := TimelineGenerator._pattern("bar_hits", 0.0, 8.0, 0, 2, {"tier": 3, "sparkle": []}, ctx)
+	ok(_step_up_at(line, 0.5) and _step_up_at(line, 2.5) and not _step_up_at(line, 2.0), "bar hits land on beat 1 (bar phase 1: 0.5 s, 2.5 s)")
+	line = TimelineGenerator._pattern("follow", 2.0, 6.0, 0, 2, {"tier": 0, "sparkle": []}, ctx)
+	ok(line.size() == 2 and is_equal_approx(line[0].y, 1.0), "follow: the master's line")
+	line = TimelineGenerator._pattern("breathe", 0.0, 8.0, 0, 2, {"tier": 1, "sparkle": []}, ctx)
+	ok(_peak(line, 0.0, 8.0) <= 1.0 and _low(line, 0.0, 8.0) > 0.2 and _peak(line, 0.0, 8.0) - _low(line, 0.0, 8.0) > 0.5,
+		"breathe: a slow swell that never goes dark")
+	var a := TimelineGenerator._pattern("solo", 0.0, 8.0, 0, 2, {"tier": 1, "sparkle": []}, ctx)
+	var b := TimelineGenerator._pattern("solo", 0.0, 8.0, 1, 2, {"tier": 1, "sparkle": []}, ctx)
+	ok(TimelineTrack.level_at(a, 0.5) > TimelineTrack.level_at(b, 0.5) and TimelineTrack.level_at(b, 2.5) > TimelineTrack.level_at(a, 2.5),
+		"solo: one fixture at a time, a bar each")
+	# A movement's phase: where in its cycle it starts.
+	var sg := {"t0": 0.0, "t1": 8.0, "fx": "circle", "period": 2.0, "size": 0.1}
+	var half := sg.duplicate()
+	half["phase"] = 0.5
+	ok(TimelineTrack.movement_offset(half, 0.0).is_equal_approx(TimelineTrack.movement_offset(sg, 1.0)), "a movement's phase starts it that far into its cycle")
+	var back := MusicTimeline._moves_from(MusicTimeline._moves_to([half, sg]))
+	ok(is_equal_approx(back[0]["phase"], 0.5) and not back[1].has("phase"), "...saved and loaded (only where it isn't 0)")
+
+
+func _test_variety() -> void:
+	print("- variety")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var pk := TimelineGenerator._Picker.new(rng)
+	var picks: Array = []
+	for i in range(200):
+		picks.append(pk.pick(TimelineGenerator.DIM_PATTERNS[3]))
+	var repeat := false
+	for i in range(2, picks.size()):
+		repeat = repeat or picks[i] == picks[i - 1] or picks[i] == picks[i - 2]
+	var seen := {}
+	for p in picks:
+		seen[p] = true
+	ok(not repeat and seen.size() == TimelineGenerator.DIM_PATTERNS[3].size(), "picks never repeat the last two, and use every pattern")
+	# A long loud section keeps changing.
+	var long := [{"start": 0.0, "end": 16.0, "label": "Intro", "energy": 0.1}, {"start": 16.0, "end": 144.0, "label": "Drop", "energy": 1.0}]
+	var secs := TimelineGenerator._normalised(long, 144.0)
+	TimelineGenerator._mark_repeats(secs)
+	var bars := PackedFloat32Array()
+	for i in range(72):
+		bars.append(i * 2.0)
+	var ph := TimelineGenerator._phrases(secs, bars, 2.0)
+	var plan := TimelineGenerator._plan(secs, ph, rng, 4, 0.5)
+	var dims := {}
+	var colours := {}
+	var moves := {}
+	for p in range(1, plan.size()):
+		dims[plan[p]["dim"]] = true
+		colours[plan[p]["colour"]] = true
+		moves[plan[p]["move"]] = true
+	ok(ph.size() == 9 and dims.size() >= 4 and colours.size() >= 3 and moves.size() >= 2,
+		"a 64-bar drop: 8 phrases with %d dimmer patterns, %d colour modes, %d movements" % [dims.size(), colours.size(), moves.size()])
+	# Variations.
+	var v0 := _show(0)
+	var v1 := _show(1)
+	ok(str(v0["par1"]["dimmer"]) != str(v1["par1"]["dimmer"]), "another variation: another show")
+	ok(str(_show(1)) == str(v1), "...the same each time")
+
+
+func _test_escalation() -> void:
+	print("- repeats build")
+	var secs := TimelineGenerator._normalised(_sections(), 120.0)
+	TimelineGenerator._mark_repeats(secs)
+	ok(secs[2]["rep"] == 0 and is_equal_approx(secs[2]["lift"], 0.0) and secs[4]["rep"] == 1 and is_equal_approx(secs[4]["lift"], 1.0),
+		"the second chorus: lifted")
+	ok(secs[4]["finale"] and not secs[2]["finale"] and secs.filter(func(s): return s["finale"]).size() == 1,
+		"the last chorus is the finale (only it)")
+	var single := TimelineGenerator._normalised([{"start": 0.0, "end": 10.0, "label": "Verse", "energy": 0.2}, {"start": 10.0, "end": 20.0, "label": "Drop", "energy": 0.9}], 20.0)
+	TimelineGenerator._mark_repeats(single)
+	ok(single[1]["finale"], "no returning loud kind: the loudest section is the finale")
+	var show := _show()
+	var m: Dictionary = show["master"]
+	var mv1 := TimelineTrack.movement_segment_at(m["movement"], 45.0)
+	var mv2 := TimelineTrack.movement_segment_at(m["movement"], 85.0)
+	ok(mv2["size"] > mv1["size"] and mv2["fx"] in ["figure8", "circle", "pan_sweep"], "the finale moves bigger (%.3f > %.3f)" % [mv2["size"], mv1["size"]])
+	var s1 := TimelineTrack.movement_segment_at(show["spot"]["movement"], 85.0)
+	var s2 := TimelineTrack.movement_segment_at(show["spot2"]["movement"], 85.0)
+	ok(not s1.is_empty() and not s2.is_empty() and s1["fx"] == mv2["fx"] and s1.get("phase", 0.0) != s2.get("phase", 0.0),
+		"...its movers fanned out across one shape")
+	ok(TimelineTrack.speed_at(m["strobe"], 95.5) == TimelineTrack.Strobe.FAST and TimelineTrack.speed_at(m["strobe"], 103.5) == TimelineTrack.Strobe.FAST
+		and TimelineTrack.speed_at(m["strobe"], 90.0) < 0, "...strobe hits ending each of its phrases")
+	# The build into the finale stops a beat early on a blackout.
+	var md: PackedVector2Array = m["dimmer"]
+	ok(TimelineTrack.speed_at(m["strobe"], 79.7) < 0 and TimelineTrack.level_at(md, 79.75) < 0.001 and TimelineTrack.level_at(md, 80.01) > 0.9,
+		"a beat's blackout before the finale, then straight up")
+	var p1: PackedVector2Array = show["par1"]["dimmer"]
+	ok(not TimelineTrack.line_defined_at(p1, 79.75) or TimelineTrack.level_at(p1, 79.75) < 0.001, "...the fixtures dark too")
+
+
+## Over many variations: every row well-formed.
+func _test_valid() -> void:
+	print("- well-formed over 30 variations")
+	var bad := ""
+	for v in range(30):
+		var show := _show(v, "valid.mp3")
+		for k in show:
+			var c: Dictionary = show[k]
+			var line: PackedVector2Array = c["dimmer"]
+			if not _is_sorted(line):
+				bad = "%s dimmer (variation %d)" % [k, v]
+			for p in line:
+				if p.y < -0.001 or p.y > 1.001:
+					bad = "%s dimmer level %f" % [k, p.y]
+			for row in ["colour", "strobe", "position", "movement"]:
+				var segs: Array = c[row]
+				for i in range(segs.size()):
+					if segs[i]["t1"] <= segs[i]["t0"] or (i > 0 and segs[i]["t0"] < segs[i - 1]["t1"] - 0.0001):
+						bad = "%s %s (variation %d)" % [k, row, v]
+	ok(bad == "", "lines in time order, levels 0..1, segments ordered and not overlapping %s" % bad)
 
 
 func _test_edges() -> void:
@@ -153,3 +306,53 @@ func _test_edges() -> void:
 	show = TimelineGenerator.generate(flat, PackedFloat32Array(), 4, 60.0, [{"key": "master", "target": T.MASTER, "rows": [R.DIMMER]}])
 	ok(is_equal_approx(TimelineTrack.level_at(show["master"]["dimmer"], 15.0), TimelineTrack.level_at(show["master"]["dimmer"], 45.0)),
 		"sections of equal energy: equal levels")
+	show = TimelineGenerator.generate(_sections(), _beats(), 4, 120.0, [{"key": "solo", "target": T.FIXTURE, "rows": [R.DIMMER, R.COLOUR]}])
+	ok(show.size() == 1 and _is_sorted(show["solo"]["dimmer"]), "no master timeline, one fixture: still a show")
+
+
+func _colour_at(segs: Array, t: float):
+	for sg in segs:
+		if t >= sg["t0"] and t < sg["t1"]:
+			return sg["c0"]
+	return null
+
+
+func _peak(line: PackedVector2Array, a: float, b: float) -> float:
+	var m := 0.0
+	for p in line:
+		if p.x >= a and p.x <= b:
+			m = maxf(m, p.y)
+	return m
+
+
+func _low(line: PackedVector2Array, a: float, b: float) -> float:
+	var m := 1.0
+	for p in line:
+		if p.x >= a and p.x <= b:
+			m = minf(m, p.y)
+	return m
+
+
+func _differs(x: PackedVector2Array, y: PackedVector2Array, a: float, b: float) -> bool:
+	var t := a
+	while t < b:
+		if absf(TimelineTrack.level_at(x, t) - TimelineTrack.level_at(y, t)) > 0.2:
+			return true
+		t += 0.125
+	return false
+
+
+func _is_sorted(line: PackedVector2Array) -> bool:
+	for i in range(1, line.size()):
+		if line[i].x < line[i - 1].x - 0.0001:
+			return false
+	return true
+
+
+func _step_up_at(line: PackedVector2Array, t: float) -> bool:
+	for i in range(line.size() - 1):
+		if is_equal_approx(line[i].x, t) and is_equal_approx(line[i + 1].x, t) and line[i + 1].y > line[i].y:
+			return true
+		if is_equal_approx(line[i].x, t) and i == 0 and line[i].y >= 0.99:
+			return true
+	return false
