@@ -208,6 +208,8 @@ that already have a light show in the current show are marked with a
 small blue node-line icon before the title. M4A / AAC songs open on
 Windows and macOS.
 
+![DJ Edit Mode listing an album, with a light show already on its first track](img/11-dj-edit-library.png)
+
 **Open its timeline.** Double-click a song. The list is replaced by its
 timeline (select a folder to go back). It opens fully zoomed out:
 
@@ -228,6 +230,8 @@ timeline (select a folder to go back). It opens fully zoomed out:
 - Above the structure is the **master** timeline, which drives every
   fixture, and above that a scrolling timeline for each patched fixture
   (and each head of a multi-head fixture).
+
+![A song's timelines after Generate, with four bars of the master selected](img/12-dj-edit-timeline.png)
 
 While the song plays, the lights and the 3D Visualizer follow the
 playhead exactly as they will in a live show — edits included. When
@@ -298,6 +302,8 @@ they land in the room; they go back to how they were when you leave.
 Rename the position at the top of the editor, and right-click one in
 the list to **Rename**, **Duplicate** or **Delete** it.
 
+![The position editor with four movers aimed at "Stage Left"](img/13-position-editor.png)
+
 Use them in a timeline's Position row (right-click > **Position**), or
 let **Generate** spread them across the song's sections.
 
@@ -309,6 +315,8 @@ for VirtualDJ over OS2L. It's advertised on the network as "sLight"
 VirtualDJ's `os2lDirectIp` setting at this computer. The panel shows the
 connection and, for each of up to four decks, the song loaded, whether
 it's playing, its position and whether its timelines have loaded.
+
+![DJ Perform Mode with VirtualDJ connected and one deck playing its light show](img/14-dj-perform.png)
 
 Whenever a deck loads a song, its light show from DJ Edit Mode loads in
 the background. A deck drives the lights while it's **playing with its
