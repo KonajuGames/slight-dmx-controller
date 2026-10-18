@@ -24,14 +24,22 @@ you'll see below is what opens.
 
 The window is split into three areas:
 
-- **Top bar** — Grand Master fader, the **Run Mode** selector, **Sending**
-  toggle, Add/Remove Universe, Save/Load Show and Preset, and **Triggers…**
-  for MIDI/OSC. These are always visible, whatever tab you're on.
+- **Top bar** — the **View** selector (**Console**, **DJ Edit Mode**,
+  **DJ Perform Mode**), Grand Master fader, the **Run Mode** selector,
+  **Sending** toggle, Add/Remove Universe, New/Save/Load Show and Preset,
+  and **Triggers…** for MIDI/OSC. These are always visible, whatever tab
+  or view you're on.
 - **Left side — playback tabs**: **Cues**, **Chases**, **Effects**,
   **Sound**, **Groups**. This is where you build and run a show.
 - **Right side — Patch / 3D Visualizer**: one tab per universe for
   patching fixtures and dialing them in by hand, and a 3D view of your rig
   lit live by whatever the console is currently outputting.
+
+That split is the **Console** view. The top bar's **View** selector swaps
+it for **DJ Edit Mode** — where you build a light show for each song in
+your music library — or **DJ Perform Mode**, where VirtualDJ plays those
+shows live (Steps 10 and 11). The console keeps running underneath
+either one.
 
 Everything below walks through these in the order you'd normally use them
 for the first time.
@@ -43,8 +51,10 @@ fresh project starts with **Universe 1**. Pick an **Output** — Art-Net is
 the default and needs no extra hardware or plugins — set the target (for
 Art-Net, the IP/Port/universe number; `127.0.0.1:6454` universe `0` talks
 to a monitor running on the same machine), and click **Apply Connection**.
-Add more universes from **Add Universe** in the top bar if your rig needs
-more than 512 channels.
+Add more universes from **Add Universe** in the top bar (or
+**Ctrl+Shift+N**) if your rig needs more than 512 channels; **Remove
+Universe** (**Ctrl+Shift+R**) asks first, telling you how many fixtures
+go with it.
 
 ## Step 2 — Patch your first fixture
 
@@ -136,7 +146,9 @@ your cues without disturbing them.
 
 ## Step 7 — React to music live
 
-Set the top bar's **Run Mode** to **Sound Reactive** and switch to the
+The top bar's **Run Mode** has two settings: **Cue Mode** (the default —
+the cue list drives playback) and **Sound Reactive**. Set it to **Sound
+Reactive** and switch to the
 **Sound** tab to drive output straight from a microphone or line input.
 
 ![The Sound tab with the default starter reactors](img/06-sound-tab.png)
@@ -182,6 +194,133 @@ an MP4 straight from this view. Drag the **3D Visualizer** tab off the tab
 bar to pop it into its own window — handy for a second monitor at
 front-of-house.
 
+## Step 10 — Build a light show for a song (DJ Edit Mode)
+
+Switch the **View** to **DJ Edit Mode** to program lighting against
+individual songs rather than cue by cue.
+
+**Find a song.** On the left is a tree of this computer's drives and
+folders, followed by **VirtualDJ Lists** (your VirtualDJ Virtual
+Folders). Select one and its music is listed on the right — title,
+artist, BPM, key, length, album, genre — with details from VirtualDJ's
+database where it knows the track. Click a column title to sort. Songs
+that already have a light show in the current show are marked with a
+small blue node-line icon before the title. M4A / AAC songs open on
+Windows and macOS.
+
+**Open its timeline.** Double-click a song. The list is replaced by its
+timeline (select a folder to go back). It opens fully zoomed out:
+
+- Along the bottom is a colour waveform of the song, with VirtualDJ's
+  beat grid drawn behind it and the bars numbered along the top. The
+  mouse wheel zooms, **Shift**+wheel scrolls, and dragging with the
+  middle mouse button pans. The slim overview beneath shows the whole
+  song — drag its rectangle, or click to jump.
+- **Play / Pause** (or **Space**) and **Back to start** sit to the right.
+  The red playhead runs down every timeline; click or drag it on the
+  waveform, the bar ruler or any timeline to move it.
+- Above the waveform is the song's **structure** — Intro, Verse, Chorus
+  and so on — worked out in the background when the song opens. It's
+  locked by default; click the padlock to fix a section border the
+  analyser put slightly wrong (drag it), or right-click a section to
+  relabel, split or delete it. Right-click > **Snapping** chooses
+  whether borders and selections snap to bars, beats or nothing.
+- Above the structure is the **master** timeline, which drives every
+  fixture, and above that a scrolling timeline for each patched fixture
+  (and each head of a multi-head fixture).
+
+While the song plays, the lights and the 3D Visualizer follow the
+playhead exactly as they will in a live show — edits included. When
+it's paused, the look at the playhead holds, so you can scrub through
+and see each moment.
+
+**Let sLight start it for you.** Click **Generate** (beside the
+padlock) to build a complete show from the song's structure and
+energy: the master's dimmer follows the music section by section,
+fixtures pulse on the beat in the loudest parts, colours change with
+each kind of section, a strobe builds before big rises in energy, and
+moving heads travel between your named positions with movement that
+grows with the energy. It replaces what the timelines had, as a single
+undo step — a good starting point to edit by hand.
+
+**Each timeline has rows** for what its fixture can do:
+
+- **Dimmer** — a line of nodes. Drag a node to move it (hold **Shift**
+  to lock it to one axis), drag the line to raise or lower a stretch,
+  **Ctrl**+click the line to add a node and **Ctrl**+right-click a node
+  to remove it. The master's line starts at 0%, so nothing lights until
+  you raise it. A fixture's (or head's) dimmer row starts empty and
+  follows the master; give it values and it overrides the master over
+  that stretch.
+- **Colour** — segments of one static colour or a two-colour gradient.
+- **Strobe** — stretches where the strobe runs at Slow, Medium or Fast.
+- **Position** (moving heads) — which named position the heads point at
+  (see *Named positions* below).
+- **Movement** (moving heads) — a Circle, Figure 8, Pan Sweep or Tilt
+  Sweep around that position, Small / Medium / Large, cycling every ½, 1
+  or 2 bars — or None to hold still.
+
+**Select, then edit.** Drag across empty parts of the timelines to
+select an area — over every row the drag crosses, snapped to bars or
+beats. **Ctrl**-drag adds another area, **Shift**-drag extends the last
+one. **Right-click** the selection for a menu of what fits: Dimmer
+shapes (Black, Half, Full, Fade In / Out, Pulse In / Out, Smooth, Pulse
+on Every Beat / Bar), Colour (Static Colour…, Gradient…, Rainbow,
+presets), Strobe speeds, Position, Movement (with Size and Cycle), and
+Clear for each. Drag a selection's start or end to resize it (what sits
+on that edge moves with it), or drag its inside to move its content
+elsewhere — a ghost shows where it will land.
+
+| Keys | Does |
+| --- | --- |
+| **Delete** | Clear the selected areas |
+| **Ctrl+C / Ctrl+X / Ctrl+V** | Copy / cut / paste — into every selected fixture at once, or at the playhead with nothing selected |
+| **Ctrl+Z / Ctrl+Y** | Undo / redo (each song keeps its own history, up to 100 steps) |
+| **Ctrl+A** | Select everything |
+| **Escape** or **Ctrl+D** | Clear the selection |
+
+A song's timelines are saved automatically when you leave it — open
+another song, switch view, or close the app — and with **Save Show**.
+They're stored with the show (see *Saving your work*), keyed so a song
+that's been moved or renamed keeps its light show.
+
+### Named positions
+
+Moving heads point at **named positions** rather than raw pan/tilt
+values. In DJ Edit Mode's left-hand tree, below the folders, the
+**Positions** header lists them; click its **+** to add one. It opens in
+the **position editor**: a large pan/tilt pad beside a list of every
+moving fixture. Select fixtures in the list (**Ctrl** / **Shift** for
+several) and their points light up on the pad in the position's colour —
+drag one to aim them all. While selected, those fixtures are lit full
+white and pointed live at the position, so you can see exactly where
+they land in the room; they go back to how they were when you leave.
+Rename the position at the top of the editor, and right-click one in
+the list to **Rename**, **Duplicate** or **Delete** it.
+
+Use them in a timeline's Position row (right-click > **Position**), or
+let **Generate** spread them across the song's sections.
+
+## Step 11 — Play it live with VirtualDJ (DJ Perform Mode)
+
+Switch the **View** to **DJ Perform Mode** and sLight starts listening
+for VirtualDJ over OS2L. It's advertised on the network as "sLight"
+(port 9960), so VirtualDJ normally finds it on its own; otherwise point
+VirtualDJ's `os2lDirectIp` setting at this computer. The panel shows the
+connection and, for each of up to four decks, the song loaded, whether
+it's playing, its position and whether its timelines have loaded.
+
+Whenever a deck loads a song, its light show from DJ Edit Mode loads in
+the background. A deck drives the lights while it's **playing with its
+volume fader up** — a track you're cueing in your headphones with the
+fader down stays dark — following VirtualDJ's position and pitch. When
+two decks play together during a mix, their shows blend: brightest
+wins for colour, dimmer and strobe, and pan/tilt are averaged.
+
+Only what a song's timelines cover is driven; everything else stays as
+the console has it, and chases and effects still layer on top. Leaving
+DJ Perform Mode stops the listener and the playback.
+
 ## Optional: MIDI and OSC control surfaces
 
 **Triggers…** in the top bar (works from any tab) opens the binding
@@ -206,13 +345,35 @@ picker instead — pick a real MIDI port directly, no extra script needed.
 
 ## Saving your work
 
-**Save Show** (top bar) writes everything — every universe's connection
-settings and patch, cues, chases, effects, groups, named positions and
-MIDI/OSC bindings — to one file, with the songs' lighting timelines in a
-folder beside it. **Load Show** brings it all
-back. **Save/Load Preset** is a lighter-weight snapshot of just the live
-DMX output, for a quick "go back to how it looked a minute ago" without
-touching your cue list.
+A show lives in one `.slight` file you choose, holding everything —
+every universe's connection settings and patch, cues, chases, effects,
+groups, named positions, sound reactors, MIDI/OSC bindings and the
+visualizer's stage. The songs' lighting timelines go in a folder beside
+it (`MyShow.slight` → `MyShow.timelines/`), so keep the two together
+when you copy a show to another computer.
+
+| Top bar | Keys | Does |
+| --- | --- | --- |
+| **Save Show** | **Ctrl+S** | Save to the current show file (asks where, for a new show) |
+| **Save Show As…** | **Shift+Ctrl+S** | Save to a new file, copying the timelines folder alongside |
+| **Load Show…** | **Ctrl+O** | Open a show |
+| **New Show** | **Ctrl+N** | After asking, start an empty show (your output settings are kept) |
+
+The show you last saved or loaded reopens automatically the next time
+you start sLight. **Save/Load Preset** is a lighter-weight snapshot of
+just the live DMX output, for a quick "go back to how it looked a minute
+ago" without touching your cue list.
+
+## Keyboard shortcuts
+
+| Keys | Does |
+| --- | --- |
+| **Space** | GO the next cue (Console, Cue Mode) / play or pause the song (DJ Edit Mode) |
+| **Ctrl+N / Ctrl+O** | New show / load a show |
+| **Ctrl+S / Shift+Ctrl+S** | Save show / save show as |
+| **Ctrl+Shift+N / Ctrl+Shift+R** | Add a universe / remove the current one |
+
+DJ Edit Mode's timeline editing shortcuts are listed in Step 10.
 
 ## Where to go next
 
@@ -220,5 +381,7 @@ This guide covers the everyday path from an empty patch to a running
 show. The [README](../README.md) is the complete reference — fixture
 profile details (multi-mode personalities, 16-bit fine channels, named
 value ranges for gobo/colour wheels), sACN and USB DMX output, cue
-tracking vs. blocks, MVR import/export, and every run mode's exact
-behaviour are all there if you want to go deeper.
+tracking vs. blocks, MVR import/export, every run mode's exact
+behaviour, and exactly how DJ Perform Mode mixes decks and drives
+strobe, position and movement channels are all there if you want to go
+deeper.
