@@ -27,6 +27,7 @@ func _run() -> void:
 	_test_library()
 	_test_icon()
 	await _test_editor()
+	await _test_copy_paste()
 	await _test_browser()
 	await _test_show()
 	await _test_highlight()
@@ -160,6 +161,85 @@ func _test_editor() -> void:
 	ed.name_edit().text = "Crowd"
 	ed.name_edit().text_submitted.emit("Crowd")
 	ok(lib.find(id)["name"] == "Crowd", "the name can be edited")
+	ed.queue_free()
+	await process_frame
+
+
+func _key(code: Key, ctrl := true) -> void:
+	for pressed in [true, false]:
+		var ev := InputEventKey.new()
+		ev.keycode = code
+		ev.ctrl_pressed = ctrl
+		ev.pressed = pressed
+		root.push_input(ev)
+
+
+func _test_copy_paste() -> void:
+	print("- copying and pasting points")
+	var lib := PositionLibrary.new()
+	var a: String = lib.add()["id"]
+	var b: String = lib.add()["id"]
+	var fx := [{"uid": "m1", "name": "Mover 1", "profile": _mover(), "mode": 0},
+		{"uid": "m2", "name": "Mover 2", "profile": _mover(), "mode": 0},
+		{"uid": "m3", "name": "Mover 3", "profile": _mover(), "mode": 0}]
+	lib.set_point(a, "m1", Vector2(0.1, 0.2))
+	lib.set_point(a, "m2", Vector2(0.3, 0.4))
+	var ed := PositionEditor.new()
+	ed.library = lib
+	ed.fixtures_provider = func(): return fx
+	root.add_child(ed)
+	ed.size = Vector2(900, 600)
+	await process_frame
+	ed.open(a)
+	ed.select_uids(["m1"])
+	_key(KEY_C)
+	await process_frame
+	ed.select_uids(["m2", "m3"])
+	var changes := [0]
+	lib.changed.connect(func(): changes[0] += 1)
+	_key(KEY_V)
+	await process_frame
+	ok(lib.point(a, "m2") == Vector2(0.1, 0.2) and lib.point(a, "m3") == Vector2(0.1, 0.2) and lib.point(a, "m1") == Vector2(0.1, 0.2),
+		"Ctrl+C one point, Ctrl+V: it goes to every selected fixture")
+	ok(changes[0] > 0, "pasting changes the library (saved with the show, the pad and highlight follow)")
+	# Several points pair off in list order — into another position.
+	lib.set_point(a, "m2", Vector2(0.3, 0.4))
+	lib.set_point(a, "m3", Vector2(0.5, 0.6))
+	ed.select_uids(["m3", "m1"])            # list order: m1, m3
+	_key(KEY_C)
+	ed.open(b)
+	ed.select_uids(["m2", "m3"])
+	_key(KEY_V)
+	await process_frame
+	ok(lib.point(b, "m2") == Vector2(0.1, 0.2) and lib.point(b, "m3") == Vector2(0.5, 0.6) and lib.point(b, "m1") == PositionLibrary.DEFAULT_POINT,
+		"several: the selected fixtures take them in list order, in another position too")
+	ok(lib.point(a, "m2") == Vector2(0.3, 0.4), "the source position is left alone")
+	ed.select_uids(["m1", "m2", "m3"])
+	ok(ed.paste_points() and lib.point(b, "m1") == Vector2(0.1, 0.2) and lib.point(b, "m2") == Vector2(0.5, 0.6)
+		and lib.point(b, "m3") == Vector2(0.1, 0.2), "more selected than copied: they start again from the first")
+	ed.select_uids([])
+	ok(not ed.copy_points() and PositionEditor.has_copied_points(), "copying with nothing selected keeps what was copied")
+	# Not while typing in the name field.
+	ed.select_uids(["m1"])
+	lib.set_point(b, "m1", Vector2(0.9, 0.9))
+	ed.name_edit().grab_focus()
+	_key(KEY_C)
+	ed.name_edit().release_focus()
+	ed.select_uids(["m2"])
+	ed.name_edit().grab_focus()
+	_key(KEY_V)                             # (headless, the field's own paste logs "Clipboard is not supported")
+	await process_frame
+	ok(lib.point(b, "m2") == Vector2(0.5, 0.6), "the name field keeps Ctrl+C / Ctrl+V while it's being edited")
+	ed.name_edit().release_focus()
+	# Nor while the editor's hidden.
+	ed.visible = false
+	_key(KEY_V)
+	await process_frame
+	ok(lib.point(b, "m2") == Vector2(0.5, 0.6), "nor while the editor's hidden")
+	ed.visible = true
+	_key(KEY_V)
+	await process_frame
+	ok(lib.point(b, "m2") == Vector2(0.1, 0.2), "(shown: it pastes)")
 	ed.queue_free()
 	await process_frame
 

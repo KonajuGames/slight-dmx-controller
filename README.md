@@ -142,6 +142,13 @@ technical reference.
   dragged). Unselecting it, opening another position, or leaving the
   editor (another folder, another view) puts it back exactly as it was,
   pan / tilt included, and a show saved meanwhile keeps its real levels.
+  Ctrl+C copies the selected fixtures' points (in list order); Ctrl+V
+  pastes them onto the selected fixtures, in this position or another:
+  the selected fixtures, in list order, take the copied points in turn,
+  starting over when there are more of them (so one point goes to every
+  selected fixture). Pasting sets the points in the PositionLibrary, so
+  it's saved with the show and the pad and live highlight follow. Not
+  while the name field has the focus.
 - `timeline_generator.gd` — the `TimelineGenerator` class: the Generate
   button's show, from the song's structure (its sections and their
   energy, rescaled across the song so its quietest part is low and its

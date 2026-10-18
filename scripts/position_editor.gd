@@ -10,6 +10,13 @@ extends HBoxContainer
 ## that fixture. The selected fixtures are lit full white and pointed at
 ## the position while they're selected and the editor's showing
 ## (highlight_changed: the owner does it, and puts the others back).
+##
+## Ctrl+C copies the selected fixtures' points (in list order); Ctrl+V
+## pastes them onto the selected fixtures — in this position or another:
+## the selected fixtures, in list order, take the copied points in turn,
+## starting again from the first when there are more of them than points
+## (so one copied point goes to every selected fixture). Not while the
+## name field's being edited (it copies / pastes text).
 
 ## The fixtures to light up to find them: the selected ones while the
 ## editor's showing, else none.
@@ -34,6 +41,9 @@ var _name: LineEdit
 var _icon: TextureRect
 var _list: ItemList
 var _none: Label
+## The copied points, in list order (shared by every editor, so they
+## paste into any position).
+static var _clip: Array = []
 
 
 func _ready() -> void:
@@ -150,6 +160,46 @@ func pad() -> PositionPad:
 ## The fixtures lit up now (the selected ones while the editor's showing).
 func highlighted_uids() -> Array:
 	return selected_uids() if is_visible_in_tree() else []
+
+
+## Copy the selected fixtures' points. Returns whether there were any.
+func copy_points() -> bool:
+	if library == null or position_id == "" or library.find(position_id).is_empty():
+		return false
+	var pts: Array = []
+	for uid in selected_uids():
+		pts.append(library.point(position_id, uid))
+	if pts.is_empty():
+		return false
+	_clip = pts
+	return true
+
+
+## Paste the copied points onto the selected fixtures (see the top).
+## Returns whether anything was pasted.
+func paste_points() -> bool:
+	if library == null or position_id == "" or library.find(position_id).is_empty() or _clip.is_empty():
+		return false
+	var targets := selected_uids()
+	for i in range(targets.size()):
+		library.set_point(position_id, targets[i], _clip[i % _clip.size()])
+	return not targets.is_empty()
+
+
+## Whether there are copied points to paste.
+static func has_copied_points() -> bool:
+	return not _clip.is_empty()
+
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	if not is_visible_in_tree() or _name.has_focus():
+		return
+	if event is InputEventKey and event.pressed and not event.echo and event.is_command_or_control_pressed() 			and not event.shift_pressed and not event.alt_pressed and event.keycode in [KEY_C, KEY_V]:
+		if event.keycode == KEY_C:
+			copy_points()
+		else:
+			paste_points()
+		get_viewport().set_input_as_handled()
 
 
 func _selection_changed() -> void:

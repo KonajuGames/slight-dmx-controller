@@ -302,6 +302,15 @@ they land in the room; they go back to how they were when you leave.
 Rename the position at the top of the editor, and right-click one in
 the list to **Rename**, **Duplicate** or **Delete** it.
 
+To reuse aim points, select fixtures and press **Ctrl+C** to copy their
+points, then select fixtures — in the same position or another one —
+and press **Ctrl+V** to paste. The selected fixtures take the copied
+points in list order, one each, starting again from the first if
+you've selected more fixtures than you copied; so copying one fixture
+and pasting onto several aims them all at the same spot. (While you're
+typing in the name field, Ctrl+C / Ctrl+V copy and paste its text
+instead.)
+
 ![The position editor with four movers aimed at "Stage Left"](img/13-position-editor.png)
 
 Use them in a timeline's Position row (right-click > **Position**), or
