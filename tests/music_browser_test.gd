@@ -198,6 +198,22 @@ func _test_timeline_icons() -> void:
 	panel.timeline().timelines_saved.emit(songs.path_join("c.mp3"))
 	ok(panel.has_timelines_mark(songs.path_join("c.mp3"))
 		and ic.get_icon(MusicBrowserPanel.Col.TITLE) == MusicBrowserPanel.timeline_icon(), "saving a song's timelines marks it")
+	# The track menu: Remove Lighting Timelines asks, then deletes and unmarks.
+	var menu := panel.track_menu()
+	ok(menu.item_count == 5 and menu.get_item_text(4).begins_with("Remove Lighting Timelines"),
+		"a track's right-click menu")
+	var dlg := panel.confirm_remove_timelines(songs.path_join("a.mp3"))
+	ok(dlg != null and "a" in dlg.dialog_text, "removing asks first")
+	ok(panel.has_timelines_mark(songs.path_join("a.mp3")), "...and nothing's removed until confirmed")
+	dlg.confirmed.emit()
+	ok(not panel.has_timelines_mark(songs.path_join("a.mp3"))
+		and ia.get_icon(MusicBrowserPanel.Col.TITLE) != MusicBrowserPanel.timeline_icon(), "confirmed: unmarked")
+	var fresh := TimelineStore.new(dir.path_join("show.timelines"))
+	ok(not fresh.has_song(songs.path_join("a.mp3")) and fresh.has_song(songs.path_join("b.mp3")),
+		"...its timelines gone from the show, others kept")
+	panel.track_menu_action(MusicBrowserPanel.TM_COPY_PATH, songs.path_join("b.mp3"))
+	ok(DisplayServer.clipboard_get() == songs.path_join("b.mp3") or DisplayServer.get_name() == "headless",
+		"Copy Path")
 	# Another show's folder (here, an empty one): marks cleared.
 	panel.timeline().set_timeline_store(TimelineStore.new(dir.path_join("other.timelines")))
 	ok(not panel.has_timelines_mark(songs.path_join("a.mp3")) and panel.timeline_marks_done(), "another show: its own marks (none)")

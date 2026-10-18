@@ -20,6 +20,9 @@ extends HSplitContainer
 ## the show's timelines index alone; a song that might have been moved
 ## there (same size as an indexed one) is fingerprinted in the background,
 ## a few per frame.
+##
+## Right-clicking a track opens its menu: open its timeline, show it in
+## the file manager, copy its path, or remove its lighting timelines.
 
 ## Audio files listed in a folder (lower-case extensions).
 const AUDIO_EXTS := ["mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "wma", "aif", "aiff"]
@@ -51,6 +54,9 @@ var _add_position: Button       # the "+" on the Positions header
 var _position_menu: PopupMenu   # a position's right-click menu
 var _menu_position := ""        # ...and the position it's for
 enum { PM_RENAME, PM_DUPLICATE, PM_DELETE }
+var _track_menu: PopupMenu      # a track's right-click menu
+var _menu_track := ""           # ...and the track (path) it's for
+enum { TM_OPEN, TM_SHOW_IN_FOLDER, TM_COPY_PATH, TM_REMOVE_TIMELINES }
 ## The show's named positions (set by the shell).
 var positions: PositionLibrary:
 	set(v):
@@ -179,7 +185,17 @@ func _ready() -> void:
 	_list.column_title_clicked.connect(_on_column_title_clicked)
 	# Double-click (or Enter) a track: its timeline replaces the list.
 	_list.item_activated.connect(_on_track_activated)
+	_list.allow_rmb_select = true
+	_list.item_mouse_selected.connect(_on_track_clicked)
 	right.add_child(_list)
+	_track_menu = PopupMenu.new()
+	_track_menu.add_item("Open Timeline", TM_OPEN)
+	_track_menu.add_item("Show in File Explorer", TM_SHOW_IN_FOLDER)
+	_track_menu.add_item("Copy Path", TM_COPY_PATH)
+	_track_menu.add_separator()
+	_track_menu.add_item("Remove Lighting Timelines…", TM_REMOVE_TIMELINES)
+	_track_menu.id_pressed.connect(track_menu_action)
+	add_child(_track_menu)
 
 	visibility_changed.connect(func():
 		if is_visible_in_tree():
@@ -327,10 +343,83 @@ func _on_track_activated() -> void:
 	var it := _list.get_selected()
 	if it == null:
 		return
+	var r := _row_for(it.get_metadata(0))
+	if not r.is_empty():
+		open_track(r)
+
+
+## A right-click on a track: its menu, with what doesn't apply greyed out.
+func _on_track_clicked(pos: Vector2, button: int) -> void:
+	var it := _list.get_selected()
+	if button != MOUSE_BUTTON_RIGHT or it == null:
+		return
+	_menu_track = it.get_metadata(0)
+	var row := _row_for(_menu_track)
+	var missing: bool = row.get("missing", true)
+	_track_menu.set_item_disabled(_track_menu.get_item_index(TM_OPEN), missing)
+	_track_menu.set_item_disabled(_track_menu.get_item_index(TM_SHOW_IN_FOLDER), missing)
+	_track_menu.set_item_disabled(_track_menu.get_item_index(TM_REMOVE_TIMELINES),
+		not has_timelines_mark(_menu_track))
+	_track_menu.popup(Rect2i(Vector2i(_list.get_screen_position() + pos), Vector2i.ZERO))
+
+
+func track_menu() -> PopupMenu:
+	return _track_menu
+
+
+## A track's right-click menu item, for the track it was opened on (or
+## `path`). Remove Lighting Timelines asks first.
+func track_menu_action(action: int, path := "") -> void:
+	if path == "":
+		path = _menu_track
+	var row := _row_for(path)
+	if row.is_empty():
+		return
+	match action:
+		TM_OPEN:
+			open_track(row)
+		TM_SHOW_IN_FOLDER:
+			OS.shell_show_in_file_manager(path)
+		TM_COPY_PATH:
+			DisplayServer.clipboard_set(path)
+		TM_REMOVE_TIMELINES:
+			confirm_remove_timelines(path)
+
+
+## Ask, then delete a track's lighting timelines from the current show.
+## Returns the dialog (for tests).
+func confirm_remove_timelines(path: String) -> ConfirmationDialog:
+	var row := _row_for(path)
+	if row.is_empty():
+		return null
+	var dlg := ConfirmationDialog.new()
+	dlg.title = "Remove Lighting Timelines"
+	dlg.dialog_text = "Remove the lighting timelines for \"%s\" from this show?
+This can't be undone." % row["title"]
+	dlg.ok_button_text = "Remove"
+	add_child(dlg)
+	dlg.confirmed.connect(func():
+		dlg.queue_free()
+		remove_timelines(path))
+	dlg.canceled.connect(func(): dlg.queue_free())
+	dlg.popup_centered()
+	return dlg
+
+
+## Delete a track's lighting timelines from the current show and unmark it.
+func remove_timelines(path: String) -> void:
+	_timeline.remove_song_timelines(path)
+	_to_check.erase(path)
+	_has_timelines[path] = false
+	_show_mark(path)
+
+
+## The listed row for the track at `path` ({} if it isn't listed).
+func _row_for(path: String) -> Dictionary:
 	for r in _rows:
-		if r["path"] == it.get_metadata(0):
-			open_track(r)
-			return
+		if r["path"] == path:
+			return r
+	return {}
 
 
 ## Replace the track list with `row`'s timeline.

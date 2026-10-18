@@ -2012,6 +2012,19 @@ func flush() -> String:
 	return err
 
 
+## Delete the song at `path`'s saved timelines from the store, and forget
+## them (and their undo history) here. If it's the open song, its tracks
+## go back to empty, unsaved edits and all. Returns whether there were any.
+func remove_song_timelines(path: String) -> bool:
+	var had := timeline_store != null and timeline_store.remove_song(path)
+	_songs.erase(path)
+	_history.erase(path)
+	if path == _path:
+		_dirty = false
+		_show_song_data()
+	return had
+
+
 ## Switch to another show's timelines folder. `reload`: forget what's in
 ## memory and show the open song's timelines from the new folder (loading
 ## another show — flush() the old one first); otherwise keep it, edits and

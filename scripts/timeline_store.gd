@@ -123,6 +123,31 @@ func save_song(path: String, data: Dictionary) -> String:
 	return ""
 
 
+## Delete the song at `path`'s timelines (its file and index entry).
+## Found by fingerprint, or — if the song can't be read — by its indexed
+## path. Returns whether there were any.
+func remove_song(path: String) -> bool:
+	if dir == "":
+		return false
+	var idx := index()
+	var fp := fingerprint(path)
+	if fp == "":
+		for k in idx:
+			if idx[k] is Dictionary and String(idx[k].get("path", "")) == path:
+				fp = k
+				break
+	if fp == "":
+		return false
+	var had := FileAccess.file_exists(_song_file(fp))
+	if had:
+		DirAccess.remove_absolute(_song_file(fp))
+	if idx.has(fp):
+		idx.erase(fp)
+		_write_json(_index_file(), idx)
+		had = true
+	return had
+
+
 ## The songs this folder has timelines for: {fingerprint: {path, title,
 ## size}}.
 func index() -> Dictionary:
