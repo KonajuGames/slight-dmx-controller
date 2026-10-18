@@ -1,8 +1,8 @@
-[gd_scene load_steps=2 format=3 uid="uid://dmxcontroller01"]
+[gd_scene format=3 uid="uid://dhhe7u5obkj57"]
 
-[ext_resource type="Script" path="res://scripts/dmx_controller.gd" id="1"]
+[ext_resource type="Script" uid="uid://urnqo0kvwk6p" path="res://scripts/dmx_controller.gd" id="1"]
 
-[node name="Main" type="Control"]
+[node name="Main" type="Control" unique_id=1781190793]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
