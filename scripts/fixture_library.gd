@@ -45,7 +45,8 @@ const _UA := "sLight-fixture-library"
 const GDTF_LOGIN_URL := "https://gdtf-share.com/apis/public/login.php"
 const GDTF_LIST_URL := "https://gdtf-share.com/apis/public/getList.php"
 const GDTF_DOWNLOAD_URL := "https://gdtf-share.com/apis/public/downloadFile.php"
-const GDTF_TMP := "user://fixture_online/_gdtf_download.tmp"
+## Must end in ".gdtf": FixtureImport.from_path() picks its parser by extension.
+const GDTF_TMP := "user://fixture_online/_gdtf_download.gdtf"
 
 var _entries: Array = []            ## catalogue rows, each with a cached "_hay"
 var _by_id: Dictionary = {}         ## id -> entry

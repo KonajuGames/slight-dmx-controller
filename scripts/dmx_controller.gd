@@ -1114,7 +1114,9 @@ func _lib_render_preview(preview: VBoxContainer, e: Dictionary, p: FixtureProfil
 		preview.add_child(subl)
 
 	if e.get("online", false):
-		var o := _label("bundled + fetched from OFL" if e.get("bundled", false) else "fetched from Open Fixture Library")
+		var gdtf: bool = e.get("gdtf", false)
+		var o := _label(("bundled + fetched from %s" % ("GDTF-Share" if gdtf else "OFL")) if e.get("bundled", false) \
+			else ("fetched from GDTF-Share" if gdtf else "fetched from Open Fixture Library"))
 		o.modulate = Color(0.55, 0.8, 1.0)
 		preview.add_child(o)
 
@@ -1335,7 +1337,8 @@ func _open_library_dialog() -> void:
 			for c in preview.get_children():
 				c.queue_free()
 		if p == null:
-			var err := _label("Couldn't load this fixture.\n%s" % Library.online_error())
+			var why := Library.gdtf_error() if id.begins_with("gdtf-") else Library.online_error()
+			var err := _label("Couldn't load this fixture.\n%s" % why)
 			err.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			preview.add_child(err)
 			return
