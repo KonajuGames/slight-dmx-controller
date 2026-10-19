@@ -81,11 +81,15 @@ static func evaluate(profile: FixtureProfile, mode: int, out_buf: PackedByteArra
 	var has_wheel := false
 	for ci in range(chans.size()):
 		var ch: Dictionary = chans[ci]
+		# A fine channel is its coarse channel's low byte, read with it —
+		# never a channel of its own (whatever role it carries).
+		if bool(ch.get("fine", false)):
+			continue
 		var raw := _read(out_buf, start + ci)
 		var has_fine: bool = ci + 1 < chans.size() and bool(chans[ci + 1].get("fine", false))
 		match String(ch["role"]):
 			"DIMMER":
-				dim = raw / 255.0
+				dim = (raw * 256 + _read(out_buf, start + ci + 1)) / 65535.0 if has_fine else raw / 255.0
 			"PAN":
 				var pv := raw * 256 + _read(out_buf, start + ci + 1) if has_fine else raw
 				st["pan"] = (pv / (65535.0 if has_fine else 255.0) - 0.5) * float(phys.get("pan_range", 540.0))

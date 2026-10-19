@@ -659,7 +659,9 @@ func _resolve_fx_targets(role: String, universe: int, group: String = "") -> Arr
 			var chans: Array = profile.channels_for_mode(int(fixture.get("mode", 0)))
 			var start: int = fixture["start"]
 			for li in range(chans.size()):
-				if String(chans[li]["role"]) == role:
+				# A fine channel (a 16-bit pair's low byte) isn't a target
+				# of its own, even carrying its coarse channel's role.
+				if String(chans[li]["role"]) == role and not bool(chans[li].get("fine", false)):
 					out.append({"u": ui, "ch": start + li})
 	return out
 
