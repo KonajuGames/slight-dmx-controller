@@ -75,6 +75,13 @@ func _test_round_trip() -> void:
 	main.cue_panel.record_cue()
 	var par_uid := String(panel.patched_fixtures[0]["uid"])
 	var bar_uid := String(panel.patched_fixtures[1]["uid"])
+	ok(panel.patched_fixtures[0]["category"] == "Primary Wash" and panel.patched_fixtures[1]["category"] == "Primary Multi-cell",
+		"default categories: a par is a wash, a 2-head bar a multi-cell")
+	var mover := FixtureProfile.new("mh", "Moving head", [
+		{"name": "Pan", "role": "PAN"}, {"name": "Dimmer", "role": "DIMMER"},
+	])
+	ok(mover.default_show_category(0) == "Primary Mover", "...one with pan (or tilt) a mover")
+	panel.patched_fixtures[0]["category"] = "Secondary Wash"
 	main.groups.append({"name": "Front", "members": [par_uid, bar_uid]})
 	var e = load("res://scripts/wave_effect.gd").new()
 	e.name = "Test wave"
@@ -109,6 +116,8 @@ func _test_round_trip() -> void:
 	ok(pf.size() == 2 and pf[0]["pos"].is_equal_approx(Vector3(-2, 4, -1)) and pf[0]["rot"].is_equal_approx(Vector3(90, 15, 0))
 		and pf[1]["pos"].is_equal_approx(Vector3(1.5, 3.5, -2)) and pf[1]["rot"].is_equal_approx(Vector3(80, 0, 30)),
 		"visualizer positions and rotations")
+	ok(pf.size() == 2 and pf[0]["category"] == "Secondary Wash" and pf[1]["category"] == "Primary Multi-cell",
+		"categories, as changed")
 	u = main._panels[0].sender
 	ok(u.get_channel(0) == 200 and u.get_channel(1) == 40 and u.get_channel(2) == 10, "live levels (the actual colour)")
 	var new_par := int(pf[0]["id"]) if pf.size() > 0 else -1
@@ -137,6 +146,8 @@ func _test_round_trip() -> void:
 	ok(main.remembered_show() == PATH, "a refused file isn't remembered")
 	# An older show (no live levels) still loads, at the patch's defaults.
 	doc.erase("live")
+	for sf in doc["universes"][0]["fixtures"]:
+		sf.erase("category")
 	doc.erase("format")
 	doc.erase("version")
 	f = FileAccess.open(bad, FileAccess.WRITE)
@@ -145,6 +156,9 @@ func _test_round_trip() -> void:
 	err = main.load_show_from(bad)
 	ok(err == "" and main._panels[0].patched_fixtures.size() == 2 and main._panels[0].sender.get_channel(0) == 0,
 		"an older show file loads (no live levels)")
+	ok(main._panels[0].patched_fixtures[0]["category"] == "Primary Wash"
+		and main._panels[0].patched_fixtures[1]["category"] == "Primary Multi-cell",
+		"...its fixtures in their default categories")
 	# One saved in the old Auto Show run mode (gone): opens in Cue Mode.
 	doc["run_mode"] = 2
 	doc["auto_show"] = {"song": "C:/old.mp3"}

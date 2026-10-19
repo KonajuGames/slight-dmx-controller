@@ -44,6 +44,15 @@ const PHYSICAL_DEFAULT := {
 	"heads": [],
 }
 
+## The categories a patched fixture can be put in, for show generation.
+## Chosen per fixture (saved with the patch, not the profile), starting at
+## default_show_category(). Not the same thing as physical.category.
+const SHOW_CATEGORIES := [
+	"Primary Wash", "Secondary Wash",
+	"Primary Mover", "Secondary Mover",
+	"Primary Multi-cell", "Secondary Multi-cell",
+]
+
 ## Intensity roles that make up a "head" (an RGB triplet plus its extras).
 const HEAD_ROLES := ["RED", "GREEN", "BLUE", "WHITE", "AMBER", "UV"]
 
@@ -257,6 +266,18 @@ func virtual_dimmer_channels(mode_index: int) -> PackedInt32Array:
 ## Channel count of the given mode (mode 0 by default).
 func channel_count(mode_index: int = 0) -> int:
 	return channels_for_mode(mode_index).size()
+
+
+## The category a fixture patched in this mode starts in (see
+## SHOW_CATEGORIES): a mover if it has pan or tilt, else a multi-cell if
+## it has more than one head, else a wash.
+func default_show_category(mode_index: int) -> String:
+	for ch in channels_for_mode(mode_index):
+		if String(ch["role"]) in ["PAN", "TILT"]:
+			return "Primary Mover"
+	if head_groups(mode_index).size() > 1:
+		return "Primary Multi-cell"
+	return "Primary Wash"
 
 
 # -------------------------------------------------------- SERIALIZATION --

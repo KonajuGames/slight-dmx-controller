@@ -753,13 +753,15 @@ func _edit_playback_layer(n: int) -> Array:
 
 ## Every patched fixture, universe by universe, for the DJ Edit Mode
 ## timeline's per-fixture tracks — keyed by its uid, which the show's saved
-## timelines use.
+## timelines use — with its category (FixtureProfile.SHOW_CATEGORIES) for
+## show generation.
 func _timeline_fixtures() -> Array:
 	var out: Array = []
 	for ui in range(_panels.size()):
 		for fx in _panels[ui].patched_fixtures:
 			out.append({"key": String(fx["uid"]), "name": String(fx["name"]),
-				"profile": fx["profile"], "mode": int(fx.get("mode", 0))})
+				"profile": fx["profile"], "mode": int(fx.get("mode", 0)),
+				"category": String(fx.get("category", ""))})
 	return out
 
 

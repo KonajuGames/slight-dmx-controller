@@ -514,6 +514,7 @@ func _on_add_fixture_pressed() -> void:
 		"profile": profile,
 		"start": start,
 		"mode": mode,
+		"category": profile.default_show_category(mode),
 		# 3D visualizer placement (world metres / degrees). Straight down,
 		# as if hung from a truss aimed at the floor.
 		"pos": auto_place(patched_fixtures.size()),
@@ -541,13 +542,15 @@ static func new_uid() -> String:
 ## Patch a fixture programmatically (MVR import, scripting). `emit`
 ## defers the patch_changed signal so a bulk add fires it once.
 func add_patched(profile: FixtureProfile, p_start: int, p_mode: int, p_name: String, pos: Vector3, rot: Vector3, emit := true) -> void:
+	var mode := clampi(p_mode, 0, max(profile.mode_count() - 1, 0))
 	patched_fixtures.append({
 		"id": _next_fixture_id,
 		"uid": new_uid(),
 		"name": p_name if p_name != "" else profile.profile_name,
 		"profile": profile,
 		"start": p_start,
-		"mode": clampi(p_mode, 0, max(profile.mode_count() - 1, 0)),
+		"mode": mode,
+		"category": profile.default_show_category(mode),
 		"pos": pos,
 		"rot": rot,
 	})
@@ -622,6 +625,20 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 		start + 1, start + chans.size()
 	]
 	header.add_child(title)
+
+	# Category for show generation — the fixture's own choice, kept in the
+	# patch (no patch_changed: nothing else needs rebuilding for it).
+	var category_option := OptionButton.new()
+	category_option.tooltip_text = "Category used when generating shows"
+	for cat in FixtureProfile.SHOW_CATEGORIES:
+		category_option.add_item(cat)
+	if not String(fixture.get("category", "")) in FixtureProfile.SHOW_CATEGORIES:
+		fixture["category"] = profile.default_show_category(mode)
+	category_option.selected = FixtureProfile.SHOW_CATEGORIES.find(String(fixture["category"]))
+	category_option.item_selected.connect(func(i: int):
+		fixture["category"] = FixtureProfile.SHOW_CATEGORIES[i]
+	)
+	header.add_child(category_option)
 
 	# Flash: full white for as long as the button is held, then put the
 	# affected channels back exactly as they were.
@@ -1165,6 +1182,7 @@ func patch_dict() -> Dictionary:
 			"name": fixture["name"],
 			"start": fixture["start"],
 			"mode": int(fixture.get("mode", 0)),
+			"category": String(fixture.get("category", "")),
 			"profile": profile.to_dict(),
 			"pos": _v3_to_arr(fixture.get("pos", Vector3.ZERO)),
 			"rot": _v3_to_arr(fixture.get("rot", Vector3.ZERO)),
@@ -1215,6 +1233,11 @@ func apply_patch_dict(d: Dictionary) -> void:
 	var i := 0
 	for entry in d.get("fixtures", []):
 		var profile := FixtureProfile.from_dict(entry.get("profile", {}))
+		var mode := clampi(int(entry.get("mode", 0)), 0, max(profile.mode_count() - 1, 0))
+		# Older shows have none (or an unknown one): the mode's default.
+		var category := String(entry.get("category", ""))
+		if not category in FixtureProfile.SHOW_CATEGORIES:
+			category = profile.default_show_category(mode)
 		patched_fixtures.append({
 			"id": _next_fixture_id,
 			# Kept from the show file (older ones have none: a new one).
@@ -1222,7 +1245,8 @@ func apply_patch_dict(d: Dictionary) -> void:
 			"name": entry.get("name", profile.profile_name),
 			"profile": profile,
 			"start": int(entry.get("start", 0)),
-			"mode": clampi(int(entry.get("mode", 0)), 0, max(profile.mode_count() - 1, 0)),
+			"mode": mode,
+			"category": category,
 			"pos": _arr_to_v3(entry.get("pos", null), auto_place(i)),
 			"rot": _arr_to_v3(entry.get("rot", null), Vector3(90, 0, 0)),
 		})
