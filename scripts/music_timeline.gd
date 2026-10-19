@@ -950,9 +950,10 @@ var _position_menu: PopupMenu
 var _movement_menu: PopupMenu
 const MOVEMENT_CLEAR := 1000
 ## The Movement submenu's sizes (of the pan / tilt range) and cycles (in
-## bars), and the item ids they're listed under.
-const MOVEMENT_SIZES := [["Small", 0.04], ["Medium", 0.08], ["Large", 0.16]]
-const MOVEMENT_CYCLES := [["½ bar", 0.5], ["1 bar", 1.0], ["2 bars", 2.0]]
+## bars), and the item ids they're listed under — small and slow enough
+## for real moving heads to keep up.
+const MOVEMENT_SIZES := [["Small", 0.02], ["Medium", 0.04], ["Large", 0.08]]
+const MOVEMENT_CYCLES := [["1 bar", 1.0], ["2 bars", 2.0], ["4 bars", 4.0]]
 const MOVEMENT_SIZE_ID := 200
 const MOVEMENT_CYCLE_ID := 300
 ## The size / cycle new movements get (indices into the lists above).

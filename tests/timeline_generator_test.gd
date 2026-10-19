@@ -117,7 +117,7 @@ func _test_show() -> void:
 	ok(covered, "every movement over a position")
 	var quiet := TimelineTrack.movement_segment_at(mv, 8.0)
 	var loud := TimelineTrack.movement_segment_at(mv, 50.0)
-	ok(quiet["fx"] in ["tilt_sweep", "pan_sweep"] and is_equal_approx(quiet["period"], 8.0) and loud["size"] > quiet["size"]
+	ok(quiet["fx"] in ["tilt_sweep", "pan_sweep"] and is_equal_approx(quiet["period"], 16.0) and loud["size"] > quiet["size"]
 		and loud["period"] < quiet["period"], "quiet: a small slow sweep; loud: bigger and faster")
 	# Fixture dimmers.
 	var p1: PackedVector2Array = show["par1"]["dimmer"]

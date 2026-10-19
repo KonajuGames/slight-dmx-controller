@@ -1308,20 +1308,20 @@ func _test_movement_row() -> void:
 	var items := _menu_ids(tl.context_items(true))
 	ok(items.has("Movement"), "a movement selection: a Movement submenu")
 	ok(_menu_ids(tl._movement_menu) == ["None", "Circle", "Figure 8", "Pan Sweep", "Tilt Sweep",
-		"Small", "Medium", "Large", "½ bar", "1 bar", "2 bars", "Clear Movement"],
+		"Small", "Medium", "Large", "1 bar", "2 bars", "4 bars", "Clear Movement"],
 		"None, the shapes, Size, Cycle, Clear Movement (%s)" % str(_menu_ids(tl._movement_menu)))
 	var mm: PopupMenu = tl._movement_menu
 	ok(mm.is_item_radio_checkable(mm.get_item_index(MusicTimeline.MOVEMENT_SIZE_ID))
 		and mm.is_item_checked(mm.get_item_index(MusicTimeline.MOVEMENT_SIZE_ID + 1))
-		and mm.is_item_checked(mm.get_item_index(MusicTimeline.MOVEMENT_CYCLE_ID + 1)), "size / cycle as radio items: Medium, 1 bar to start")
+		and mm.is_item_checked(mm.get_item_index(MusicTimeline.MOVEMENT_CYCLE_ID + 1)), "size / cycle as radio items: Medium, 2 bars to start")
 	tl._movement_menu.id_pressed.emit(1)          # Circle
 	var sg := mv.movement_at(6.0)
 	ok(sg.get("fx") == "circle" and m.movement_at(6.0).get("fx") == "circle" and mv.movement_at(9.0).is_empty(),
 		"Circle across the selected rows")
-	ok(is_equal_approx(sg["period"], 1.8) and is_equal_approx(sg["size"], TimelineTrack.MOVEMENT_SIZE),
-		"one cycle a bar (%.2f s), the default size" % sg["period"])
+	ok(is_equal_approx(sg["period"], 3.6) and is_equal_approx(sg["size"], TimelineTrack.MOVEMENT_SIZE),
+		"one cycle every two bars (%.2f s), the default size" % sg["period"])
 	tl._collect()
-	ok(tl.song_data()["tracks"]["mv"]["movement"] == [[4.0, 8.0, "circle", 1.8, TimelineTrack.MOVEMENT_SIZE]], "saved")
+	ok(tl.song_data()["tracks"]["mv"]["movement"] == [[4.0, 8.0, "circle", 3.6, TimelineTrack.MOVEMENT_SIZE]], "saved")
 	ok(MusicTimeline._moves_from([[4.0, 8.0, "figure8", 1.8, 0.1]]) == [{"t0": 4.0, "t1": 8.0, "fx": "figure8", "period": 1.8, "size": 0.1}],
 		"and read back")
 	ok(MusicTimeline._moves_from([[4.0, 8.0, "wobble"]]).is_empty(), "an unknown effect is dropped")
@@ -1332,7 +1332,7 @@ func _test_movement_row() -> void:
 	tl.copy_selection()
 	sel.set_blocks([TimelineSelection.block(PackedStringArray(["mv|%d" % R.MOVEMENT]), 20.0, 21.0)])
 	tl.paste()
-	ok(mv.movement_at(22.0).get("fx") == "circle" and is_equal_approx(mv.movement_at(22.0)["period"], 1.8), "copies and pastes (with its period)")
+	ok(mv.movement_at(22.0).get("fx") == "circle" and is_equal_approx(mv.movement_at(22.0)["period"], 3.6), "copies and pastes (with its period)")
 	sel.set_blocks([TimelineSelection.block(PackedStringArray(["mv|%d" % R.MOVEMENT]), 4.0, 8.0)])
 	tl.move_selection(sel.blocks.duplicate(true), 2.0)
 	ok(mv.movement_at(5.0).is_empty() and mv.movement_at(9.0).get("fx") == "circle", "moves with the selection")
@@ -1341,27 +1341,27 @@ func _test_movement_row() -> void:
 	# Size and cycle.
 	sel.set_blocks([TimelineSelection.block(PackedStringArray(["mv|%d" % R.MOVEMENT]), 2.0, 6.0)])
 	tl._movement_menu.id_pressed.emit(MusicTimeline.MOVEMENT_SIZE_ID + 2)      # Large
-	tl._movement_menu.id_pressed.emit(MusicTimeline.MOVEMENT_CYCLE_ID + 0)     # ½ bar
+	tl._movement_menu.id_pressed.emit(MusicTimeline.MOVEMENT_CYCLE_ID + 0)     # 1 bar
 	tl._movement_menu.id_pressed.emit(2)                                        # Figure 8
 	var big := mv.movement_at(4.0)
-	ok(big.get("fx") == "figure8" and is_equal_approx(big["size"], 0.16) and is_equal_approx(big["period"], 0.9),
-		"chosen size / cycle go with a new effect (Large, ½ bar = %.2f s)" % big["period"])
+	ok(big.get("fx") == "figure8" and is_equal_approx(big["size"], 0.08) and is_equal_approx(big["period"], 1.8),
+		"chosen size / cycle go with a new effect (Large, 1 bar = %.2f s)" % big["period"])
 	sel.set_blocks([TimelineSelection.block(PackedStringArray(["mv|%d" % R.MOVEMENT]), 10.0, 12.0)])
 	tl._movement_menu.id_pressed.emit(1)
-	ok(is_equal_approx(mv.movement_at(11.0)["size"], 0.16), "...and stay chosen for the next")
+	ok(is_equal_approx(mv.movement_at(11.0)["size"], 0.08), "...and stay chosen for the next")
 	sel.set_blocks([TimelineSelection.block(PackedStringArray(["mv|%d" % R.MOVEMENT]), 0.0, 14.0)])
 	_menu_ids(tl.context_items(true))
 	ok(mm.is_item_checked(mm.get_item_index(MusicTimeline.MOVEMENT_SIZE_ID + 2))
 		and mm.is_item_checked(mm.get_item_index(MusicTimeline.MOVEMENT_CYCLE_ID + 0)), "the menu shows the selection's size / cycle")
 	tl._movement_menu.id_pressed.emit(MusicTimeline.MOVEMENT_SIZE_ID + 0)      # Small
-	tl._movement_menu.id_pressed.emit(MusicTimeline.MOVEMENT_CYCLE_ID + 2)     # 2 bars
-	ok(is_equal_approx(mv.movement_at(4.0)["size"], 0.04) and is_equal_approx(mv.movement_at(4.0)["period"], 3.6)
-		and mv.movement_at(4.0)["fx"] == "figure8" and is_equal_approx(mv.movement_at(11.0)["size"], 0.04)
+	tl._movement_menu.id_pressed.emit(MusicTimeline.MOVEMENT_CYCLE_ID + 2)     # 4 bars
+	ok(is_equal_approx(mv.movement_at(4.0)["size"], 0.02) and is_equal_approx(mv.movement_at(4.0)["period"], 7.2)
+		and mv.movement_at(4.0)["fx"] == "figure8" and is_equal_approx(mv.movement_at(11.0)["size"], 0.02)
 		and mv.movement_at(11.0)["fx"] == "circle", "changing size / cycle changes the selected movements, effects kept")
-	ok(mv.movement_at(8.0).is_empty() and is_equal_approx(mv.movement_at(22.0)["size"], 0.08),
+	ok(mv.movement_at(8.0).is_empty() and is_equal_approx(mv.movement_at(22.0)["size"], 0.04),
 		"...and leaves the gaps, and movements outside the selection, alone")
 	tl.undo()
-	ok(is_equal_approx(mv.movement_at(4.0)["period"], 0.9), "undoable")
+	ok(is_equal_approx(mv.movement_at(4.0)["period"], 1.8), "undoable")
 	tl._dirty = false
 	tl.queue_free()
 	await process_frame

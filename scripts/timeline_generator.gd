@@ -142,7 +142,7 @@ const MOVES := [
 	[["circle", 2], ["pan_sweep", 2], ["figure8", 1]],
 	[["figure8", 3], ["circle", 2], ["pan_sweep", 1]],
 ]
-const MOVE_SCALE := [[0.04, 4.0], [0.06, 2.0], [0.09, 1.0], [0.14, 0.5]]
+const MOVE_SCALE := [[0.02, 8.0], [0.03, 4.0], [0.045, 2.0], [0.07, 1.0]]
 ## A breakdown's dimmer patterns, colour modes and movement.
 const BREAKDOWN_PATTERNS := [["solo_dark", 2], ["duo", 2], ["breathe_slow", 2]]
 const BREAKDOWN_COLOURS := [["all", 2], ["gradient", 2]]

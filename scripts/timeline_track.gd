@@ -696,8 +696,11 @@ const MOVEMENT_NAMES := {"none": "None", "circle": "Circle", "figure8": "Figure 
 	"pan_sweep": "Pan Sweep", "tilt_sweep": "Tilt Sweep"}
 ## A new movement's size (of the pan / tilt range) and, without a beat
 ## grid, its cycle length.
-const MOVEMENT_SIZE := 0.08
-const MOVEMENT_PERIOD := 2.0
+const MOVEMENT_SIZE := 0.04
+const MOVEMENT_PERIOD := 4.0
+## The largest movement size (MusicTimeline's Large), what the row draws
+## its shapes at full size for.
+const MOVEMENT_SIZE_MAX := 0.08
 
 
 ## The movement segment at `t` seconds ({} where there's none).
@@ -1257,7 +1260,7 @@ func _draw_movement(r: Rect2, segs: Array, shift: float, alpha: float) -> void:
 			draw_circle(c, 1.5, col)
 			continue
 		# The shape itself, traced once round — bigger for a bigger movement.
-		var scale := rad * (0.55 + 0.45 * clampf(float(sg.get("size", MOVEMENT_SIZE)) / 0.16, 0.0, 1.0))
+		var scale := rad * (0.55 + 0.45 * clampf(float(sg.get("size", MOVEMENT_SIZE)) / MOVEMENT_SIZE_MAX, 0.0, 1.0))
 		var pts := PackedVector2Array()
 		for i in range(25):
 			var o := movement_offset({"fx": fx, "period": 1.0, "size": 1.0}, i / 24.0)

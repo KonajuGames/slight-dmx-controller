@@ -287,8 +287,9 @@ chase or a fan can run group by group (left and right, front and back).
 - **Position** (moving heads) — which named position the heads point at
   (see *Named positions* below).
 - **Movement** (moving heads) — a Circle, Figure 8, Pan Sweep or Tilt
-  Sweep around that position, Small / Medium / Large, cycling every ½, 1
-  or 2 bars — or None to hold still.
+  Sweep around that position, Small / Medium / Large, cycling every 1, 2
+  or 4 bars — or None to hold still. They're kept small and slow enough
+  for real moving heads to follow.
 
 **Select, then edit.** Drag across empty parts of the timelines to
 select an area — over every row the drag crosses, snapped to bars or
