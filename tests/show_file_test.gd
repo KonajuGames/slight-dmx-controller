@@ -130,7 +130,7 @@ func _test_round_trip() -> void:
 	var doc = JSON.parse_string(FileAccess.get_file_as_string(PATH))
 	ok(doc is Dictionary and doc.get("format") == "sLight show" and int(doc.get("version")) == 1, "tagged with format and version")
 	var saved_fixtures: Array = doc["universes"][0]["fixtures"]
-	ok(saved_fixtures.size() == 2 and saved_fixtures[0]["profile"]["profile_name"] == "RGB par",
+	ok(saved_fixtures.size() == 2 and saved_fixtures[0]["profile"]["model"] == "RGB par",
 		"each fixture with its whole profile (portable)")
 
 	# Change everything.

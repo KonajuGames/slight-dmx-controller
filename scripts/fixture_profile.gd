@@ -15,8 +15,10 @@ extends RefCounted
 ## trio, one high-res slider for a 16-bit pair, a slot dropdown for a
 ## gobo wheel, a plain slider for everything else).
 ##
-## Profiles are plain data (id, name, modes) so they serialize to JSON
-## directly for saving custom profiles and patch lists to disk.
+## Profiles are plain data (id, manufacturer, model, modes) so they
+## serialize to JSON directly for saving custom profiles and patch lists
+## to disk. The model is the name shown for a profile; full_name() adds
+## the manufacturer.
 
 const ROLES: Array[String] = [
 	"DIMMER", "RED", "GREEN", "BLUE", "WHITE", "AMBER", "UV",
@@ -57,7 +59,9 @@ const SHOW_CATEGORIES := [
 const HEAD_ROLES := ["RED", "GREEN", "BLUE", "WHITE", "AMBER", "UV"]
 
 var id: String
-var profile_name: String
+var manufacturer: String
+## The fixture's model — the name the app shows for the profile.
+var model: String
 ## Array of {"name": String, "channels": Array}. Always has at least one
 ## entry once the profile carries any channels; a single-mode fixture
 ## just has one.
@@ -71,9 +75,11 @@ var physical: Dictionary = PHYSICAL_DEFAULT.duplicate()
 var geometry: Dictionary = {}
 
 
-func _init(p_id: String = "", p_name: String = "", p_channels: Array = [], p_modes: Array = [], p_physical: Dictionary = {}) -> void:
+func _init(p_id: String = "", p_model: String = "", p_channels: Array = [], p_modes: Array = [], p_physical: Dictionary = {},
+		p_manufacturer: String = "") -> void:
 	id = p_id
-	profile_name = p_name
+	model = p_model
+	manufacturer = p_manufacturer
 	modes = []
 	physical = _normalize_physical(p_physical)
 	if not p_modes.is_empty():
@@ -231,6 +237,12 @@ static func _normalize_mode(m: Dictionary) -> Dictionary:
 
 # --------------------------------------------------------------- ACCESS --
 
+## Manufacturer and model ("Cameo Auro Beam 150"), or the model alone
+## without a manufacturer.
+func full_name() -> String:
+	return ("%s %s" % [manufacturer, model]).strip_edges()
+
+
 func mode_count() -> int:
 	return modes.size()
 
@@ -291,7 +303,8 @@ func to_dict() -> Dictionary:
 		})
 	return {
 		"id": id,
-		"profile_name": profile_name,
+		"manufacturer": manufacturer,
+		"model": model,
 		"physical": physical.duplicate(true),
 		"geometry": geometry.duplicate(true),
 		"modes": mode_dicts,
@@ -301,7 +314,9 @@ func to_dict() -> Dictionary:
 static func from_dict(d: Dictionary) -> FixtureProfile:
 	var p := FixtureProfile.new()
 	p.id = String(d.get("id", ""))
-	p.profile_name = String(d.get("profile_name", "Custom"))
+	p.manufacturer = String(d.get("manufacturer", ""))
+	# Saved before manufacturer and model: the one name, as the model.
+	p.model = String(d.get("model", d.get("profile_name", "Custom")))
 	p.physical = _normalize_physical(d.get("physical", {}))
 	var g = d.get("geometry", {})
 	p.geometry = g.duplicate(true) if g is Dictionary else {}
@@ -435,4 +450,6 @@ static func built_in_profiles() -> Array[FixtureProfile]:
 		},
 	]))
 
+	for p in list:
+		p.manufacturer = "Generic"
 	return list

@@ -183,7 +183,7 @@ static func from_gdtf_xml(xml: PackedByteArray, media_reader := Callable()) -> D
 	if not heads.is_empty():
 		phys["heads"] = heads
 
-	var profile := FixtureProfile.new(id, fixture_name, [], modes, phys)
+	var profile := FixtureProfile.new(id, model, [], modes, phys, maker)
 	profile.geometry = geo["geometry"]
 	return {"profile": profile, "warnings": warnings, "model_bytes": geo["model_bytes"]}
 

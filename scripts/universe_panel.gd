@@ -504,7 +504,8 @@ func populate_profile_option() -> void:
 	var keep: int = profile_option.selected
 	profile_option.clear()
 	for p in available_profiles:
-		profile_option.add_item(p.profile_name)
+		profile_option.add_item(p.model)
+		profile_option.set_item_tooltip(profile_option.item_count - 1, p.full_name())
 	if keep >= 0 and keep < profile_option.item_count:
 		profile_option.selected = keep
 	populate_mode_option()
@@ -539,7 +540,7 @@ func _on_add_fixture_pressed() -> void:
 	var start := int(fixture_start_spin.value) - 1
 	var fixture_label := fixture_name_edit.text
 	if fixture_label.strip_edges() == "":
-		fixture_label = profile.profile_name
+		fixture_label = profile.model
 
 	var fixture := {
 		"id": _next_fixture_id,
@@ -581,7 +582,7 @@ func add_patched(profile: FixtureProfile, p_start: int, p_mode: int, p_name: Str
 	patched_fixtures.append({
 		"id": _next_fixture_id,
 		"uid": new_uid(),
-		"name": p_name if p_name != "" else profile.profile_name,
+		"name": p_name if p_name != "" else profile.model,
 		"profile": profile,
 		"start": p_start,
 		"mode": mode,
@@ -664,7 +665,7 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 	if profile.mode_count() > 1:
 		mode_suffix = "  [%s]" % profile.mode_names()[clampi(mode, 0, profile.mode_count() - 1)]
 	title.text = "%s — %s%s (ch %d-%d)" % [
-		fixture["name"], profile.profile_name, mode_suffix,
+		fixture["name"], profile.model, mode_suffix,
 		start + 1, start + chans.size()
 	]
 	title.tooltip_text = title.text
@@ -1312,7 +1313,7 @@ func apply_patch_dict(d: Dictionary) -> void:
 			"id": _next_fixture_id,
 			# Kept from the show file (older ones have none: a new one).
 			"uid": String(entry.get("uid", "")) if String(entry.get("uid", "")) != "" else new_uid(),
-			"name": entry.get("name", profile.profile_name),
+			"name": entry.get("name", profile.model),
 			"profile": profile,
 			"start": int(entry.get("start", 0)),
 			"mode": mode,

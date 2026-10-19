@@ -1060,7 +1060,7 @@ func _do_import(path: String) -> void:
 		return
 
 	var profile: FixtureProfile = res["profile"]
-	var base_id := _safe_profile_id(profile.id if profile.id.strip_edges() != "" else profile.profile_name)
+	var base_id := _safe_profile_id(profile.id if profile.id.strip_edges() != "" else profile.full_name())
 	profile.id = base_id if not _id_in_use(base_id) else _unique_profile_id(base_id)
 
 	# save any GDTF glTF model files alongside, referenced from the geometry
@@ -1088,7 +1088,7 @@ func _do_import(path: String) -> void:
 
 	var warns: Array = res.get("warnings", [])
 	var msg := "Imported '%s' — %d mode(s), %d ch." % [
-		profile.profile_name, profile.mode_count(), profile.channel_count(0)]
+		profile.model, profile.mode_count(), profile.channel_count(0)]
 	if not warns.is_empty():
 		msg += "  %d approximation(s); check it in Edit..." % warns.size()
 		push_warning("Fixture import notes:\n- " + "\n- ".join(warns))
@@ -1101,12 +1101,12 @@ func _lib_render_preview(preview: VBoxContainer, e: Dictionary, p: FixtureProfil
 	for c in preview.get_children():
 		c.queue_free()
 
-	var title := _label(p.profile_name)
+	var title := _label(p.model)
 	title.add_theme_font_size_override("font_size", 16)
 	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	preview.add_child(title)
 
-	var sub := " · ".join((e.get("ofl_cat", []) as Array))
+	var sub := " · ".join(([p.manufacturer] if p.manufacturer != "" else []) + (e.get("ofl_cat", []) as Array))
 	var authors := ", ".join((e.get("authors", []) as Array))
 	if authors != "":
 		sub += "   ·   " + authors if sub != "" else authors
@@ -1175,7 +1175,7 @@ func _lib_commit_profile(p: FixtureProfile) -> void:
 	var active := _panels[clampi(universe_tabs.current_tab, 0, _panels.size() - 1)]
 	active.profile_option.selected = idx
 	active.populate_mode_option()
-	status_label.text = "Added '%s' from the library — set a start channel and Add Fixture." % p.profile_name
+	status_label.text = "Added '%s' from the library — set a start channel and Add Fixture." % p.model
 
 
 ## Browse the fixture library. "Bundled library" searches res://fixtures
@@ -1632,17 +1632,17 @@ func _delete_profile(p: FixtureProfile) -> void:
 	if p == null:
 		return
 	if _builtin_ids.has(p.id) and not _profile_has_file(p):
-		status_label.text = "'%s' is a built-in profile and can't be deleted." % p.profile_name
+		status_label.text = "'%s' is a built-in profile and can't be deleted." % p.model
 		return
 
 	var reverts := _builtin_ids.has(p.id)
 	var dlg := ConfirmationDialog.new()
 	dlg.title = "Delete Profile"
 	if reverts:
-		dlg.dialog_text = "Reset \"%s\" to its built-in default?\n\nYour edited copy (%s.json) will be removed." % [p.profile_name, p.id]
+		dlg.dialog_text = "Reset \"%s\" to its built-in default?\n\nYour edited copy (%s.json) will be removed." % [p.model, p.id]
 		dlg.ok_button_text = "Reset"
 	else:
-		dlg.dialog_text = "Delete the profile \"%s\"?\n\n%s.json will be removed. This can't be undone." % [p.profile_name, p.id]
+		dlg.dialog_text = "Delete the profile \"%s\"?\n\n%s.json will be removed. This can't be undone." % [p.model, p.id]
 		dlg.ok_button_text = "Delete"
 	add_child(dlg)
 	dlg.confirmed.connect(func():
@@ -1668,11 +1668,11 @@ func _do_delete_profile(p: FixtureProfile) -> void:
 				break
 		if idx != -1 and restored:
 			available_profiles[idx] = restored
-		status_label.text = "Reset '%s' to its built-in default." % p.profile_name
+		status_label.text = "Reset '%s' to its built-in default." % p.model
 	else:
 		if idx != -1:
 			available_profiles.remove_at(idx)
-		status_label.text = "Deleted profile '%s'." % p.profile_name
+		status_label.text = "Deleted profile '%s'." % p.model
 
 	_refresh_all_profile_options(false)
 
@@ -2091,9 +2091,15 @@ func _open_profile_dialog(existing: FixtureProfile = null) -> void:
 	margin.add_child(vbox)
 
 	var name_row := HFlowContainer.new()
-	name_row.add_child(_label("Profile name:"))
+	name_row.add_child(_label("Manufacturer:"))
+	var maker_edit := LineEdit.new()
+	maker_edit.text = existing.manufacturer if editing else ""
+	maker_edit.placeholder_text = "Generic"
+	maker_edit.custom_minimum_size = Vector2(160, 0)
+	name_row.add_child(maker_edit)
+	name_row.add_child(_label("Model:"))
 	var name_edit := LineEdit.new()
-	name_edit.text = existing.profile_name if editing else "Custom Fixture"
+	name_edit.text = existing.model if editing else "Custom Fixture"
 	name_edit.custom_minimum_size = Vector2(220, 0)
 	name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_row.add_child(name_edit)
@@ -2322,12 +2328,14 @@ func _open_profile_dialog(existing: FixtureProfile = null) -> void:
 		var pname: String = name_edit.text.strip_edges()
 		if pname == "":
 			pname = "Custom Fixture"
+		var pmaker: String = maker_edit.text.strip_edges()
 
 		# Editing keeps the profile's id stable (so its file / built-in
 		# shadow stays put); a new profile gets a unique id from its name.
-		var safe_id: String = existing.id if editing else _unique_profile_id(_safe_profile_id(pname))
+		var safe_id: String = existing.id if editing \
+			else _unique_profile_id(_safe_profile_id(("%s %s" % [pmaker, pname]).strip_edges()))
 
-		var profile := FixtureProfile.new(safe_id, pname, [], p_modes)
+		var profile := FixtureProfile.new(safe_id, pname, [], p_modes, {}, pmaker)
 
 		var f := FileAccess.open(PROFILES_DIR + "/%s.json" % safe_id, FileAccess.WRITE)
 		if f:

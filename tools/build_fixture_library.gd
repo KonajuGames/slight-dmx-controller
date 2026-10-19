@@ -95,10 +95,11 @@ func _build(ofl: String, out: String) -> int:
 
 			var profile: FixtureProfile = res["profile"]
 			var maker := String(maker_name.get(mkey, mkey.capitalize()))
-			var model := String(raw.get("name", profile.profile_name))
+			var model := String(raw.get("name", profile.model))
 			var fid := _san(mkey + "-" + stem)
 			profile.id = fid
-			profile.profile_name = "%s %s" % [maker, model]
+			profile.manufacturer = maker
+			profile.model = model
 
 			var pd := profile.to_dict()
 			pd["modes"] = (pd["modes"] as Array).filter(
@@ -118,7 +119,7 @@ func _build(ofl: String, out: String) -> int:
 				"id": fid,
 				"maker": maker,
 				"model": model,
-				"name": profile.profile_name,
+				"name": profile.full_name(),
 				"cat": _app_cat(profile),
 				"ofl_cat": raw.get("categories", []),
 				"modes": mode_sum,

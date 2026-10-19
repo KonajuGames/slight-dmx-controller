@@ -160,6 +160,7 @@ func resolve(id: String) -> FixtureProfile:
 		if not shard.has(id):
 			return null
 		var p := FixtureProfile.from_dict(shard[id])
+		_names_from(p, e)
 		_profile_cache[id] = p
 		return p
 	var cpath := "%s/%s.json" % [ONLINE_CACHE, id]
@@ -169,9 +170,18 @@ func resolve(id: String) -> FixtureProfile:
 		cf.close()
 		if cd is Dictionary:
 			var cp := FixtureProfile.from_dict(cd)
+			_names_from(cp, entry(id))
 			_profile_cache[id] = cp
 			return cp
 	return null
+
+
+## A profile saved before manufacturer and model (its one name read as
+## the model) takes both from its catalogue entry `e`.
+static func _names_from(p: FixtureProfile, e: Dictionary) -> void:
+	if p.manufacturer == "" and e.has("maker") and e.has("model"):
+		p.manufacturer = String(e["maker"])
+		p.model = String(e["model"])
 
 
 ## Like resolve(), but for an online-only fixture it downloads and converts
@@ -501,9 +511,10 @@ func _download_online(id: String) -> FixtureProfile:
 		return null
 	var prof: FixtureProfile = res["profile"]
 	prof.id = id
-	prof.profile_name = "%s %s" % [e["maker"], String(parsed.get("name", e["model"]))]
-	e["model"] = String(parsed.get("name", e["model"]))
-	e["name"] = prof.profile_name
+	prof.manufacturer = String(e["maker"])
+	prof.model = String(parsed.get("name", e["model"]))
+	e["model"] = prof.model
+	e["name"] = prof.full_name()
 	DirAccess.make_dir_recursive_absolute(ONLINE_CACHE)
 	var cf := FileAccess.open("%s/%s.json" % [ONLINE_CACHE, id], FileAccess.WRITE)
 	if cf:
@@ -551,8 +562,9 @@ func _download_gdtf(id: String) -> FixtureProfile:
 		return null
 	var prof: FixtureProfile = res["profile"]
 	prof.id = id
-	prof.profile_name = "%s %s" % [e["maker"], e["model"]]
-	e["name"] = prof.profile_name
+	prof.manufacturer = String(e["maker"])
+	prof.model = String(e["model"])
+	e["name"] = prof.full_name()
 	var cf := FileAccess.open("%s/%s.json" % [ONLINE_CACHE, id], FileAccess.WRITE)
 	if cf:
 		cf.store_string(JSON.stringify(prof.to_dict()))

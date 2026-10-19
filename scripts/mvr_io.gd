@@ -274,7 +274,7 @@ static func _gen_gdtf_xml(prof: FixtureProfile) -> PackedByteArray:
 
 	var xml := """<?xml version="1.0" encoding="UTF-8"?>
 <GDTF DataVersion="1.1">
- <FixtureType Name="%s" ShortName="%s" LongName="%s" Manufacturer="sLight" FixtureTypeID="%s">
+ <FixtureType Name="%s" ShortName="%s" LongName="%s" Manufacturer="%s" FixtureTypeID="%s">
   <AttributeDefinitions>
    <ActivationGroups/>
    <FeatureGroups/>
@@ -292,6 +292,6 @@ static func _gen_gdtf_xml(prof: FixtureProfile) -> PackedByteArray:
   <Revisions/>
  </FixtureType>
 </GDTF>
-""" % [_esc(prof.profile_name), _esc(prof.id.substr(0, 10)), _esc(prof.profile_name),
-	_uuid(), attr_xml, modes_xml]
+""" % [_esc(prof.model), _esc(prof.id.substr(0, 10)), _esc(prof.model),
+	_esc(prof.manufacturer if prof.manufacturer != "" else "sLight"), _uuid(), attr_xml, modes_xml]
 	return xml.to_utf8_buffer()
