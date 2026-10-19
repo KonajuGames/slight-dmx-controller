@@ -62,6 +62,28 @@ extends RefCounted
 ## time the loudest kind comes round (or, without one, the loudest section)
 ## is the finale: everything — busiest patterns, a fill every phrase,
 ## rainbow colours, fanned movement, strobe hits ending each phrase.
+##
+## Each fixture plays the part its category gives it (the track's
+## "category" — FixtureProfile.SHOW_CATEGORIES — or, without one, by its
+## rows: pan / tilt a mover, several coloured heads a multi-cell, else a
+## wash), and its category group (1-4, the track's "group") places it
+## within that:
+##   washes         the bulk of the colour: the patterns and colour modes
+##                  above
+##   movers         the movement — the fans across them are theirs — with
+##                  patterns of their own (MOVER_PATTERNS) and, against the
+##                  washes, the palette's accent colour first
+##   multi-cells    patterns and colours across their heads (CELL_PATTERNS,
+##                  "stack" among them), each fixture's heads on their own
+##                  or all the heads in a line across the rig
+## Primary fixtures drive the show; secondary ones support them — a calmer
+## pattern from the tier below, at SUPPORT_LEVEL, in the palette the other
+## way round, movers mirroring the primaries' movement, following it
+## slower and smaller or holding still. In a riser, the finale and some of
+## the loudest phrases, primary and secondary play as one. Where fixtures
+## are in more than one category group, a phrase often steps by group —
+## a group's fixtures together in a chase, a split's colours, a fan's
+## phase.
 
 ## Energy (rescaled) above which a section is "high", "mid" and "low" (and
 ## below "calm"): the tier its patterns are picked from.
@@ -125,6 +147,41 @@ const MOVE_SCALE := [[0.04, 4.0], [0.06, 2.0], [0.09, 1.0], [0.14, 0.5]]
 const BREAKDOWN_PATTERNS := [["solo_dark", 2], ["duo", 2], ["breathe_slow", 2]]
 const BREAKDOWN_COLOURS := [["all", 2], ["gradient", 2]]
 const BREAKDOWN_MOVES := [["tilt_sweep", 2], ["pan_sweep", 1]]
+## The parts fixtures play (see _role_of()).
+const ROLES := ["wash", "mover", "multi"]
+## Movers' dimmer patterns and colour modes by tier (calm, low, mid, high),
+## and in a breakdown.
+const MOVER_PATTERNS := [
+	[["follow", 3], ["breathe", 1]],
+	[["follow", 2], ["breathe", 2], ["solo", 1]],
+	[["follow", 1], ["half_time", 2], ["odd_even", 2], ["bar_hits", 1], ["wave", 1]],
+	[["chase", 2], ["ping_pong", 2], ["odd_even", 2], ["every_beat", 1], ["half_time", 1]],
+]
+const MOVER_COLOURS := [
+	[["all", 1]],
+	[["all", 3], ["split", 1]],
+	[["all", 2], ["split", 2]],
+	[["all", 1], ["split", 2], ["bar_chase", 1]],
+]
+const MOVER_BREAKDOWN := [["breathe_slow", 2], ["solo_dark", 1]]
+## Multi-cells' dimmer patterns across their heads by tier, and in a
+## breakdown ("stack": the heads filling up one a step, then again).
+const CELL_PATTERNS := [
+	[["follow", 2], ["breathe", 2]],
+	[["breathe", 2], ["wave", 2], ["solo", 1]],
+	[["wave", 2], ["chase", 2], ["ping_pong", 2], ["odd_even", 1], ["centre_out", 1], ["stack", 1]],
+	[["chase", 2], ["chase_back", 1], ["ping_pong", 2], ["centre_out", 2], ["stack", 2], ["sparkle", 1],
+		["odd_even", 1]],
+]
+const CELL_BREAKDOWN := [["breathe_slow", 2], ["wave", 1], ["solo_dark", 1]]
+## How bright secondary fixtures run while supporting the primaries.
+const SUPPORT_LEVEL := 0.75
+## How secondary movers move against the primaries: mirrored (half a
+## cycle round), at half speed and smaller, or held still.
+const SUPPORT_MOVES := [["mirror", 2], ["half", 2], ["still", 1]]
+const SUPPORT_MOVES_CALM := [["half", 2], ["still", 1]]
+## Beat patterns a secondary may answer with offbeats.
+const ON_BEAT := ["every_beat", "half_time", "bar_hits"]
 ## Patterns a bass-heavy / treble-heavy phrase favours (their weight x 2,
 ## added at 1 where missing — not into the calmest tier).
 const BASS_PATTERNS := ["every_beat", "bar_hits", "half_time"]
@@ -160,7 +217,9 @@ class _Picker:
 
 
 ## Build the show. `tracks`: [{key, target: TimelineTrack.Target, rows:
-## [Row]}] in order (fixtures then their heads, the master too);
+## [Row]; a fixture's optionally its category (a name from
+## FixtureProfile.SHOW_CATEGORIES) and group (1-4)}] in order (fixtures
+## then their heads, the master too);
 ## `beats`: the beat times; `per_bar`: beats a bar; `positions`: the named
 ## positions — ids, or {id, spread: how far apart its beams point};
 ## `seed_text` / `variation`: what seeds the picks; `bar_phase`: the index
@@ -207,9 +266,15 @@ static func generate(sections: Array, beats: PackedFloat32Array, per_bar: int, d
 			if not heads_of.has(parent):
 				heads_of[parent] = []
 			heads_of[parent].append(t)
-	var dimmed: Array = fixtures.filter(func(f): return TimelineTrack.Row.DIMMER in f["rows"])
-	var movers: Array = fixtures.filter(func(f): return TimelineTrack.Row.MOVEMENT in f["rows"])
-	var plan := _plan(secs, phrases, rng, dimmed.size(), beat_len)
+	var ens := _ensembles(fixtures, heads_of)
+	var most := 0
+	for t in tracks:
+		if TimelineTrack.Row.DIMMER in t["rows"]:
+			most += 1
+	var plan := _plan(secs, phrases, rng, most, beat_len)
+	var role_rng := RandomNumberGenerator.new()
+	role_rng.seed = hash("%s|%d|roles" % [seed_text, variation])
+	var roles := _role_plan(plan, phrases, ens, role_rng, most, beat_len)
 
 	# --- the master ---------------------------------------------------
 	var mo: Dictionary = out[String(master["key"])] if not master.is_empty() else {}
@@ -228,64 +293,75 @@ static func generate(sections: Array, beats: PackedFloat32Array, per_bar: int, d
 			mo["position"] = _positions(secs, phrases, _ranked(positions), rng)
 
 	# --- dimmers --------------------------------------------------------
+	# Per phrase, each dimmer line's pick and its place [pick, i, n] among
+	# the fixtures (or heads) playing it together; a line only runs from
+	# the first phrase it does something other than follow the master to
+	# the last.
 	var ctx := {"beats": beats, "beat_len": beat_len, "bar_len": bar_len, "per_bar": per_bar,
 		"bar_phase": bar_phase, "master": master_line, "env": en}
-	var first := -1
-	var last := -1
+	var jobs := {}
 	for p in range(phrases.size()):
-		if plan[p]["dim"] != "follow" or plan[p]["fill"] != "" or phrases[p]["riser"].x >= 0.0:
-			if first < 0:
-				first = p
-			last = p
-	for i in range(dimmed.size()):
+		for role in ROLES:
+			for arr in _arrangements(roles[p], ens, role):
+				for slot in _dim_slots(arr, role):
+					if not jobs.has(slot[0]):
+						jobs[slot[0]] = []
+						jobs[slot[0]].resize(phrases.size())
+					jobs[slot[0]][p] = [arr["pick"], slot[1], slot[2]]
+	for key in jobs:
+		var js: Array = jobs[key]
+		var first := -1
+		var last := -1
+		for p in range(phrases.size()):
+			var j = js[p]
+			if j != null and (j[0]["dim"] != "follow" or j[0]["fill"] != "" or float(j[0]["scale"]) < 1.0
+					or phrases[p]["riser"].x >= 0.0):
+				if first < 0:
+					first = p
+				last = p
 		if first < 0:
-			break
+			continue
 		var line := PackedVector2Array()
 		for p in range(first, last + 1):
-			for pt in _phrase_dimmer(plan[p], phrases[p], i, dimmed.size(), ctx):
-				_append(line, pt)
+			var j = js[p]
+			var pick: Dictionary = j[0] if j != null else {"dim": "follow", "fill": "", "tier": 0, "sparkle": [], "scale": 1.0}
+			var part := _phrase_dimmer(pick, phrases[p], j[1] if j != null else 0, j[2] if j != null else 1, ctx)
+			for pt in part:
+				_append(line, Vector2(pt.x, pt.y * float(pick["scale"])))
 		for w in blackouts:
 			line = _cut_black(line, w.x, w.y, -1.0)
-		out[String(dimmed[i]["key"])]["dimmer"] = line
+		out[String(key)]["dimmer"] = line
 
 	# --- colour ---------------------------------------------------------
-	# The units colours are laid across: each fixture with a colour row, or
-	# a multi-head fixture (its heads blending to the next unit's colour).
-	var units: Array = []
-	for f in fixtures:
-		var heads: Array = heads_of.get(String(f["key"]), []).filter(func(h): return TimelineTrack.Row.COLOUR in h["rows"])
-		if heads.size() > 1:
-			units.append({"heads": heads})
-		elif TimelineTrack.Row.COLOUR in f["rows"]:
-			units.append({"fixture": f})
 	for p in range(phrases.size()):
 		var ph: Dictionary = phrases[p]
 		var s: Dictionary = secs[ph["s"]]
 		var pal := _palette(String(s["label"]), look, s["breakdown"])
-		var mode: String = plan[p]["colour"]
 		if not master.is_empty() and TimelineTrack.Row.COLOUR in master["rows"]:
-			mo["colour"].append({"t0": ph["t0"], "t1": ph["t1"], "c0": pal[0], "c1": pal[1] if mode == "sweep" else pal[0]})
-		if mode == "all":
-			continue
-		var spans: Array = []
-		if mode == "bar_chase" or mode == "rainbow":
-			var bars: PackedFloat32Array = ph["bars"]
-			for m in range(bars.size()):
-				spans.append(Vector2(bars[m], bars[m + 1] if m + 1 < bars.size() else ph["t1"]))
-		else:
-			spans.append(Vector2(ph["t0"], ph["t1"]))
-		for u in range(units.size()):
-			for m in range(spans.size()):
-				var cs := _unit_colour(mode, u, units.size(), m, pal, look)
-				if units[u].has("fixture"):
-					out[String(units[u]["fixture"]["key"])]["colour"].append({"t0": spans[m].x, "t1": spans[m].y, "c0": cs[0], "c1": cs[1]})
+			var mode0: String = plan[p]["colour"]
+			mo["colour"].append({"t0": ph["t0"], "t1": ph["t1"], "c0": pal[0], "c1": pal[1] if mode0 == "sweep" else pal[0]})
+		var spans_of := func(mode: String) -> Array:
+			var spans: Array = []
+			if mode == "bar_chase" or mode == "rainbow":
+				var bars: PackedFloat32Array = ph["bars"]
+				for m in range(bars.size()):
+					spans.append(Vector2(bars[m], bars[m + 1] if m + 1 < bars.size() else ph["t1"]))
+			else:
+				spans.append(Vector2(ph["t0"], ph["t1"]))
+			return spans
+		for role in ROLES:
+			for arr in _arrangements(roles[p], ens, role):
+				var pick: Dictionary = arr["pick"]
+				var mode: String = pick["colour"]
+				# All in the palette's main colour: the master's colour does it.
+				if mode == "all" and int(pick["rot"]) == 0:
 					continue
-				var nxt := _unit_colour(mode, u + 1, units.size(), m, pal, look)
-				var heads: Array = units[u]["heads"]
-				for hi in range(heads.size()):
-					var w := float(hi) / float(heads.size() - 1)
-					out[String(heads[hi]["key"])]["colour"].append({"t0": spans[m].x, "t1": spans[m].y,
-						"c0": (cs[0] as Color).lerp(nxt[0], w), "c1": (cs[1] as Color).lerp(nxt[1], w)})
+				var cols: Array = pal if int(pick["rot"]) == 0 else [pal[1], pal[0], pal[2]]
+				var spans: Array = spans_of.call(mode)
+				if role == "multi":
+					_colour_cells(out, arr, mode, spans, cols, look)
+				else:
+					_colour_units(out, arr, mode, spans, cols, look)
 	# Risers: every colour that's set there (and the master's) fades
 	# towards white.
 	for r in builds["risers"]:
@@ -298,8 +374,15 @@ static func generate(sections: Array, beats: PackedFloat32Array, per_bar: int, d
 		out[k]["colour"] = _merged(out[k]["colour"], ["c0", "c1"], true)
 
 	# --- movement -------------------------------------------------------
-	# It moves around a position: only with one.
+	# It moves around a position: only with one. The master's movement
+	# carries the movers; a fan gives them rows of their own (the primary
+	# movers', or all of them when they play as one), and secondary movers
+	# answer the primaries.
 	if not master.is_empty() and TimelineTrack.Row.MOVEMENT in master["rows"] and not mo["position"].is_empty():
+		var moving := func(units: Array) -> Array:
+			return units.filter(func(u): return TimelineTrack.Row.MOVEMENT in u["track"]["rows"])
+		var prim_m: Array = moving.call(ens["mover"][0])
+		var sec_m: Array = moving.call(ens["mover"][1])
 		for p in range(phrases.size()):
 			var ph: Dictionary = phrases[p]
 			var s: Dictionary = secs[ph["s"]]
@@ -308,13 +391,32 @@ static func generate(sections: Array, beats: PackedFloat32Array, per_bar: int, d
 			var size: float = scale[0] * (1.0 + 0.4 * float(s["lift"])) * (1.25 if s["finale"] else 1.0)
 			var mv := {"t0": ph["t0"], "t1": ph["t1"], "fx": plan[p]["move"], "period": bar_len * float(scale[1]), "size": size}
 			mo["movement"].append(mv)
+			var merge: bool = roles[p]["merge"] or sec_m.is_empty()
+			var fanned: Array = prim_m + sec_m if merge else prim_m
 			var fan: String = plan[p]["fan"]
-			if fan == "" or movers.size() < 2:
+			if fan != "" and fanned.size() >= 2:
+				var by_group: bool = roles[p]["picks"].get("mover/1", {}).get("by_group", false)
+				var places := _places(fanned, by_group)
+				for j in range(fanned.size()):
+					var own := mv.duplicate()
+					var at: int = places[j][0]
+					var n: int = places[j][1]
+					own["phase"] = float(at) / n if fan == "spread" else 0.5 * (at % 2)
+					out[String(fanned[j]["track"]["key"])]["movement"].append(own)
+			if merge:
 				continue
-			for j in range(movers.size()):
+			var how: String = roles[p]["picks"].get("mover/2", {}).get("move", "mirror")
+			for u in sec_m:
 				var own := mv.duplicate()
-				own["phase"] = float(j) / movers.size() if fan == "spread" else 0.5 * (j % 2)
-				out[String(movers[j]["key"])]["movement"].append(own)
+				match how:
+					"mirror":
+						own["phase"] = 0.5
+					"half":
+						own["period"] = float(mv["period"]) * 2.0
+						own["size"] = size * 0.6
+					"still":
+						own["fx"] = "none"
+				out[String(u["track"]["key"])]["movement"].append(own)
 		for k in out:
 			out[k]["movement"] = _merged(out[k]["movement"], ["fx", "period", "size", "phase"], false)
 	return out
@@ -577,8 +679,260 @@ static func _plan(secs: Array, phrases: Array, rng: RandomNumberGenerator, n: in
 		if ph.get("drop", false) and not out.is_empty() and float(phrases[out.size() - 1]["fill"]) >= 0.0 and out[out.size() - 1]["fill"] == "":
 			out[out.size() - 1]["fill"] = "fill_roll"
 		out.append({"dim": dim, "fill": fill, "colour": colour, "move": move, "move_tier": tm, "fan": fan,
-			"tier": 0 if calm else td, "sparkle": sparkle})
+			"tier": 0 if calm else td, "sparkle": sparkle, "td": td, "tc": tc, "calm": calm, "fin": fin})
 	return out
+
+
+## The part a fixture track plays and its rank: [role (ROLES), 1 primary /
+## 2 secondary] — from its "category", else from its rows and coloured
+## heads (`heads`): pan / tilt a mover, two or more heads a multi-cell,
+## anything else a wash.
+static func _role_of(t: Dictionary, heads: Array) -> Array:
+	var cat := String(t.get("category", "")).to_lower()
+	var role := ""
+	if "wash" in cat:
+		role = "wash"
+	elif "mover" in cat:
+		role = "mover"
+	elif "multi" in cat:
+		role = "multi"
+	elif TimelineTrack.Row.MOVEMENT in t["rows"]:
+		role = "mover"
+	elif heads.filter(func(h): return TimelineTrack.Row.COLOUR in h["rows"]).size() > 1:
+		role = "multi"
+	else:
+		role = "wash"
+	return [role, 2 if cat.begins_with("secondary") else 1]
+
+
+## The fixtures by part: role -> [primary units, secondary units], each in
+## category group order (then the rig's). A unit: {track, rank, group,
+## heads: its head tracks, order}. A part with only secondary fixtures has
+## them lead it.
+static func _ensembles(fixtures: Array, heads_of: Dictionary) -> Dictionary:
+	var out := {}
+	for role in ROLES:
+		out[role] = [[], []]
+	for k in range(fixtures.size()):
+		var f: Dictionary = fixtures[k]
+		var heads: Array = heads_of.get(String(f["key"]), [])
+		var rr := _role_of(f, heads)
+		out[rr[0]][rr[1] - 1].append({"track": f, "rank": rr[1], "group": clampi(int(f.get("group", 1)), 1, 4),
+			"heads": heads, "order": k})
+	for role in ROLES:
+		for list in out[role]:
+			list.sort_custom(func(x, y): return x["group"] < y["group"] or (x["group"] == y["group"] and x["order"] < y["order"]))
+		if out[role][0].is_empty():
+			out[role] = [out[role][1], []]
+	return out
+
+
+## Per phrase, each part's picks: {merge: primary and secondary as one,
+## picks: {"<role>/1": the primary fixtures', "<role>/2": the secondary
+## ones' (when not merged)}}. A pick: {dim, fill, colour, tier, sparkle,
+## scale: its level, rot: 0 the palette as it is / 1 accent first,
+## by_group: step by category group, span: a multi-cell's heads "each"
+## fixture's alone or "across" them all, move: a secondary mover's
+## answer}. The washes' primary pick is the phrase's own (`plan`); `most`:
+## the most fixtures / heads one pattern might step across (for
+## sparkle's orders).
+static func _role_plan(plan: Array, phrases: Array, ens: Dictionary, rng: RandomNumberGenerator, most: int,
+		beat_len: float) -> Array:
+	var pickers := {}
+	var out: Array = []
+	for p in range(phrases.size()):
+		var base: Dictionary = plan[p]
+		var ph: Dictionary = phrases[p]
+		var td: int = base["td"]
+		var calm: bool = base["calm"]
+		var fin: bool = base["fin"]
+		var tc: int = base["tc"]
+		var steps := int(ceil((ph["t1"] - ph["t0"]) / beat_len)) + 2
+		var merge: bool = fin or ph["riser"].x >= 0.0 or (td == 3 and not calm and rng.randf() < 0.4)
+		var picks := {}
+		for role in ROLES:
+			var pair: Array = ens[role]
+			if pair[0].is_empty():
+				continue
+			var prim := {}
+			if role == "wash":
+				prim = {"dim": base["dim"], "fill": base["fill"], "colour": base["colour"], "sparkle": base["sparkle"]}
+			else:
+				var dims: Array
+				var cols: Array
+				if role == "mover":
+					dims = MOVER_BREAKDOWN if calm else _weighted(MOVER_PATTERNS[td], ph, td)
+					cols = BREAKDOWN_COLOURS if calm else MOVER_COLOURS[tc]
+				else:
+					dims = CELL_BREAKDOWN if calm else _weighted(CELL_PATTERNS[td], ph, td)
+					cols = BREAKDOWN_COLOURS if calm else COLOUR_MODES[tc]
+				if fin:
+					cols = cols + [["rainbow", 3]]
+				var dim := _picker(pickers, role + "/dim", rng).pick(dims)
+				prim = {"dim": dim, "fill": base["fill"], "colour": _picker(pickers, role + "/colour", rng).pick(cols),
+					"sparkle": _shuffles(rng, most, steps) if dim == "sparkle" else []}
+			prim["tier"] = base["tier"]
+			prim["scale"] = 1.0
+			prim["rot"] = 1 if role == "mover" else 0
+			prim["by_group"] = prim["dim"] != "sparkle" and rng.randf() < 0.6
+			var together: int = pair[0].size() + (pair[1].size() if merge else 0)
+			prim["span"] = "across" if together >= 2 and rng.randf() < 0.35 else "each"
+			picks[role + "/1"] = prim
+			if pair[1].is_empty() or merge:
+				continue
+			# Secondary: in support — from the tier below, not the primary's
+			# pattern where there's another; offbeats against beat patterns.
+			var below := maxi(td - 1, 0)
+			var pool: Array
+			match role:
+				"wash":
+					pool = BREAKDOWN_PATTERNS if calm else DIM_PATTERNS[below]
+				"mover":
+					pool = MOVER_BREAKDOWN if calm else MOVER_PATTERNS[below]
+				_:
+					pool = CELL_BREAKDOWN if calm else CELL_PATTERNS[below]
+			var other := pool.filter(func(o): return o[0] != prim["dim"])
+			var dim2 := _picker(pickers, role + "/dim2", rng).pick(other if not other.is_empty() else pool)
+			if not calm and td >= 2 and prim["dim"] in ON_BEAT and rng.randf() < 0.4:
+				dim2 = "offbeat"
+			var cols2: Array = BREAKDOWN_COLOURS if calm else (MOVER_COLOURS[tc] if role == "mover" else COLOUR_MODES[mini(tc, 2)])
+			picks[role + "/2"] = {"dim": dim2, "fill": "", "colour": _picker(pickers, role + "/colour2", rng).pick(cols2),
+				"sparkle": _shuffles(rng, most, steps) if dim2 == "sparkle" else [],
+				"tier": mini(int(base["tier"]), 2), "scale": SUPPORT_LEVEL, "rot": 1 - int(prim["rot"]),
+				"by_group": dim2 != "sparkle" and rng.randf() < 0.6, "span": "each",
+				"move": _picker(pickers, role + "/move2", rng).pick(SUPPORT_MOVES_CALM if calm or td <= 1 else SUPPORT_MOVES)}
+		out.append({"merge": merge, "picks": picks})
+	return out
+
+
+## The picker named `name` in `pickers`, made on first use.
+static func _picker(pickers: Dictionary, name: String, rng: RandomNumberGenerator) -> _Picker:
+	if not pickers.has(name):
+		pickers[name] = _Picker.new(rng)
+	return pickers[name]
+
+
+## `steps` random orders of 0 .. n - 1 (a sparkle's, one a step).
+static func _shuffles(rng: RandomNumberGenerator, n: int, steps: int) -> Array:
+	var out: Array = []
+	for _j in range(steps):
+		var order: Array = range(n)
+		for x in range(n - 1, 0, -1):
+			var y := rng.randi_range(0, x)
+			var tmp = order[x]
+			order[x] = order[y]
+			order[y] = tmp
+		out.append(order)
+	return out
+
+
+## A phrase's arrangements of part `role` (`rp`: _role_plan()'s entry for
+## the phrase): who plays which pick — [{pick, units}], the primary and
+## secondary fixtures together under the primary's pick when merged.
+static func _arrangements(rp: Dictionary, ens: Dictionary, role: String) -> Array:
+	var pair: Array = ens[role]
+	var picks: Dictionary = rp["picks"]
+	if not picks.has(role + "/1"):
+		return []
+	if not picks.has(role + "/2"):
+		return [{"pick": picks[role + "/1"], "units": pair[0] + pair[1]}]
+	return [{"pick": picks[role + "/1"], "units": pair[0]}, {"pick": picks[role + "/2"], "units": pair[1]}]
+
+
+## Each of `units`' place in a step: [i, n] — by category group (a
+## group's units together; primary groups before secondary) when
+## `by_group` and there are two groups or more, else one by one.
+static func _places(units: Array, by_group: bool) -> Array:
+	var groups: Array = []
+	for u in units:
+		var g: int = int(u["rank"]) * 10 + int(u["group"])
+		if not g in groups:
+			groups.append(g)
+	var out: Array = []
+	for k in range(units.size()):
+		if by_group and groups.size() >= 2:
+			out.append([groups.find(int(units[k]["rank"]) * 10 + int(units[k]["group"])), groups.size()])
+		else:
+			out.append([k, units.size()])
+	return out
+
+
+## The cells a multi-cell unit's patterns step across: its head tracks
+## with `row`, or (fewer than two) the fixture itself if it has the row.
+static func _cells(u: Dictionary, row: int) -> Array:
+	var heads: Array = u["heads"].filter(func(h): return row in h["rows"])
+	if heads.size() >= 2:
+		return heads
+	return [u["track"]] if row in u["track"]["rows"] else []
+
+
+## An arrangement's dimmer lines: [[track key, i, n]]. Washes and movers:
+## the fixtures (_places()); multi-cells: their heads — each fixture's
+## across its own, or ("across") all of them in a line.
+static func _dim_slots(arr: Dictionary, role: String) -> Array:
+	var pick: Dictionary = arr["pick"]
+	var out: Array = []
+	if role != "multi":
+		var units: Array = arr["units"].filter(func(u): return TimelineTrack.Row.DIMMER in u["track"]["rows"])
+		var places := _places(units, pick["by_group"])
+		for k in range(units.size()):
+			out.append([String(units[k]["track"]["key"]), places[k][0], places[k][1]])
+		return out
+	for u in arr["units"]:
+		var cells := _cells(u, TimelineTrack.Row.DIMMER)
+		for c in range(cells.size()):
+			out.append([String(cells[c]["key"]), c, cells.size()])
+	if pick["span"] == "across":
+		for k in range(out.size()):
+			out[k][1] = k
+			out[k][2] = out.size()
+	return out
+
+
+## Colour for a wash / mover arrangement: each fixture with a colour row,
+## or a multi-head fixture (its heads blending to the next unit's colour),
+## placed by category group or one by one; `cols`: the palette.
+static func _colour_units(out: Dictionary, arr: Dictionary, mode: String, spans: Array, cols: Array, look: Dictionary) -> void:
+	var units: Array = []
+	for u in arr["units"]:
+		var heads: Array = u["heads"].filter(func(h): return TimelineTrack.Row.COLOUR in h["rows"])
+		if heads.size() > 1:
+			units.append({"heads": heads, "rank": u["rank"], "group": u["group"]})
+		elif TimelineTrack.Row.COLOUR in u["track"]["rows"]:
+			units.append({"fixture": u["track"], "rank": u["rank"], "group": u["group"]})
+	var places := _places(units, arr["pick"]["by_group"])
+	for k in range(units.size()):
+		var at: int = places[k][0]
+		var n: int = places[k][1]
+		for m in range(spans.size()):
+			var cs := _unit_colour(mode, at, n, m, cols, look)
+			if units[k].has("fixture"):
+				out[String(units[k]["fixture"]["key"])]["colour"].append({"t0": spans[m].x, "t1": spans[m].y, "c0": cs[0], "c1": cs[1]})
+				continue
+			var nxt := _unit_colour(mode, at + 1, n, m, cols, look)
+			var heads: Array = units[k]["heads"]
+			for hi in range(heads.size()):
+				var w := float(hi) / float(heads.size() - 1)
+				out[String(heads[hi]["key"])]["colour"].append({"t0": spans[m].x, "t1": spans[m].y,
+					"c0": (cs[0] as Color).lerp(nxt[0], w), "c1": (cs[1] as Color).lerp(nxt[1], w)})
+
+
+## Colour for a multi-cell arrangement: the mode laid across each
+## fixture's heads (or, "across", all of them in a line).
+static func _colour_cells(out: Dictionary, arr: Dictionary, mode: String, spans: Array, cols: Array, look: Dictionary) -> void:
+	var all: Array = []
+	for u in arr["units"]:
+		var cells := _cells(u, TimelineTrack.Row.COLOUR)
+		for c in range(cells.size()):
+			all.append([String(cells[c]["key"]), c, cells.size()])
+	if arr["pick"]["span"] == "across":
+		for k in range(all.size()):
+			all[k][1] = k
+			all[k][2] = all.size()
+	for cell in all:
+		for m in range(spans.size()):
+			var cs := _unit_colour(mode, cell[1], cell[2], m, cols, look)
+			out[cell[0]]["colour"].append({"t0": spans[m].x, "t1": spans[m].y, "c0": cs[0], "c1": cs[1]})
 
 
 ## Pattern pool `pool` (of tier `tier`) weighted for a phrase's sound: a
@@ -810,6 +1164,8 @@ static func _riser(a: float, b: float, riser: Vector2, i: int, n: int, ctx: Dict
 ##               (a beat, an eighth with more fixtures than beats in a bar)
 ##               left to right, back, to and fro, from the centre out
 ##   sparkle     a random third of the fixtures each beat
+##   stack       one more fixture lit each beat, held, from the first to
+##               the last, then again (a bar graph)
 ##   fill_chase  a fill: an eighth-note chase
 ##   fill_roll   a fill: everyone on eighths, rising
 static func _pattern(name: String, a: float, b: float, i: int, n: int, pick: Dictionary, ctx: Dictionary) -> PackedVector2Array:
@@ -908,9 +1264,15 @@ static func _shape(name: String, a: float, b: float, i: int, n: int, pick: Dicti
 				"chase", "chase_back", "ping_pong", "centre_out", "fill_chase":
 					on = _step_on(name, j, i, n)
 					decay = beat * 1.5 / sub
+				"stack":
+					# Lit up to the step's place, held, then empty again.
+					on = i <= j % maxi(n, 1)
+					decay = beat * 1.05
 				"sparkle":
 					# A third of the rig — more where it's brighter.
 					var order: Array = pick["sparkle"][j] if j < pick["sparkle"].size() else []
+					if order.size() > n:
+						order = order.filter(func(x): return x < n)
 					var count := clampi(roundi(n / 3.0 * _treble(ctx.get("env", {}), t, beat)), 1, n)
 					on = order.find(i) >= 0 and order.find(i) < count
 					decay = beat * 0.6

@@ -261,6 +261,18 @@ finale, with everything. Not keen on the result? Click **Generate**
 again for another variation. Each press replaces what the timelines
 had, as a single undo step — a good starting point to edit by hand.
 
+**Generate casts each fixture by its category** (chosen in the Patch
+tab). Washes carry the bulk of the colour. Movers carry the movement,
+usually in the palette's accent colour. Multi-cells play chases, waves,
+bar graphs and colour patterns across their heads. Primary fixtures
+drive the show, and secondary ones support them with a calmer pattern
+in the palette the other way round, a little dimmer, their movers
+mirroring the primaries, following slower or holding still. Before a
+drop, in the finale and in some of the loudest moments, primary and
+secondary play as one. The **1–4** category group buttons split a
+category up: fixtures in the same group often step together, so a
+chase or a fan can run group by group (left and right, front and back).
+
 **Each timeline has rows** for what its fixture can do:
 
 - **Dimmer** — a line of nodes. Drag a node to move it (hold **Shift**

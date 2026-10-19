@@ -32,6 +32,7 @@ func _run() -> void:
 	_test_envelope()
 	_test_contrast()
 	_test_positions()
+	_test_categories()
 	_test_valid()
 	_test_edges()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
@@ -467,6 +468,118 @@ func _test_edges() -> void:
 		"sections of equal energy: equal levels")
 	show = TimelineGenerator.generate(_sections(), _beats(), 4, 120.0, [{"key": "solo", "target": T.FIXTURE, "rows": [R.DIMMER, R.COLOUR]}])
 	ok(show.size() == 1 and _is_sorted(show["solo"]["dimmer"]), "no master timeline, one fixture: still a show")
+
+
+## A rig with every category: washes in two groups (and one secondary),
+## movers (one secondary), two four-head bars.
+func _cat_tracks() -> Array:
+	var out: Array = [
+		{"key": "master", "target": T.MASTER, "rows": TimelineTrack.ROW_ORDER.duplicate()},
+		{"key": "w1", "target": T.FIXTURE, "rows": [R.COLOUR, R.DIMMER], "category": "Primary Wash", "group": 1},
+		{"key": "w2", "target": T.FIXTURE, "rows": [R.COLOUR, R.DIMMER], "category": "Primary Wash", "group": 2},
+		{"key": "w3", "target": T.FIXTURE, "rows": [R.COLOUR, R.DIMMER], "category": "Primary Wash", "group": 2},
+		{"key": "ws", "target": T.FIXTURE, "rows": [R.COLOUR, R.DIMMER], "category": "Secondary Wash", "group": 1},
+		{"key": "m1", "target": T.FIXTURE, "rows": [R.POSITION, R.MOVEMENT, R.DIMMER], "category": "Primary Mover", "group": 1},
+		{"key": "m2", "target": T.FIXTURE, "rows": [R.POSITION, R.MOVEMENT, R.DIMMER], "category": "Primary Mover", "group": 1},
+		{"key": "ms", "target": T.FIXTURE, "rows": [R.POSITION, R.MOVEMENT, R.DIMMER], "category": "Secondary Mover", "group": 1},
+	]
+	for b in ["b1", "b2"]:
+		out.append({"key": b, "target": T.FIXTURE, "rows": [R.COLOUR, R.DIMMER], "category": "Primary Multi-cell", "group": 1})
+		for h in range(4):
+			out.append({"key": "%s/h%d" % [b, h], "target": T.HEAD, "rows": [R.COLOUR, R.DIMMER]})
+	return out
+
+
+func _cat_show(variation: int) -> Dictionary:
+	return TimelineGenerator.generate(_sections(), _beats(), 4, 120.0, _cat_tracks(), ["posA", "posB"], "cats.mp3", variation)
+
+
+func _test_categories() -> void:
+	print("- fixture categories and groups")
+	var plain: Array = _tracks()
+	ok(TimelineGenerator._role_of(plain[1], []) == ["wash", 1] and TimelineGenerator._role_of(plain[7], []) == ["mover", 1]
+		and TimelineGenerator._role_of(plain[3], [plain[4], plain[5], plain[6]]) == ["multi", 1],
+		"without categories: a par's a wash, a spot a mover, a bar of heads a multi-cell")
+	ok(TimelineGenerator._role_of({"rows": [R.COLOUR], "category": "Secondary Mover"}, []) == ["mover", 2],
+		"a category overrides the rows")
+	var sctx := _ctx_at(0.0, {})
+	var lit := func(i: int, t: float) -> bool:
+		return TimelineTrack.level_at(TimelineGenerator._pattern("stack", 0.0, 2.0, i, 4, {"tier": 3, "sparkle": []}, sctx), t) > 0.5
+	ok(lit.call(0, 0.1) and not lit.call(1, 0.1) and lit.call(0, 1.6) and lit.call(3, 1.6) and not lit.call(3, 1.1),
+		"stack: one more head lit each beat, the first held throughout")
+
+	var shows: Array = []
+	for v in range(10):
+		shows.append(_cat_show(v))
+	var s0: Dictionary = shows[0]
+	ok(s0.has("w1") and s0.has("b1/h3") and s0.has("ms"), "every track filled")
+
+	# Multi-cells: their heads carry the patterns, the fixture follows.
+	var heads_differ := false
+	var bars_empty := true
+	for sh in shows:
+		heads_differ = heads_differ or _differs(sh["b1/h0"]["dimmer"], sh["b1/h3"]["dimmer"], 40.0, 64.0)
+		bars_empty = bars_empty and sh["b1"]["dimmer"].is_empty()
+	ok(heads_differ, "a multi-cell's heads play patterns across them")
+	ok(bars_empty, "...not on the fixture's own dimmer")
+	var head_colours := false
+	for sh in shows:
+		var c0 = _colour_at(sh["b1/h0"]["colour"], 44.0)
+		var c3 = _colour_at(sh["b1/h3"]["colour"], 44.0)
+		head_colours = head_colours or (c0 != null and c3 != null and c0 != c3)
+	ok(head_colours, "...and colours across them")
+
+	# Secondary: in support, below the primaries — then together in the finale.
+	var supported := false
+	for sh in shows:
+		if _peak(sh["ws"]["dimmer"], 40.0, 56.0) <= TimelineGenerator.SUPPORT_LEVEL + 0.01 and _peak(sh["w1"]["dimmer"], 40.0, 56.0) >= 0.95:
+			supported = true
+	ok(supported, "a secondary wash supports the primaries, under them")
+	var calm_ok := true
+	for sh in shows:
+		var m := _peak(sh["master"]["dimmer"], 16.0, 30.0)
+		calm_ok = calm_ok and _peak(sh["ws"]["dimmer"], 16.0, 30.0) <= TimelineGenerator.SUPPORT_LEVEL * m + 0.02
+	ok(calm_ok, "...never over its share of the master outside a riser or the finale")
+	var together := true
+	for sh in shows:
+		together = together and _peak(sh["ws"]["dimmer"], 80.0, 104.0) >= 0.95
+	ok(together, "...and at full with them in the finale")
+	var accent := true
+	for sh in shows:
+		var c = _colour_at(sh["ws"]["colour"], 20.0)
+		accent = accent and c != null and c != _colour_at(sh["master"]["colour"], 20.0)
+	ok(accent, "a secondary wash in the palette's other colour")
+
+	# Movers: secondary ones answer the primaries' movement.
+	var answered := false
+	for sh in shows:
+		for mv in sh["ms"]["movement"]:
+			var main = null
+			for m in sh["master"]["movement"]:
+				if float(m["t0"]) <= float(mv["t0"]) + 0.001 and float(m["t1"]) > float(mv["t0"]):
+					main = m
+			if main != null and (is_equal_approx(float(mv.get("phase", 0.0)), 0.5) or String(mv["fx"]) == "none"
+					or float(mv["period"]) > float(main["period"]) + 0.001):
+				answered = true
+	ok(answered, "a secondary mover mirrors, follows slower or holds against the primaries")
+
+	# Category groups: a group's fixtures step together.
+	var grouped := false
+	for sh in shows:
+		for a in [40.0, 56.0, 80.0, 96.0]:
+			if not _differs(sh["w2"]["dimmer"], sh["w3"]["dimmer"], a, a + 8.0) \
+					and _differs(sh["w1"]["dimmer"], sh["w2"]["dimmer"], a, a + 8.0):
+				grouped = true
+	ok(grouped, "fixtures in one category group step together, another group apart")
+
+	# All valid.
+	var sorted := true
+	for sh in shows:
+		for k in sh:
+			sorted = sorted and _is_sorted(sh[k]["dimmer"])
+	ok(sorted, "every line in time order")
+	var same := _cat_show(3)
+	ok(str(same) == str(shows[3]), "the same variation, the same show")
 
 
 func _colour_at(segs: Array, t: float):

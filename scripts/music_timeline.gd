@@ -2377,9 +2377,19 @@ func generate_show() -> bool:
 		beats = a.beat_times
 	if beats.is_empty():
 		beats = TimelineGenerator._even_beats(a.bpm, _wave.duration())
+	# Each fixture with its category and category group, as the patch has
+	# them now (changing them doesn't rebuild the tracks).
+	var parts := {}
+	for fx in (fixtures_provider.call() if fixtures_provider.is_valid() else []):
+		parts[String(fx["key"])] = fx
 	var tracks: Array = []
 	for tr in [_master] + Array(_fixture_tracks):
-		tracks.append({"key": String(tr.get_meta("key")), "target": tr.target, "rows": tr.rows})
+		var key := String(tr.get_meta("key"))
+		var t := {"key": key, "target": tr.target, "rows": tr.rows}
+		if parts.has(key):
+			t["category"] = String(parts[key].get("category", ""))
+			t["group"] = int(parts[key].get("category_group", 1))
+		tracks.append(t)
 	var ids: Array = []
 	if positions != null:
 		# Movement needs a position to move around: with none named yet, a
