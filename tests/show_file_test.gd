@@ -53,6 +53,15 @@ func _bar() -> FixtureProfile:
 	return FixtureProfile.new("bar2", "2-head bar", chans)
 
 
+## The "1"-"4" category group buttons in the fixture's row.
+func _group_buttons(panel, index: int) -> Array:
+	var out: Array = []
+	for b in panel.fixtures_vbox.get_child(index).find_children("*", "Button", true, false):
+		if b.button_group != null and b.text in ["1", "2", "3", "4"]:
+			out.append(b)
+	return out
+
+
 func _test_round_trip() -> void:
 	print("- save, change everything, load it back")
 	var main: Control = load("res://main.tscn").instantiate()
@@ -82,6 +91,13 @@ func _test_round_trip() -> void:
 	])
 	ok(mover.default_show_category(0) == "Primary Mover", "...one with pan (or tilt) a mover")
 	panel.patched_fixtures[0]["category"] = "Secondary Wash"
+	ok(panel.patched_fixtures[0]["category_group"] == 1 and panel.patched_fixtures[1]["category_group"] == 1,
+		"category group 1 by default")
+	var bar_groups := _group_buttons(panel, 1)
+	bar_groups[2].button_pressed = true
+	ok(panel.patched_fixtures[1]["category_group"] == 3 and not bar_groups[0].button_pressed
+		and _group_buttons(panel, 0)[0].button_pressed,
+		"picking group 3 deselects 1, on that fixture only")
 	main.groups.append({"name": "Front", "members": [par_uid, bar_uid]})
 	var e = load("res://scripts/wave_effect.gd").new()
 	e.name = "Test wave"
@@ -118,6 +134,9 @@ func _test_round_trip() -> void:
 		"visualizer positions and rotations")
 	ok(pf.size() == 2 and pf[0]["category"] == "Secondary Wash" and pf[1]["category"] == "Primary Multi-cell",
 		"categories, as changed")
+	ok(pf.size() == 2 and pf[0]["category_group"] == 1 and pf[1]["category_group"] == 3
+		and _group_buttons(main._panels[0], 1)[2].button_pressed,
+		"category groups, as changed (and shown)")
 	u = main._panels[0].sender
 	ok(u.get_channel(0) == 200 and u.get_channel(1) == 40 and u.get_channel(2) == 10, "live levels (the actual colour)")
 	var new_par := int(pf[0]["id"]) if pf.size() > 0 else -1
@@ -148,6 +167,7 @@ func _test_round_trip() -> void:
 	doc.erase("live")
 	for sf in doc["universes"][0]["fixtures"]:
 		sf.erase("category")
+		sf.erase("category_group")
 	doc.erase("format")
 	doc.erase("version")
 	f = FileAccess.open(bad, FileAccess.WRITE)
@@ -159,6 +179,7 @@ func _test_round_trip() -> void:
 	ok(main._panels[0].patched_fixtures[0]["category"] == "Primary Wash"
 		and main._panels[0].patched_fixtures[1]["category"] == "Primary Multi-cell",
 		"...its fixtures in their default categories")
+	ok(main._panels[0].patched_fixtures[1]["category_group"] == 1, "...and category group 1")
 	# One saved in the old Auto Show run mode (gone): opens in Cue Mode.
 	doc["run_mode"] = 2
 	doc["auto_show"] = {"song": "C:/old.mp3"}

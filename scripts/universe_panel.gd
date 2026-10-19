@@ -515,6 +515,7 @@ func _on_add_fixture_pressed() -> void:
 		"start": start,
 		"mode": mode,
 		"category": profile.default_show_category(mode),
+		"category_group": 1,
 		# 3D visualizer placement (world metres / degrees). Straight down,
 		# as if hung from a truss aimed at the floor.
 		"pos": auto_place(patched_fixtures.size()),
@@ -551,6 +552,7 @@ func add_patched(profile: FixtureProfile, p_start: int, p_mode: int, p_name: Str
 		"start": p_start,
 		"mode": mode,
 		"category": profile.default_show_category(mode),
+		"category_group": 1,
 		"pos": pos,
 		"rot": rot,
 	})
@@ -639,6 +641,24 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 		fixture["category"] = FixtureProfile.SHOW_CATEGORIES[i]
 	)
 	header.add_child(category_option)
+
+	# Category group 1-4 within the category: one at a time, like radio
+	# buttons.
+	var group_buttons := ButtonGroup.new()
+	var current_group := clampi(int(fixture.get("category_group", 1)), 1, 4)
+	fixture["category_group"] = current_group
+	for gi in range(1, 5):
+		var group_btn := Button.new()
+		group_btn.text = str(gi)
+		group_btn.toggle_mode = true
+		group_btn.button_group = group_buttons
+		group_btn.tooltip_text = "Category group %d" % gi
+		group_btn.button_pressed = gi == current_group
+		group_btn.toggled.connect(func(on: bool):
+			if on:
+				fixture["category_group"] = gi
+		)
+		header.add_child(group_btn)
 
 	# Flash: full white for as long as the button is held, then put the
 	# affected channels back exactly as they were.
@@ -1183,6 +1203,7 @@ func patch_dict() -> Dictionary:
 			"start": fixture["start"],
 			"mode": int(fixture.get("mode", 0)),
 			"category": String(fixture.get("category", "")),
+			"category_group": int(fixture.get("category_group", 1)),
 			"profile": profile.to_dict(),
 			"pos": _v3_to_arr(fixture.get("pos", Vector3.ZERO)),
 			"rot": _v3_to_arr(fixture.get("rot", Vector3.ZERO)),
@@ -1247,6 +1268,7 @@ func apply_patch_dict(d: Dictionary) -> void:
 			"start": int(entry.get("start", 0)),
 			"mode": mode,
 			"category": category,
+			"category_group": clampi(int(entry.get("category_group", 1)), 1, 4),
 			"pos": _arr_to_v3(entry.get("pos", null), auto_place(i)),
 			"rot": _arr_to_v3(entry.get("rot", null), Vector3(90, 0, 0)),
 		})
