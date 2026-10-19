@@ -93,6 +93,40 @@ func _centered_label(text: String) -> Label:
 
 ## A horizontal row that wraps its children to the next line instead of
 ## overflowing the right edge when the window is narrow.
+## Line icons (16 x 16) for the fixture header's buttons, drawn from SVG
+## once and shared.
+const _HEADER_ICON_SVG := {
+	"bulb": '<path d="M5.6 11.6V10.4C4.2 9.4 3.4 8 3.4 6.4a4.6 4.6 0 0 1 9.2 0c0 1.6-.8 3-2.2 4v1.2z"/><path d="M6 13.6h4M6.9 15.2h2.2"/>',
+	"house": '<path d="M1.8 7.6 8 2.2l6.2 5.4"/><path d="M3.6 6.2V14h8.8V6.2"/><path d="M6.6 14v-4h2.8v4"/>',
+	"trash": '<path d="M2.4 4h11.2M6 4V2.2h4V4"/><path d="m3.8 4 .8 10.2h6.8l.8-10.2"/><path d="M6.6 6.6v5M9.4 6.6v5"/>',
+}
+static var _header_icons := {}
+
+static func _header_icon(icon_name: String) -> Texture2D:
+	if not _header_icons.has(icon_name):
+		var svg := '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><g fill="none" stroke="#e0e0e0" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">%s</g></svg>' % _HEADER_ICON_SVG[icon_name]
+		var img := Image.new()
+		img.load_svg_from_string(svg)
+		_header_icons[icon_name] = ImageTexture.create_from_image(img)
+	return _header_icons[icon_name]
+
+
+## An icon-only button, its name in the tooltip.
+func _icon_button(icon_name: String, tip: String) -> Button:
+	var b := Button.new()
+	b.icon = _header_icon(icon_name)
+	b.tooltip_text = tip
+	return b
+
+
+## A row of controls packed against its right edge.
+func _right_row() -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_END
+	row.add_theme_constant_override("separation", 4)
+	return row
+
+
 func _flow(h: int = 8, v: int = 4) -> HFlowContainer:
 	var f := HFlowContainer.new()
 	f.add_theme_constant_override("h_separation", h)
@@ -617,8 +651,15 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 	# edited with the fixture controls.
 	var apply_callables: Array = []
 
-	var header := _flow()
+	# Header: the fixture's name, with a column of controls at the right —
+	# its category, then its category group with Flash / Home / Remove.
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 8)
 	var title := Label.new()
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	title.mouse_filter = Control.MOUSE_FILTER_PASS
 	var mode_suffix := ""
 	if profile.mode_count() > 1:
 		mode_suffix = "  [%s]" % profile.mode_names()[clampi(mode, 0, profile.mode_count() - 1)]
@@ -626,7 +667,15 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 		fixture["name"], profile.profile_name, mode_suffix,
 		start + 1, start + chans.size()
 	]
+	title.tooltip_text = title.text
 	header.add_child(title)
+	var controls_col := VBoxContainer.new()
+	controls_col.add_theme_constant_override("separation", 4)
+	header.add_child(controls_col)
+	var category_row := _right_row()
+	var group_row := _right_row()
+	controls_col.add_child(category_row)
+	controls_col.add_child(group_row)
 
 	# Category for show generation — the fixture's own choice, kept in the
 	# patch (no patch_changed: nothing else needs rebuilding for it).
@@ -640,7 +689,7 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 	category_option.item_selected.connect(func(i: int):
 		fixture["category"] = FixtureProfile.SHOW_CATEGORIES[i]
 	)
-	header.add_child(category_option)
+	category_row.add_child(category_option)
 
 	# Category group 1-4 within the category: one at a time, like radio
 	# buttons.
@@ -658,14 +707,16 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 			if on:
 				fixture["category_group"] = gi
 		)
-		header.add_child(group_btn)
+		group_row.add_child(group_btn)
+	var gap := Control.new()
+	gap.custom_minimum_size.x = 10
+	group_row.add_child(gap)
 
 	# Flash: full white for as long as the button is held, then put the
 	# affected channels back exactly as they were.
 	var flash_targets := _flash_targets(chans)
 	var flash_saved := {}
-	var flash_btn := Button.new()
-	flash_btn.text = "Flash"
+	var flash_btn := _icon_button("bulb", "Flash")
 	flash_btn.disabled = flash_targets.is_empty()
 	flash_btn.button_down.connect(func():
 		if not flash_saved.is_empty():
@@ -679,21 +730,19 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 			sender.set_channel(start + ix, flash_saved[ix])
 		flash_saved.clear()
 	)
-	header.add_child(flash_btn)
+	group_row.add_child(flash_btn)
 
-	var home_btn := Button.new()
-	home_btn.text = "Home"
+	var home_btn := _icon_button("house", "Home")
 	home_btn.pressed.connect(func():
 		for c in reset_callables:
 			c.call()
 	)
-	header.add_child(home_btn)
+	group_row.add_child(home_btn)
 
-	var remove_btn := Button.new()
-	remove_btn.text = "Remove"
+	var remove_btn := _icon_button("trash", "Remove")
 	var fixture_id: int = fixture["id"]
 	remove_btn.pressed.connect(func(): _on_remove_fixture(fixture_id))
-	header.add_child(remove_btn)
+	group_row.add_child(remove_btn)
 	vbox.add_child(header)
 
 	var controls_row := _flow(12, 8)

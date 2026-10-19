@@ -98,6 +98,25 @@ func _test_round_trip() -> void:
 	ok(panel.patched_fixtures[1]["category_group"] == 3 and not bar_groups[0].button_pressed
 		and _group_buttons(panel, 0)[0].button_pressed,
 		"picking group 3 deselects 1, on that fixture only")
+	var row: Control = panel.fixtures_vbox.get_child(1)
+	var row_btns := {}
+	for b in row.find_children("*", "Button", true, false):
+		if b.icon != null and b.text == "":
+			row_btns[b.tooltip_text] = b
+	var title_rect: Rect2 = row.find_children("*", "Label", true, false)[0].get_global_rect()
+	var cat_rect: Rect2 = row.find_children("*", "OptionButton", true, false)[0].get_global_rect()
+	var right := row.get_global_rect().end.x
+	ok(row_btns.has("Remove") and cat_rect.position.x > title_rect.end.x - 1.0
+		and absf(cat_rect.end.x - right) < 12.0
+		and absf(row_btns["Remove"].get_global_rect().end.x - right) < 12.0,
+		"the category, groups and Flash/Home/Remove at the right of the fixture's name")
+	ok(row_btns.size() == 3 and row_btns.has("Flash") and row_btns.has("Home"),
+		"Flash, Home and Remove are icons (named in their tooltips)")
+	var g4: Rect2 = bar_groups[3].get_global_rect()
+	var fl: Rect2 = row_btns["Flash"].get_global_rect() if row_btns.has("Flash") else Rect2()
+	ok(cat_rect.end.y <= g4.position.y and is_equal_approx(fl.position.y, g4.position.y)
+		and fl.position.x - g4.end.x >= 8.0,
+		"...on the groups' line beneath the category, after a gap (%.0f px)" % (fl.position.x - g4.end.x))
 	main.groups.append({"name": "Front", "members": [par_uid, bar_uid]})
 	var e = load("res://scripts/wave_effect.gd").new()
 	e.name = "Test wave"
