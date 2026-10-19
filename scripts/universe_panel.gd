@@ -210,18 +210,8 @@ func _decode_slot_image(b64: String) -> Texture2D:
 ## Resolve a swatch colour: an explicit HTML/named colour if given, else
 ## guessed from the label's words (so "Deep Red", "Open / white" work).
 func _slot_color(label: String, explicit: String) -> Color:
-	if explicit != "":
-		return Color.from_string(explicit, Color(0.8, 0.8, 0.8))
-	var low := label.to_lower()
-	if "open" in low or "white" in low or "none" in low:
-		return Color(1, 1, 1)
-	if "uv" in low or "congo" in low:
-		return Color(0.35, 0.12, 0.72)
-	for w in low.replace("/", " ").replace("-", " ").split(" ", false):
-		var c := Color.from_string(w, Color.TRANSPARENT)
-		if c != Color.TRANSPARENT:
-			return c
-	return Color(0.8, 0.8, 0.8)
+	var c = FixtureProfile.slot_colour({"label": label, "color": explicit})
+	return c if c != null else Color(0.8, 0.8, 0.8)
 
 
 func _swatch_texture(col: Color) -> Texture2D:

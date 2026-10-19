@@ -33,6 +33,7 @@ func _run() -> void:
 	_test_contrast()
 	_test_positions()
 	_test_categories()
+	_test_wheel()
 	_test_valid()
 	_test_edges()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
@@ -580,6 +581,31 @@ func _test_categories() -> void:
 	ok(sorted, "every line in time order")
 	var same := _cat_show(3)
 	ok(str(same) == str(shows[3]), "the same variation, the same show")
+
+
+func _test_wheel() -> void:
+	print("- colour wheel fixtures")
+	var wheel := [Color.WHITE, Color(1, 0, 0), Color(0, 1, 0), Color(0, 0, 1), Color(1, 1, 0)]
+	var tracks := [
+		{"key": "master", "target": T.MASTER, "rows": TimelineTrack.ROW_ORDER.duplicate()},
+		{"key": "par", "target": T.FIXTURE, "rows": [R.COLOUR, R.DIMMER]},
+		{"key": "spot", "target": T.FIXTURE, "rows": [R.POSITION, R.MOVEMENT, R.COLOUR, R.DIMMER], "wheel": wheel},
+	]
+	var only := true
+	var solid := true
+	var changes := true
+	for v in range(6):
+		var show := TimelineGenerator.generate(_sections(), _beats(), 4, 120.0, tracks, ["posA"], "wheel.mp3", v)
+		var segs: Array = show["spot"]["colour"]
+		var seen := {}
+		for sg in segs:
+			only = only and sg["c0"] in wheel and sg["c1"] in wheel
+			solid = solid and sg["c0"] == sg["c1"]
+			seen[sg["c0"]] = true
+		changes = changes and seen.size() >= 2 and float(segs[0]["t0"]) <= 0.01 and float(segs[segs.size() - 1]["t1"]) >= 119.9
+	ok(only, "a wheel fixture's colour row only has its wheel's colours")
+	ok(solid, "...each held (a wheel turns, it can't fade)")
+	ok(changes, "...covering the song and changing through it")
 
 
 func _colour_at(segs: Array, t: float):

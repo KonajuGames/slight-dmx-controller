@@ -34,6 +34,7 @@ func _run() -> void:
 	P = load("res://scripts/dj_performer.gd")
 	PanelScript = load("res://scripts/dj_perform_panel.gd")
 	_test_song_output()
+	_test_wheel()
 	_test_mix()
 	_test_report_time()
 	await _test_performer()
@@ -91,6 +92,28 @@ func _nodes(arr: Array) -> Dictionary:
 ## A track with one colour segment.
 func _colour(t0: float, t1: float, c0: Color, c1: Color) -> Dictionary:
 	return {"colour": [{"t0": t0, "t1": t1, "c0": c0, "c1": c1}]}
+
+
+## A colour wheel spot (no RGB): a dimmer at 1, its wheel at 2 — open,
+## red, green, blue.
+func _test_wheel() -> void:
+	print("- a colour wheel fixture")
+	var spot := FixtureProfile.new("spot", "Wheel Spot", [
+		{"name": "Dimmer", "role": "DIMMER"},
+		{"name": "Colour", "role": "COLOR_WHEEL", "ranges": [
+			{"lo": 0, "hi": 9, "label": "Open"},
+			{"lo": 10, "hi": 19, "label": "Red", "color": "#ff0000"},
+			{"lo": 20, "hi": 29, "label": "Green", "color": "#00ff00"},
+			{"lo": 30, "hi": 39, "label": "Blue", "color": "#0000ff"},
+		]},
+	])
+	var fx := [{"uid": "s", "u": 0, "start": 0, "mode": 0, "profile": spot}]
+	var bases := [PackedByteArray()]
+	var tracks := {"master": _colour(0, 10, Color(0.1, 0.2, 1.0), Color(0.1, 0.2, 1.0))}
+	ok(int(P.song_output(tracks, 5.0, fx, bases, 1)[0].get(1, -1)) == 34, "the wheel turns to the master's colour's nearest slot (blue)")
+	tracks["s"] = _colour(0, 10, Color(0.1, 1.0, 0.1), Color(0.1, 1.0, 0.1))
+	ok(int(P.song_output(tracks, 5.0, fx, bases, 1)[0].get(1, -1)) == 24, "...or its own colour's (green)")
+	ok(not P.song_output({}, 5.0, fx, bases, 1)[0].has(1), "...and is left alone without a colour")
 
 
 func _test_song_output() -> void:

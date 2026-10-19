@@ -24,17 +24,7 @@ static func _slot_color(ch: Dictionary, raw: int):
 	var slot := _slot_at(ch, raw)
 	if slot.is_empty():
 		return null
-	var hex := String(slot.get("color", ""))
-	if hex != "":
-		return Color.from_string(hex, Color.WHITE)
-	var lbl := String(slot.get("label", "")).to_lower()
-	if "open" in lbl or "white" in lbl or "none" in lbl:
-		return null
-	for w in lbl.replace("/", " ").replace("-", " ").split(" ", false):
-		var c := Color.from_string(w, Color.TRANSPARENT)
-		if c != Color.TRANSPARENT:
-			return c
-	return null
+	return FixtureProfile.slot_colour(slot)
 
 
 static func _strobe_hz(ch: Dictionary, raw: int) -> float:

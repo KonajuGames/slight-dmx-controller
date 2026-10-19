@@ -283,6 +283,9 @@ chase or a fan can run group by group (left and right, front and back).
   follows the master; give it values and it overrides the master over
   that stretch.
 - **Colour** — segments of one static colour or a two-colour gradient.
+  A fixture whose colour comes from a colour wheel turns its wheel to
+  the nearest colour slot, and **Generate** gives it only its wheel's
+  colours, changing from one to the next.
 - **Strobe** — stretches where the strobe runs at Slow, Medium or Fast.
 - **Position** (moving heads) — which named position the heads point at
   (see *Named positions* below).

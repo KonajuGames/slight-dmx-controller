@@ -2390,6 +2390,9 @@ func generate_show() -> bool:
 		if parts.has(key):
 			t["category"] = String(parts[key].get("category", ""))
 			t["group"] = int(parts[key].get("category_group", 1))
+			var wheel: Array = (parts[key]["profile"] as FixtureProfile).wheel_colours(int(parts[key].get("mode", 0)))
+			if not wheel.is_empty():
+				t["wheel"] = wheel
 		tracks.append(t)
 	var ids: Array = []
 	if positions != null:

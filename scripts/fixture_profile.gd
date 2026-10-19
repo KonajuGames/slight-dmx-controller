@@ -280,6 +280,74 @@ func channel_count(mode_index: int = 0) -> int:
 	return channels_for_mode(mode_index).size()
 
 
+## The colour a range slot gives (a colour wheel's): its own ("color"),
+## else one its label names — "Deep Red"; "Open / white" white; "UV" or
+## "Congo" a violet — or null for a slot that isn't a colour (an effect,
+## a rotation).
+static func slot_colour(slot: Dictionary):
+	var hex := String(slot.get("color", ""))
+	if hex != "":
+		var c := Color.from_string(hex, Color.TRANSPARENT)
+		return c if c != Color.TRANSPARENT else null
+	var low := String(slot.get("label", "")).to_lower()
+	if "open" in low or "white" in low or "none" in low:
+		return Color.WHITE
+	if "uv" in low or "congo" in low:
+		return Color(0.35, 0.12, 0.72)
+	for w in low.replace("/", " ").replace("-", " ").split(" ", false):
+		var c := Color.from_string(w, Color.TRANSPARENT)
+		if c != Color.TRANSPARENT:
+			return c
+	return null
+
+
+## A colour wheel channel's colour slots: [{colour, value: the slot's
+## middle}], in the wheel's order.
+static func wheel_slots(ch: Dictionary) -> Array:
+	var out: Array = []
+	for r in ch.get("ranges", []):
+		var c = slot_colour(r)
+		if c != null:
+			out.append({"colour": c, "value": (int(r["lo"]) + int(r["hi"])) / 2})
+	return out
+
+
+## The value that turns colour wheel channel `ch` to its slot nearest
+## `colour`, or -1 if it has no colour slots.
+static func nearest_wheel_value(ch: Dictionary, colour: Color) -> int:
+	var best := -1
+	var best_d := INF
+	for s in wheel_slots(ch):
+		var d := colour_distance(colour, s["colour"])
+		if d < best_d:
+			best_d = d
+			best = int(s["value"])
+	return best
+
+
+## How far apart two colours look (their RGB distance).
+static func colour_distance(a: Color, b: Color) -> float:
+	return Vector3(a.r - b.r, a.g - b.g, a.b - b.b).length()
+
+
+## Where this mode's colour comes from a colour wheel alone (no RGB
+## heads), the colours that wheel can make — its first colour wheel
+## channel with two or more colour slots — else [].
+func wheel_colours(mode_index: int) -> Array:
+	if not head_groups(mode_index).is_empty():
+		return []
+	for ch in channels_for_mode(mode_index):
+		if String(ch["role"]) != "COLOR_WHEEL" or bool(ch.get("fine", false)):
+			continue
+		var out: Array = []
+		for s in wheel_slots(ch):
+			if not s["colour"] in out:
+				out.append(s["colour"])
+		if out.size() >= 2:
+			return out
+	return []
+
+
 ## The category a fixture patched in this mode starts in (see
 ## SHOW_CATEGORIES): a mover if it has pan or tilt, else a multi-cell if
 ## it has more than one head, else a wash.

@@ -296,6 +296,9 @@ func layer(n: int) -> Array:
 ##   strobe: where the fixture's strobe row or the master's is on, its
 ##     STROBE channel(s) go to a strobing value (from the channel's
 ##     ranges); off, they're left as the console has them
+##   colour wheel: on a fixture without RGB, its colour (its own or the
+##     master's) turns its COLOR_WHEEL channel(s) to the nearest colour
+##     slot
 ## On a fixture with a DIMMER channel that channel is set to the level (to
 ## the brightest head's where heads have lines of their own, each head's
 ## colour scaled down to its own level); on one without, the colour
@@ -362,9 +365,16 @@ static func song_output(tracks: Dictionary, t: float, fixtures: Array, bases: Ar
 			for k in range(chans.size()):
 				if String(chans[k]["role"]) == "STROBE":
 					out[u][start + k] = strobe_value(chans[k], strobe)
+		var groups := profile.head_groups(mode)
+		if groups.is_empty() and fixture_colour != null:
+			# No RGB: the colour wheel's nearest slot.
+			for k in range(chans.size()):
+				if String(chans[k]["role"]) == "COLOR_WHEEL" and not bool(chans[k].get("fine", false)):
+					var v := FixtureProfile.nearest_wheel_value(chans[k], fixture_colour)
+					if v >= 0:
+						out[u][start + k] = v
 		# Per head: its level (its own line where that has values, else
 		# inherited) and colour.
-		var groups := profile.head_groups(mode)
 		var heads: Array = []
 		var any_head := false
 		for h in range(groups.size()):

@@ -218,8 +218,9 @@ class _Picker:
 
 ## Build the show. `tracks`: [{key, target: TimelineTrack.Target, rows:
 ## [Row]; a fixture's optionally its category (a name from
-## FixtureProfile.SHOW_CATEGORIES) and group (1-4)}] in order (fixtures
-## then their heads, the master too);
+## FixtureProfile.SHOW_CATEGORIES), group (1-4) and wheel (the colours
+## its colour wheel makes, for one without RGB)}] in order (fixtures then
+## their heads, the master too);
 ## `beats`: the beat times; `per_bar`: beats a bar; `positions`: the named
 ## positions — ids, or {id, spread: how far apart its beams point};
 ## `seed_text` / `variation`: what seeds the picks; `bar_phase`: the index
@@ -350,12 +351,17 @@ static func generate(sections: Array, beats: PackedFloat32Array, per_bar: int, d
 				spans.append(Vector2(ph["t0"], ph["t1"]))
 			return spans
 		for role in ROLES:
-			for arr in _arrangements(roles[p], ens, role):
+			for each in _arrangements(roles[p], ens, role):
+				var arr: Dictionary = each
 				var pick: Dictionary = arr["pick"]
 				var mode: String = pick["colour"]
-				# All in the palette's main colour: the master's colour does it.
+				# All in the palette's main colour: the master's colour does it
+				# — but a colour wheel's row gets it, to show its own colours.
 				if mode == "all" and int(pick["rot"]) == 0:
-					continue
+					var wheels: Array = arr["units"].filter(func(u): return u["track"].has("wheel"))
+					if wheels.is_empty():
+						continue
+					arr = {"pick": pick, "units": wheels}
 				var cols: Array = pal if int(pick["rot"]) == 0 else [pal[1], pal[0], pal[2]]
 				var spans: Array = spans_of.call(mode)
 				if role == "multi":
@@ -370,6 +376,12 @@ static func generate(sections: Array, beats: PackedFloat32Array, per_bar: int, d
 			var c = TimelineTrack.segment_colour_at(segs, r.x + 0.001)
 			if c != null:
 				out[k]["colour"] = _overlay(segs, {"t0": r.x, "t1": r.y, "c0": c, "c1": (c as Color).lerp(Color.WHITE, 0.7)})
+	# A colour wheel only has its own colours, and turns from one to the
+	# next: each segment its nearest, a fade the first half's then the
+	# second's.
+	for t in tracks:
+		if t.has("wheel") and not (t["wheel"] as Array).is_empty():
+			out[String(t["key"])]["colour"] = _on_wheel(out[String(t["key"])]["colour"], t["wheel"])
 	for k in out:
 		out[k]["colour"] = _merged(out[k]["colour"], ["c0", "c1"], true)
 
@@ -1473,6 +1485,32 @@ static func _overlay(segs: Array, seg: Dictionary) -> Array:
 	out.append(seg)
 	out.sort_custom(func(x, y): return x["t0"] < y["t0"])
 	return out
+
+
+## Colour segments `segs` in a colour wheel's colours (`wheel`): each
+## held at the nearest to its start — a fade split, the second half held
+## at the nearest to its end.
+static func _on_wheel(segs: Array, wheel: Array) -> Array:
+	var out: Array = []
+	for sg in segs:
+		var a: Color = _nearest_colour(sg["c0"], wheel)
+		var b: Color = _nearest_colour(sg["c1"], wheel)
+		if a == b:
+			out.append({"t0": sg["t0"], "t1": sg["t1"], "c0": a, "c1": a})
+			continue
+		var mid := (float(sg["t0"]) + float(sg["t1"])) * 0.5
+		out.append({"t0": sg["t0"], "t1": mid, "c0": a, "c1": a})
+		out.append({"t0": mid, "t1": sg["t1"], "c0": b, "c1": b})
+	return out
+
+
+## The colour in `colours` nearest `c`.
+static func _nearest_colour(c: Color, colours: Array) -> Color:
+	var best: Color = colours[0]
+	for o in colours:
+		if FixtureProfile.colour_distance(c, o) < FixtureProfile.colour_distance(c, best):
+			best = o
+	return best
 
 
 ## Segments with touching neighbours that carry the same `fields` joined

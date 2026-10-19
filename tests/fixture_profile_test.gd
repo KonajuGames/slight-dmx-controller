@@ -27,6 +27,7 @@ func _run() -> void:
 	_test_names()
 	_test_library()
 	_test_gdtf()
+	_test_wheel()
 	print("== %d passed, %d failed ==" % [_p, _f])
 	quit(1 if _f > 0 else 0)
 
@@ -75,3 +76,34 @@ func _test_gdtf() -> void:
 	var anon := FixtureProfile.new("anon", "Thing", [{"name": "Dimmer", "role": "DIMMER"}])
 	var p2: FixtureProfile = FixtureImport.from_gdtf_xml(MvrIO._gen_gdtf_xml(anon)).get("profile")
 	ok(p2 != null and p2.model == "Thing", "a profile without a manufacturer exports with its model")
+
+
+## A spot with a dimmer and a colour wheel: open, red, green, blue (by
+## colour), deep yellow (by name), then a rotation that isn't a colour.
+func _spot() -> FixtureProfile:
+	return FixtureProfile.new("spot", "Wheel Spot", [
+		{"name": "Dimmer", "role": "DIMMER"},
+		{"name": "Colour", "role": "COLOR_WHEEL", "ranges": [
+			{"lo": 0, "hi": 9, "label": "Open"},
+			{"lo": 10, "hi": 19, "label": "Red", "color": "#ff0000"},
+			{"lo": 20, "hi": 29, "label": "Green", "color": "#00ff00"},
+			{"lo": 30, "hi": 39, "label": "Blue", "color": "#0000ff"},
+			{"lo": 40, "hi": 49, "label": "Deep Yellow"},
+			{"lo": 50, "hi": 255, "label": "Rotation"},
+		]},
+	], [], {}, "Acme")
+
+
+func _test_wheel() -> void:
+	print("- colour wheels")
+	var spot := _spot()
+	var ch: Dictionary = spot.channels_for_mode(0)[1]
+	ok(FixtureProfile.wheel_slots(ch).size() == 5, "a wheel's colour slots (not its rotation)")
+	ok(FixtureProfile.nearest_wheel_value(ch, Color(0.95, 0.1, 0.2)) == 14
+		and FixtureProfile.nearest_wheel_value(ch, Color(1.0, 0.9, 0.05)) == 44
+		and FixtureProfile.nearest_wheel_value(ch, Color(1.0, 0.95, 0.9)) == 4,
+		"the nearest slot: red for a crimson, yellow by its name, open for a near white")
+	ok(spot.wheel_colours(0).size() == 5 and Color.WHITE in spot.wheel_colours(0), "a wheel-only fixture's colours")
+	var hybrid := FixtureProfile.new("h", "Hybrid", [{"name": "R", "role": "RED"}, {"name": "G", "role": "GREEN"},
+		{"name": "B", "role": "BLUE"}, ch])
+	ok(hybrid.wheel_colours(0).is_empty(), "...none for one with RGB of its own")
