@@ -2038,6 +2038,46 @@ func _on_load_preset() -> void:
 
 # ----------------------------------------------------- NEW PROFILE DIALOG --
 
+## The profile editor's Category choices: [physical.category, label].
+## "" lets the visualizer guess from the channel roles.
+const PROFILE_CATEGORIES := [
+	["", "Auto (from channels)"], ["moving_head", "Moving head"], ["wash", "Wash"],
+	["par", "Par"], ["beam", "Beam"], ["strip", "Strip / bar"], ["blinder", "Blinder / strobe"],
+	["generic", "Generic"],
+]
+
+
+## physical.heads as the editor's text: one "x, y, z, rx, ry, rz" line per
+## head (rotation left off when it's all zero).
+func _format_heads(heads: Array) -> String:
+	var lines: PackedStringArray = []
+	for h in heads:
+		var vals: Array = h.slice(0, 3) if h.size() < 6 or (h[3] == 0.0 and h[4] == 0.0 and h[5] == 0.0) else h
+		lines.append(", ".join(vals.map(func(v): return String.num(float(v), 3))))
+	return "\n".join(lines)
+
+
+## Inverse of _format_heads: an Array of heads, or a String saying which
+## line is wrong.
+func _parse_heads_text(text: String):
+	var heads: Array = []
+	var n := 0
+	for line in text.split("\n"):
+		n += 1
+		if line.strip_edges() == "":
+			continue
+		var parts := line.replace(";", ",").split(",", false)
+		var vals: Array = []
+		for p in parts:
+			if not p.strip_edges().is_valid_float():
+				return "Head line %d: \"%s\" isn't a number." % [n, p.strip_edges()]
+			vals.append(p.strip_edges().to_float())
+		if vals.size() != 3 and vals.size() != 6:
+			return "Head line %d needs x, y, z (and optionally rot x, y, z) — it has %d value(s)." % [n, vals.size()]
+		heads.append(vals)
+	return heads
+
+
 ## Turn a "0-9:Open, 10-19:Red:#f00" text field into a ranges array.
 ## Each entry is "lo-hi", optionally ":label", optionally ":colour"
 ## (HTML hex or a named colour, drawn as a swatch in the dropdown).
@@ -2152,6 +2192,49 @@ func _open_profile_dialog(existing: FixtureProfile = null) -> void:
 		var note := _label("Editing a built-in — Save keeps this as your own copy.")
 		note.modulate = Color(1, 1, 1, 0.6)
 		vbox.add_child(note)
+
+	# --- physical -------------------------------------------------------
+	# The visualizer's and DMX render's hints (FixtureProfile.physical).
+	var phys: Dictionary = existing.physical if editing else FixtureProfile.PHYSICAL_DEFAULT
+	var phys_row := HFlowContainer.new()
+	phys_row.add_theme_constant_override("h_separation", 6)
+	phys_row.add_theme_constant_override("v_separation", 4)
+	phys_row.add_child(_label("Category:"))
+	var cat_opt := OptionButton.new()
+	for c in PROFILE_CATEGORIES:
+		cat_opt.add_item(c[1])
+		if c[0] == String(phys.get("category", "")):
+			cat_opt.selected = cat_opt.item_count - 1
+	phys_row.add_child(cat_opt)
+	var make_phys_spin := func(label: String, v: float, lo: float, hi: float, step: float, tip: String) -> SpinBox:
+		phys_row.add_child(_label(label))
+		var s := SpinBox.new()
+		s.min_value = lo
+		s.max_value = hi
+		s.step = step
+		s.value = v
+		s.suffix = "°"
+		s.tooltip_text = tip
+		phys_row.add_child(s)
+		return s
+	var beam_spin: SpinBox = make_phys_spin.call("Beam:", float(phys.get("beam_deg", 14.0)), 1.0, 120.0, 0.5,
+		"Beam angle")
+	var pan_spin: SpinBox = make_phys_spin.call("Pan range:", float(phys.get("pan_range", 540.0)), 0.0, 1080.0, 1.0,
+		"Pan travel across the whole DMX range")
+	var tilt_spin: SpinBox = make_phys_spin.call("Tilt range:", float(phys.get("tilt_range", 270.0)), 0.0, 540.0, 1.0,
+		"Tilt travel across the whole DMX range")
+	vbox.add_child(phys_row)
+	if editing and not existing.geometry.is_empty():
+		var geo_note := _label("The imported 3D model sets the beam angle in the visualizer.")
+		geo_note.modulate = Color(1, 1, 1, 0.6)
+		vbox.add_child(geo_note)
+
+	# Multi-head fixtures (LED bars, spiders): one line per RGB head.
+	var heads_edit := TextEdit.new()
+	heads_edit.placeholder_text = "Head positions, one line per RGB head: x, y, z metres [, rot x, y, z degrees]  —  blank = single head / evenly spread"
+	heads_edit.custom_minimum_size = Vector2(0, 64)
+	heads_edit.text = _format_heads(phys.get("heads", []))
+	vbox.add_child(heads_edit)
 
 	# --- mode bar -------------------------------------------------------
 	# Channel edits live in modes_data[cur.i]; the on-screen rows
@@ -2425,7 +2508,20 @@ func _open_profile_dialog(existing: FixtureProfile = null) -> void:
 		var safe_id: String = existing.id if editing \
 			else _unique_profile_id(_safe_profile_id(("%s %s" % [pmaker, pname]).strip_edges()))
 
-		var profile := FixtureProfile.new(safe_id, pname, [], p_modes, {}, pmaker)
+		var heads = _parse_heads_text(heads_edit.text)
+		if heads is String:
+			status_label.text = heads
+			return
+		var p_phys := {
+			"category": PROFILE_CATEGORIES[maxi(cat_opt.selected, 0)][0],
+			"beam_deg": beam_spin.value,
+			"pan_range": pan_spin.value,
+			"tilt_range": tilt_spin.value,
+			"heads": heads,
+		}
+		var profile := FixtureProfile.new(safe_id, pname, [], p_modes, p_phys, pmaker)
+		if editing:
+			profile.geometry = existing.geometry.duplicate(true)   # an imported GDTF's 3D model
 
 		var f := FileAccess.open(PROFILES_DIR + "/%s.json" % safe_id, FileAccess.WRITE)
 		if f:
