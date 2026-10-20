@@ -73,6 +73,7 @@ func _ready() -> void:
 	var win := get_window()
 	if win:
 		win.min_size = Vector2i(720, 480)
+		win.theme = _app_theme()
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -229,6 +230,35 @@ func _ready() -> void:
 
 
 # ---------------------------------------------------------------- UI BUILD --
+
+## Selected and hovered buttons in cornflower blue. Godot's default theme
+## draws a pressed (toggled-on) button darker than a normal one and hover
+## only faintly lighter, so a selected category group or the button under
+## the mouse is hard to make out. Only these states are overridden; the
+## rest falls back to the default theme. Set on the main window, so its
+## dialogs and the popped-out visualizer pick it up too.
+const ACCENT := Color(0.392, 0.584, 0.929)   # cornflower blue, #6495ED
+
+static func _app_theme() -> Theme:
+	var base := ThemeDB.get_default_theme()
+	var t := Theme.new()
+	var restyle := func(type: String, state: String, bg: Color, border: Color) -> void:
+		var sb := base.get_stylebox(state, type).duplicate()
+		if sb is StyleBoxFlat:
+			sb.bg_color = bg
+			sb.border_color = border
+			sb.set_border_width_all(1 if border.a > 0.0 else 0)
+		t.set_stylebox(state, type, sb)
+	for type in ["Button", "OptionButton", "MenuButton"]:
+		restyle.call(type, "hover", Color(ACCENT, 0.22), ACCENT)
+		restyle.call(type, "pressed", ACCENT.darkened(0.3), Color(0, 0, 0, 0))
+		restyle.call(type, "hover_pressed", ACCENT.darkened(0.1), Color(0, 0, 0, 0))
+		t.set_color("font_pressed_color", type, Color.WHITE)
+		t.set_color("font_hover_pressed_color", type, Color.WHITE)
+		t.set_color("icon_pressed_color", type, Color.WHITE)
+		t.set_color("icon_hover_pressed_color", type, Color.WHITE)
+	return t
+
 
 ## Inset every tab's content by a few pixels so controls don't sit flush
 ## against the container edge. Keeps the theme's panel look, just adds
