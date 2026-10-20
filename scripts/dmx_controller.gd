@@ -2078,7 +2078,10 @@ func _open_profile_dialog(existing: FixtureProfile = null) -> void:
 
 	var win := Window.new()
 	win.title = "Edit Fixture Profile" if editing else "New Fixture Profile"
-	win.size = Vector2i(760, 540)
+	# Wide enough for a whole channel row (name, role, d/min/max, 16-bit,
+	# ranges, X) — kept inside the main window (subwindows are embedded).
+	var usable := get_tree().root.size
+	win.size = Vector2i(mini(1060, usable.x - 40), mini(640, usable.y - 60))
 	win.min_size = Vector2i(480, 360)
 	add_child(win)
 
