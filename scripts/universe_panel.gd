@@ -102,7 +102,7 @@ const _HEADER_ICON_SVG := {
 }
 static var _header_icons := {}
 
-static func _header_icon(icon_name: String) -> Texture2D:
+static func header_icon(icon_name: String) -> Texture2D:
 	if not _header_icons.has(icon_name):
 		var svg := '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><g fill="none" stroke="#e0e0e0" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">%s</g></svg>' % _HEADER_ICON_SVG[icon_name]
 		var img := Image.new()
@@ -114,7 +114,7 @@ static func _header_icon(icon_name: String) -> Texture2D:
 ## An icon-only button, its name in the tooltip.
 func _icon_button(icon_name: String, tip: String) -> Button:
 	var b := Button.new()
-	b.icon = _header_icon(icon_name)
+	b.icon = header_icon(icon_name)
 	b.tooltip_text = tip
 	return b
 

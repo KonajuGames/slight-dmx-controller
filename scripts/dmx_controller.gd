@@ -2229,7 +2229,8 @@ func _open_profile_dialog(existing: FixtureProfile = null) -> void:
 		row.add_child(ranges_edit)
 
 		var remove_row_btn := Button.new()
-		remove_row_btn.text = "X"
+		remove_row_btn.icon = UniversePanel.header_icon("trash")
+		remove_row_btn.tooltip_text = "Remove channel"
 		row.add_child(remove_row_btn)
 
 		channels_box.add_child(row)
