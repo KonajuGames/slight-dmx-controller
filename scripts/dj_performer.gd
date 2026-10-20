@@ -70,6 +70,11 @@ var positions: PositionLibrary
 var os2l: Os2lServer
 var decks: Array = []
 var _status := "off"
+## The background timeline loads' WorkerThreadPool task ids. Each must be
+## waited on (wait_for_task_completion), finished or not: the pool keeps an
+## unwaited task — and its lambda — until engine shutdown, where freeing
+## the lambda after GDScript has gone crashes the app on quit.
+var _tasks: Array[int] = []
 
 
 func _init() -> void:
@@ -147,6 +152,17 @@ func stop() -> void:
 
 func _exit_tree() -> void:
 	stop()
+	for id in _tasks:
+		WorkerThreadPool.wait_for_task_completion(id)
+	_tasks.clear()
+
+
+## Release the loads that have finished (see _tasks).
+func _reap_tasks() -> void:
+	for id in _tasks.duplicate():
+		if WorkerThreadPool.is_task_completed(id):
+			WorkerThreadPool.wait_for_task_completion(id)
+			_tasks.erase(id)
 
 
 ## Read every loaded deck's timelines again (the show changed).
@@ -218,13 +234,14 @@ func _load(d: Deck) -> void:
 		var id: int = d.load_id
 		var num: int = d.num
 		# A fresh store per read: nothing shared with the main thread.
-		WorkerThreadPool.add_task(func():
+		_tasks.append(WorkerThreadPool.add_task(func():
 			var data := TimelineStore.new(dir).load_song(path)
-			_loaded.call_deferred(num, id, data))
+			_loaded.call_deferred(num, id, data)))
 	state_changed.emit()
 
 
 func _loaded(num: int, id: int, data: Dictionary) -> void:
+	_reap_tasks()
 	var d: Deck = decks[num - 1]
 	if id != d.load_id:
 		return                              # superseded
