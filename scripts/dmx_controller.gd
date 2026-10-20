@@ -2187,6 +2187,13 @@ func _open_profile_dialog(existing: FixtureProfile = null) -> void:
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 6)
 
+		var handle := Label.new()
+		handle.text = "≡"
+		handle.tooltip_text = "Drag to reorder"
+		handle.mouse_filter = Control.MOUSE_FILTER_STOP
+		handle.mouse_default_cursor_shape = Control.CURSOR_VSIZE
+		row.add_child(handle)
+
 		var ch_name := LineEdit.new()
 		ch_name.placeholder_text = "Channel name"
 		ch_name.text = String(data.get("name", "Ch %d" % (channel_rows.size() + 1)))
@@ -2238,6 +2245,32 @@ func _open_profile_dialog(existing: FixtureProfile = null) -> void:
 		remove_row_btn.pressed.connect(func():
 			channel_rows.erase(entry)
 			row.queue_free()
+		)
+		# Dragging the handle moves the row live: the handle keeps the mouse
+		# while pressed, and the row jumps to the slot under the cursor.
+		var dragging := {"on": false}
+		handle.gui_input.connect(func(ev: InputEvent):
+			if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT:
+				dragging.on = ev.pressed
+				row.modulate = Color(0.75, 0.9, 1.3) if ev.pressed else Color.WHITE
+				if not ev.pressed:
+					channel_rows.sort_custom(func(a, b): return a["row"].get_index() < b["row"].get_index())
+			elif ev is InputEventMouseMotion and dragging.on:
+				var y := channels_box.get_global_mouse_position().y
+				var kids := channels_box.get_children().filter(func(c): return not c.is_queued_for_deletion())
+				var target: Node = kids[-1]
+				for k in kids:
+					if y < k.global_position.y + k.size.y * 0.5:
+						target = k
+						break
+				if target != row:
+					channels_box.move_child(row, target.get_index())
+				# near the list's top / bottom edge, scroll it along
+				var view := scroll.get_global_rect()
+				if y < view.position.y + 24:
+					scroll.scroll_vertical -= 12
+				elif y > view.end.y - 24:
+					scroll.scroll_vertical += 12
 		)
 
 	read_rows_into = func(mode_idx: int):
