@@ -2303,6 +2303,24 @@ func _open_profile_dialog(existing: FixtureProfile = null) -> void:
 	var build_rows_from: Callable
 	var refresh_mode_sel: Callable
 	var switch_mode: Callable
+	# add_channel_row itself, for the rows' Duplicate buttons (a lambda
+	# can't see its own variable — captured empty — so it's passed here).
+	var row_fns := {}
+
+	# A channel row's fields as the profile's channel dictionary.
+	var row_to_dict := func(entry: Dictionary) -> Dictionary:
+		var role_idx: int = entry["role_option"].selected
+		var new_ranges := _parse_ranges_text(entry["ranges_edit"].text)
+		_carry_slot_images(new_ranges, entry.get("orig_ranges", []))
+		return {
+			"name": entry["name_edit"].text,
+			"role": FixtureProfile.ROLES[role_idx] if role_idx >= 0 else "GENERIC",
+			"default": int(entry["def_spin"].value),
+			"min": int(entry["min_spin"].value),
+			"max": int(entry["max_spin"].value),
+			"fine": entry["fine_check"].button_pressed,
+			"ranges": new_ranges,
+		}
 
 	add_channel_row = func(data: Dictionary = {}):
 		var row := HBoxContainer.new()
@@ -2354,6 +2372,11 @@ func _open_profile_dialog(existing: FixtureProfile = null) -> void:
 		remove_row_btn.tooltip_text = "Remove channel"
 		row.add_child(remove_row_btn)
 
+		var dup_row_btn := Button.new()
+		dup_row_btn.icon = UniversePanel.header_icon("duplicate")
+		dup_row_btn.tooltip_text = "Duplicate channel (added at the end)"
+		row.add_child(dup_row_btn)
+
 		channels_box.add_child(row)
 		var entry := {
 			"name_edit": ch_name, "role_option": role_opt,
@@ -2367,6 +2390,12 @@ func _open_profile_dialog(existing: FixtureProfile = null) -> void:
 		remove_row_btn.pressed.connect(func():
 			channel_rows.erase(entry)
 			row.queue_free()
+		)
+		dup_row_btn.pressed.connect(func():
+			row_fns.add.call(row_to_dict.call(entry))
+			# bring the copy into view once the list has laid it out
+			var copy: Control = channel_rows[-1]["row"]
+			(func(): scroll.ensure_control_visible(copy)).call_deferred()
 		)
 		# Dragging the handle moves the row live: the handle keeps the mouse
 		# while pressed, and the row jumps to the slot under the cursor.
@@ -2395,21 +2424,12 @@ func _open_profile_dialog(existing: FixtureProfile = null) -> void:
 					scroll.scroll_vertical += 12
 		)
 
+	row_fns["add"] = add_channel_row
+
 	read_rows_into = func(mode_idx: int):
 		var chans: Array = []
 		for entry in channel_rows:
-			var role_idx: int = entry["role_option"].selected
-			var new_ranges := _parse_ranges_text(entry["ranges_edit"].text)
-			_carry_slot_images(new_ranges, entry.get("orig_ranges", []))
-			chans.append({
-				"name": entry["name_edit"].text,
-				"role": FixtureProfile.ROLES[role_idx] if role_idx >= 0 else "GENERIC",
-				"default": int(entry["def_spin"].value),
-				"min": int(entry["min_spin"].value),
-				"max": int(entry["max_spin"].value),
-				"fine": entry["fine_check"].button_pressed,
-				"ranges": new_ranges,
-			})
+			chans.append(row_to_dict.call(entry))
 		modes_data[mode_idx]["channels"] = chans
 
 	build_rows_from = func(mode_idx: int):

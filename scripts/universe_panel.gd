@@ -99,6 +99,8 @@ const _HEADER_ICON_SVG := {
 	"bulb": '<path d="M5.6 11.6V10.4C4.2 9.4 3.4 8 3.4 6.4a4.6 4.6 0 0 1 9.2 0c0 1.6-.8 3-2.2 4v1.2z"/><path d="M6 13.6h4M6.9 15.2h2.2"/>',
 	"house": '<path d="M1.8 7.6 8 2.2l6.2 5.4"/><path d="M3.6 6.2V14h8.8V6.2"/><path d="M6.6 14v-4h2.8v4"/>',
 	"trash": '<path d="M2.4 4h11.2M6 4V2.2h4V4"/><path d="m3.8 4 .8 10.2h6.8l.8-10.2"/><path d="M6.6 6.6v5M9.4 6.6v5"/>',
+	# two sheets, the front one with a "+" — the back one peeking out
+	"duplicate": '<path d="M3.8 10.4H3A1.2 1.2 0 0 1 1.8 9.2V3A1.2 1.2 0 0 1 3 1.8h6.2a1.2 1.2 0 0 1 1.2 1.2v.8"/><rect x="5.6" y="5.6" width="8.6" height="8.6" rx="1.2"/><path d="M9.9 7.9v4.2M7.8 10h4.2"/>',
 }
 static var _header_icons := {}
 
