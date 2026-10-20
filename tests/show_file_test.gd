@@ -110,8 +110,14 @@ func _test_round_trip() -> void:
 		and absf(cat_rect.end.x - right) < 12.0
 		and absf(row_btns["Remove"].get_global_rect().end.x - right) < 12.0,
 		"the category, groups and Flash/Home/Remove at the right of the fixture's name")
-	ok(row_btns.size() == 3 and row_btns.has("Flash") and row_btns.has("Home"),
-		"Flash, Home and Remove are icons (named in their tooltips)")
+	ok(row_btns.size() == 4 and row_btns.has("Flash") and row_btns.has("Home") and row_btns.has("Expand"),
+		"Expand, Flash, Home and Remove are icons (named in their tooltips)")
+	var controls: Control = row.get_child(0).get_child(1)
+	var collapsed := not controls.visible
+	row_btns["Expand"].pressed.emit()
+	ok(collapsed and controls.visible and row_btns["Expand"].tooltip_text == "Collapse",
+		"a fixture starts collapsed to its header; Expand shows its controls")
+	row_btns["Expand"].pressed.emit()
 	var g4: Rect2 = bar_groups[3].get_global_rect()
 	var fl: Rect2 = row_btns["Flash"].get_global_rect() if row_btns.has("Flash") else Rect2()
 	ok(cat_rect.end.y <= g4.position.y and is_equal_approx(fl.position.y, g4.position.y)

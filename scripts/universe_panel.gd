@@ -99,6 +99,8 @@ const _HEADER_ICON_SVG := {
 	"bulb": '<path d="M5.6 11.6V10.4C4.2 9.4 3.4 8 3.4 6.4a4.6 4.6 0 0 1 9.2 0c0 1.6-.8 3-2.2 4v1.2z"/><path d="M6 13.6h4M6.9 15.2h2.2"/>',
 	"house": '<path d="M1.8 7.6 8 2.2l6.2 5.4"/><path d="M3.6 6.2V14h8.8V6.2"/><path d="M6.6 14v-4h2.8v4"/>',
 	"trash": '<path d="M2.4 4h11.2M6 4V2.2h4V4"/><path d="m3.8 4 .8 10.2h6.8l.8-10.2"/><path d="M6.6 6.6v5M9.4 6.6v5"/>',
+	"chevron_right": '<path d="M6 3.4 10.6 8 6 12.6"/>',
+	"chevron_down": '<path d="M3.4 6 8 10.6 12.6 6"/>',
 	# two sheets, the front one with a "+" — the back one peeking out
 	"duplicate": '<path d="M3.8 10.4H3A1.2 1.2 0 0 1 1.8 9.2V3A1.2 1.2 0 0 1 3 1.8h6.2a1.2 1.2 0 0 1 1.2 1.2v.8"/><rect x="5.6" y="5.6" width="8.6" height="8.6" rx="1.2"/><path d="M9.9 7.9v4.2M7.8 10h4.2"/>',
 }
@@ -648,6 +650,12 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 	# its category, then its category group with Flash / Home / Remove.
 	var header := HBoxContainer.new()
 	header.add_theme_constant_override("separation", 8)
+	# Expand / collapse the fixture's channel controls. Collapsed by default;
+	# the choice rides on the fixture (not saved) so a rebuilt patch keeps it.
+	var expand_btn := Button.new()
+	expand_btn.flat = true
+	expand_btn.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	header.add_child(expand_btn)
 	var title := Label.new()
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
@@ -740,6 +748,13 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 
 	var controls_row := _flow(12, 8)
 	vbox.add_child(controls_row)
+	var show_controls := func(on: bool):
+		fixture["_expanded"] = on
+		controls_row.visible = on
+		expand_btn.icon = header_icon("chevron_down" if on else "chevron_right")
+		expand_btn.tooltip_text = "Collapse" if on else "Expand"
+	show_controls.call(bool(fixture.get("_expanded", false)))
+	expand_btn.pressed.connect(func(): show_controls.call(not controls_row.visible))
 
 	# A fixture with colour / white channels but no DIMMER channel of its
 	# own gets a virtual dimmer: the universe scales those channels by its
