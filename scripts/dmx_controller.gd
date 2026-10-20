@@ -224,6 +224,7 @@ func _ready() -> void:
 	(func():
 		if get_tree().current_scene == self:
 			restore_last_show()
+			_restore_ui_state()
 	).call_deferred()
 
 
@@ -292,6 +293,13 @@ func _pop_out_viz(rect := Rect2i()) -> void:
 	if rect.size.x > 200 and rect.size.y > 200:
 		w.size = rect.size
 		w.position = rect.position
+		# reopened where it was saved: keep it on that screen (a second
+		# monitor for front-of-house), if that screen's still connected
+		for s in DisplayServer.get_screen_count():
+			var sr := DisplayServer.screen_get_usable_rect(s)
+			if sr.has_point(rect.get_center()):
+				scr = sr
+				break
 	else:
 		w.size = Vector2i(1000, 620)
 		# drop it under the pointer, title bar clear of the screen edge
@@ -306,6 +314,9 @@ func _pop_out_viz(rect := Rect2i()) -> void:
 	_right_tabs.remove_child(viz_panel)
 	w.add_child(viz_panel)
 	viz_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	# The tab container hides tabs that aren't current: popped out at
+	# startup (Patch showing), the panel would arrive hidden and not draw.
+	viz_panel.visible = true
 	_viz_window = w
 	_viz_last_pos = w.position
 	_viz_move_frames = 0
@@ -314,6 +325,7 @@ func _pop_out_viz(rect := Rect2i()) -> void:
 	set_process(true)
 	# "Patch" is the only tab left; it doubles as the re-dock drop zone.
 	status_label.text = "3D Visualizer popped out — drag its title onto the tab bar to dock, or close it."
+	_save_ui_state()
 
 
 func _dock_viz() -> void:
@@ -331,6 +343,7 @@ func _dock_viz() -> void:
 		_right_tabs.current_tab = _VIZ_TAB
 	viz_panel.set_floating(false)
 	w.queue_free()
+	_save_ui_state()
 
 
 ## While the visualizer floats, watch its window: when the user drags its
@@ -387,6 +400,33 @@ func _apply_viz_window(d: Dictionary) -> void:
 		_viz_window.size = rect.size
 	elif not want_float and _viz_window != null:
 		_dock_viz()
+
+
+## Where the visualizer window's state (docked, or floating and where) is
+## kept between runs. It's this machine's screen layout, not the show's,
+## so it isn't in the show file.
+var ui_state_store := "user://ui_state.json"
+
+
+func _save_ui_state() -> void:
+	var f := FileAccess.open(ui_state_store, FileAccess.WRITE)
+	if f != null:
+		f.store_string(JSON.stringify({"viz_window": _viz_window_dict()}))
+		f.close()
+
+
+func _restore_ui_state() -> void:
+	if not FileAccess.file_exists(ui_state_store):
+		return
+	var parsed = JSON.parse_string(FileAccess.get_file_as_string(ui_state_store))
+	if parsed is Dictionary and parsed.get("viz_window") is Dictionary:
+		_apply_viz_window(parsed["viz_window"])
+
+
+func _notification(what: int) -> void:
+	# quitting: keep where the floating visualizer was last moved / sized to
+	if what == NOTIFICATION_WM_CLOSE_REQUEST and get_tree().current_scene == self:
+		_save_ui_state()
 
 
 ## Wrap a playback panel so it gets a vertical scrollbar when the window
@@ -1755,7 +1795,6 @@ func show_dict() -> Dictionary:
 		"groups": _groups_to_dict(),
 		"positions": positions.to_dict(),
 		"viz": viz_panel.to_dict(),
-		"viz_window": _viz_window_dict(),
 		"sacn_cid": Marshalls.raw_to_base64(ArtNet.sacn_cid),
 	}
 	var store := music_panel.timeline().timeline_store if music_panel else null
@@ -1857,7 +1896,6 @@ func apply_show_dict(parsed) -> void:
 	_set_run_mode(int(doc.get("run_mode", 0)))
 	_on_patch_changed()                       # groups, visualizer, DJ Edit Mode timelines
 	viz_panel.from_dict(doc.get("viz", {}))
-	_apply_viz_window(doc.get("viz_window", {}))
 
 
 ## New Show (Ctrl+N): after a confirmation, start an empty show.
