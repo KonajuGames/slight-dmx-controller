@@ -2143,6 +2143,9 @@ func _open_profile_dialog(existing: FixtureProfile = null) -> void:
 	var add_mode_btn := Button.new()
 	add_mode_btn.text = "Add Mode"
 	mode_row.add_child(add_mode_btn)
+	var dup_mode_btn := Button.new()
+	dup_mode_btn.text = "Duplicate Mode"
+	mode_row.add_child(dup_mode_btn)
 	var del_mode_btn := Button.new()
 	del_mode_btn.text = "Delete Mode"
 	mode_row.add_child(del_mode_btn)
@@ -2285,6 +2288,16 @@ func _open_profile_dialog(existing: FixtureProfile = null) -> void:
 		read_rows_into.call(cur.i)
 		modes_data.append({"name": "Mode %d" % (modes_data.size() + 1), "channels": []})
 		switch_mode.call(modes_data.size() - 1)
+	)
+	# Copy the current mode (with its on-screen edits) in right after it.
+	dup_mode_btn.pressed.connect(func():
+		read_rows_into.call(cur.i)
+		var src: Dictionary = modes_data[cur.i]
+		modes_data.insert(cur.i + 1, {
+			"name": "%s (copy)" % src["name"],
+			"channels": (src["channels"] as Array).duplicate(true),
+		})
+		switch_mode.call(cur.i + 1)
 	)
 	del_mode_btn.pressed.connect(func():
 		if modes_data.size() <= 1:
