@@ -587,6 +587,12 @@ func _add_universe_tab(sender: ArtNetUniverse) -> UniversePanel:
 	panel.sender = sender
 	panel.available_profiles = available_profiles
 	panel.profile_action_cb = _on_profile_action
+	panel.patch_names_cb = func():
+		var names: Array = []
+		for p in _panels:
+			for f in p.patched_fixtures:
+				names.append(String(f["name"]))
+		return names
 	panel.patch_changed.connect(_on_patch_changed)
 	universe_tabs.add_child(panel)
 	_panels.append(panel)

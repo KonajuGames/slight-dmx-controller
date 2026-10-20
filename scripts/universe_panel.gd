@@ -20,6 +20,10 @@ var available_profiles: Array = []       # shared reference, owned by the shell
 ## Shell handler: func(action: String, profile) where action is
 ## "new" (profile null), "edit", or "delete".
 var profile_action_cb := Callable()
+## Every patched fixture's name across all universes (set by the shell),
+## so an unnamed fixture's "Model #n" is unique show-wide. Unset: this
+## universe's names only.
+var patch_names_cb := Callable()
 
 var patched_fixtures: Array = []
 ## Fixtures lit full white for finding them (set_highlight()): fixture id
@@ -532,9 +536,9 @@ func _on_add_fixture_pressed() -> void:
 	var profile: FixtureProfile = available_profiles[idx]
 	var mode: int = clampi(mode_option.selected, 0, max(profile.mode_count() - 1, 0))
 	var start := int(fixture_start_spin.value) - 1
-	var fixture_label := fixture_name_edit.text
-	if fixture_label.strip_edges() == "":
-		fixture_label = profile.model
+	var fixture_label := fixture_name_edit.text.strip_edges()
+	if fixture_label == "":
+		fixture_label = default_fixture_name(profile)
 
 	var fixture := {
 		"id": _next_fixture_id,
@@ -562,6 +566,25 @@ func _on_add_fixture_pressed() -> void:
 	patch_changed.emit()
 
 
+## The name for a fixture added without one: its model and the next
+## number for that model in the patch — "XA400 #1", "XA400 #2", … One
+## past the highest in use, so a number freed by a removal isn't reused
+## while a later one is still patched.
+func default_fixture_name(profile: FixtureProfile) -> String:
+	var model := profile.model.strip_edges()
+	if model == "":
+		model = "Fixture"
+	var names: Array = patch_names_cb.call() if patch_names_cb.is_valid() \
+		else patched_fixtures.map(func(f): return String(f["name"]))
+	var prefix := model + " #"
+	var highest := 0
+	for n in names:
+		var s := String(n)
+		if s.begins_with(prefix) and s.substr(prefix.length()).is_valid_int():
+			highest = maxi(highest, s.substr(prefix.length()).to_int())
+	return "%s%d" % [prefix, highest + 1]
+
+
 ## A fixture's permanent identity (saved in the show, unlike "id", which
 ## is only for this session): 16 random hex digits. What a show's music
 ## timelines are keyed by.
@@ -576,7 +599,7 @@ func add_patched(profile: FixtureProfile, p_start: int, p_mode: int, p_name: Str
 	patched_fixtures.append({
 		"id": _next_fixture_id,
 		"uid": new_uid(),
-		"name": p_name if p_name != "" else profile.model,
+		"name": p_name if p_name.strip_edges() != "" else default_fixture_name(profile),
 		"profile": profile,
 		"start": p_start,
 		"mode": mode,
@@ -661,14 +684,13 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 	title.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	title.mouse_filter = Control.MOUSE_FILTER_PASS
+	# Just the fixture's name (and where it's patched); its model and mode
+	# are in the tooltip.
 	var mode_suffix := ""
 	if profile.mode_count() > 1:
 		mode_suffix = "  [%s]" % profile.mode_names()[clampi(mode, 0, profile.mode_count() - 1)]
-	title.text = "%s — %s%s (ch %d-%d)" % [
-		fixture["name"], profile.model, mode_suffix,
-		start + 1, start + chans.size()
-	]
-	title.tooltip_text = title.text
+	title.text = "%s  (ch %d-%d)" % [fixture["name"], start + 1, start + chans.size()]
+	title.tooltip_text = "%s\n%s%s" % [title.text, profile.full_name(), mode_suffix]
 	header.add_child(title)
 	var controls_col := VBoxContainer.new()
 	controls_col.add_theme_constant_override("separation", 4)

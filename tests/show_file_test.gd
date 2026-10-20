@@ -33,6 +33,7 @@ func _run() -> void:
 	await _test_timelines_with_show()
 	await _test_groups_by_uid()
 	await _test_new_show()
+	await _test_default_names()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
 
@@ -566,6 +567,39 @@ func _test_new_show() -> void:
 	if DirAccess.dir_exists_absolute("user://_new_show_test.timelines"):
 		DirAccess.remove_absolute("user://_new_show_test.timelines")
 	fx.effects.clear()
+
+
+func _test_default_names() -> void:
+	print("- Unnamed fixtures")
+	var main: Control = load("res://main.tscn").instantiate()
+	main.last_show_store = STORE
+	root.add_child(main)
+	await process_frame
+	var panel = main._panels[0]
+	panel.add_patched(_rgb(), 0, 0, "", Vector3.ZERO, Vector3.ZERO)
+	panel.add_patched(_rgb(), 3, 0, "Front", Vector3.ZERO, Vector3.ZERO)
+	panel.add_patched(_rgb(), 6, 0, "  ", Vector3.ZERO, Vector3.ZERO)
+	ok(panel.patched_fixtures.map(func(f): return f["name"]) == ["RGB par #1", "Front", "RGB par #2"],
+		"no name: the model, numbered (%s)" % str(panel.patched_fixtures.map(func(f): return f["name"])))
+	main._on_add_universe()
+	main._panels[1].add_patched(_rgb(), 0, 0, "", Vector3.ZERO, Vector3.ZERO)
+	ok(main._panels[1].patched_fixtures[0]["name"] == "RGB par #3", "numbered across universes")
+	panel._on_remove_fixture(panel.patched_fixtures[0]["id"])
+	panel.add_patched(_rgb(), 0, 0, "", Vector3.ZERO, Vector3.ZERO)
+	ok(panel.patched_fixtures[-1]["name"] == "RGB par #4", "a removed one's number isn't reused while later ones remain")
+	# The Add Fixture button, with its Name field empty.
+	panel.profile_option.selected = 0
+	panel.fixture_name_edit.text = ""
+	panel._on_add_fixture_pressed()
+	var model: String = panel.available_profiles[0].model
+	ok(panel.patched_fixtures[-1]["name"] == model + " #1", "Add Fixture with no name: %s" % panel.patched_fixtures[-1]["name"])
+	var title: Label = panel.fixtures_vbox.get_child(panel.fixtures_vbox.get_child_count() - 1) \
+		.find_children("*", "Label", true, false)[0]
+	ok(title.text.begins_with(model + " #1  (ch ") and title.text.count(model) == 1 and model in title.tooltip_text,
+		"the list shows just its name (%s); the model's in the tooltip" % title.text)
+	main.queue_free()
+	await process_frame
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(STORE))
 
 
 func _artnet_count() -> int:
