@@ -697,6 +697,14 @@ func _test_structure() -> void:
 	tl.structure_bar().structure_edited.emit()      # as the bar does for any edit
 	tl.open(wav, song)
 	ok(tl.structure() == a and a.sections[0]["label"] == "Bridge", "reopening keeps the (edited) structure")
+
+	# Another song: the structure's locked again (the same one: left as it is).
+	lock.pressed.emit()
+	tl.open(wav, song)
+	ok(not tl.is_structure_locked(), "reopening the same song leaves it unlocked")
+	tl.open("user://_another_song.wav")
+	ok(tl.is_structure_locked() and not sb.editable and lock.glyph == MusicTimeline.TransportButton.Glyph.LOCKED,
+		"opening another song locks it again")
 	tl.queue_free()
 
 

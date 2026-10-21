@@ -335,6 +335,7 @@ func open(path: String, song: VirtualDjDatabase.Song = null) -> void:
 		_stop_playback()
 		flush()                 # leaving the last song: save its timelines
 		_selection.clear()
+		set_structure_locked(true)      # a new song's structure starts locked
 	_path = path
 	_song = song
 	_set_analysis(null)
