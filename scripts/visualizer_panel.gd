@@ -5,11 +5,17 @@ extends Control
 ## fixture to select it, drag it on the floor or type its position, add
 ## trusses, and set the haze / room.
 
+## Each room's walls and backdrop are tinted (not black), lit enough by the
+## ambient light and work light that the fixtures' bodies stand out
+## against them, and still dark enough for the beams to show.
 const ROOMS := {
-	"Black Box": {"floor": Vector2(26, 20), "wall": Color(0.05, 0.05, 0.06), "haze": 0.015},
-	"Club": {"floor": Vector2(16, 13), "wall": Color(0.04, 0.03, 0.06), "haze": 0.03},
-	"Arena": {"floor": Vector2(44, 30), "wall": Color(0.06, 0.06, 0.07), "haze": 0.008},
+	"Black Box": {"floor": Vector2(26, 20), "wall": Color(0.16, 0.17, 0.22), "sky": Color(0.10, 0.11, 0.15), "haze": 0.015},
+	"Club": {"floor": Vector2(16, 13), "wall": Color(0.20, 0.13, 0.24), "sky": Color(0.12, 0.08, 0.15), "haze": 0.03},
+	"Arena": {"floor": Vector2(44, 30), "wall": Color(0.13, 0.17, 0.24), "sky": Color(0.08, 0.11, 0.16), "haze": 0.008},
 }
+const FLOOR_COLOUR := Color(0.20, 0.20, 0.23)
+const AMBIENT_ENERGY := 0.35
+const WORK_LIGHT_ENERGY := 0.5
 const HAZE_MAX := 0.05
 
 ## "Dock to Main" button (shown only while floating) — the shell moves
@@ -125,10 +131,10 @@ func _build_world() -> void:
 	var we := WorldEnvironment.new()
 	_env = Environment.new()
 	_env.background_mode = Environment.BG_COLOR
-	_env.background_color = Color(0.02, 0.02, 0.03)
+	_env.background_color = ROOMS[_room]["sky"]
 	_env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	_env.ambient_light_color = Color(0.5, 0.5, 0.55)
-	_env.ambient_light_energy = 0.045
+	_env.ambient_light_energy = AMBIENT_ENERGY
 	_env.tonemap_mode = Environment.TONE_MAPPER_ACES
 	_env.tonemap_exposure = 1.0
 	_env.glow_enabled = true
@@ -146,7 +152,7 @@ func _build_world() -> void:
 
 	_work_light = DirectionalLight3D.new()
 	_work_light.rotation_degrees = Vector3(-55, -30, 0)
-	_work_light.light_energy = 0.12
+	_work_light.light_energy = WORK_LIGHT_ENERGY
 	_work_light.light_color = Color(0.9, 0.92, 1.0)
 	_work_light.shadow_enabled = false
 	_world.add_child(_work_light)
@@ -238,7 +244,7 @@ func _build_overlay() -> void:
 	_worklight_check = CheckButton.new()
 	_worklight_check.text = "Work light"
 	_worklight_check.button_pressed = true
-	_worklight_check.toggled.connect(func(on: bool): _work_light.light_energy = 0.12 if on else 0.0)
+	_worklight_check.toggled.connect(func(on: bool): _work_light.light_energy = WORK_LIGHT_ENERGY if on else 0.0)
 	r1.add_child(_worklight_check)
 
 	_shadow_check = CheckButton.new()
@@ -905,10 +911,11 @@ func _apply_room(name: String) -> void:
 	var r: Dictionary = ROOMS[name]
 	var fs: Vector2 = r["floor"]
 	(_floor.mesh as PlaneMesh).size = fs
-	(_floor.material_override as StandardMaterial3D).albedo_color = Color(0.08, 0.08, 0.09)
+	(_floor.material_override as StandardMaterial3D).albedo_color = FLOOR_COLOUR
 	(_wall.mesh as PlaneMesh).size = Vector2(fs.x, 8.0)
 	_wall.position = Vector3(0, 4.0, -fs.y * 0.5)
 	(_wall.material_override as StandardMaterial3D).albedo_color = r["wall"]
+	_env.background_color = r["sky"]
 	_haze_slider.value = float(r["haze"]) / HAZE_MAX
 	_env.volumetric_fog_density = float(r["haze"])
 	for i in range(_room_option.item_count):
@@ -978,7 +985,7 @@ func from_dict(d: Dictionary) -> void:
 		_env.volumetric_fog_density = float(d["haze"]) * HAZE_MAX
 	if d.has("work_light"):
 		_worklight_check.button_pressed = bool(d["work_light"])
-		_work_light.light_energy = 0.12 if _worklight_check.button_pressed else 0.0
+		_work_light.light_energy = WORK_LIGHT_ENERGY if _worklight_check.button_pressed else 0.0
 	if d.has("shadows"):
 		_shadow_check.button_pressed = bool(d["shadows"])
 		_set_shadows(_shadow_check.button_pressed)
