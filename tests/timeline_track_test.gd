@@ -1684,6 +1684,11 @@ func _test_collapse() -> void:
 		and tl.selection().spans_for("b1/h1", TimelineTrack.Row.DIMMER).is_empty()
 		and tl.selection().spans_for("p1", TimelineTrack.Row.DIMMER).size() == 1, "its and its heads' rows leave the selection, the others' stay")
 	ok(not tl._row_list().any(func(e): return e["track"] == b1), "...and area selections pass it by")
+	ok(tl.has_unsaved_timelines() and not tl.can_undo(), "saved with the timelines, but not an undo step")
+	tl._collect()
+	var saved: Dictionary = tl.song_data()["tracks"]
+	ok(saved.get("b1", {}).get("collapsed") == true and saved.get("b1/h1", {}).get("collapsed") == true
+		and not saved.get("p1", {}).has("collapsed"), "in the song's timelines (%s)" % str(saved.keys()))
 	ok(t["b1/h1"].collapsed_name() == "Bar 1 · Head 2" and b1.collapsed_name() == "Bar 1", "the name on one line")
 	var m := b1.collapsed_button_rect(NP.MUTE)
 	var s2 := b1.collapsed_button_rect(NP.SOLO)
@@ -1708,6 +1713,8 @@ func _test_collapse() -> void:
 	ok(not b1.collapsed and plate.visible and b1.custom_minimum_size.y == full_h, "a click on the bar: expanded")
 	ok(not t["b1/h0"].collapsed and not t["b1/h1"].collapsed and t["b1/h1"].get_parent().get_child(1).visible,
 		"...its heads too")
+	tl._collect()
+	ok(not tl.song_data()["tracks"].get("b1", {}).has("collapsed"), "...and no longer saved as collapsed")
 	# A head on its own.
 	var h1: TimelineTrack = t["b1/h1"]
 	var hp: TimelineTrack.NamePlate = h1.get_parent().get_child(1)

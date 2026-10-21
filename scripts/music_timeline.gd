@@ -89,9 +89,6 @@ var _fixture_scroll: ScrollContainer
 var _fixture_list: VBoxContainer
 var _fixture_empty: Label
 var _fixture_tracks: Array[TimelineTrack] = []
-## Track key -> true: collapsed (kept through patch changes and other
-## songs, for the session).
-var _collapsed := {}
 ## The show's named positions (set by the shell): the Position submenu's
 ## choices, and what the position rows draw in.
 var positions: PositionLibrary:
@@ -1979,7 +1976,7 @@ func _rebuild_fixture_tracks() -> void:
 			tr.strobe_segments = _spans_from(saved.get(spec["key"], {}).get("strobe", []))
 			tr.position_segments = _pos_from(saved.get(spec["key"], {}).get("position", []))
 			tr.movement_segments = _moves_from(saved.get(spec["key"], {}).get("movement", []))
-			tr.collapsed = _collapsed.has(spec["key"])
+			tr.collapsed = bool(saved.get(spec["key"], {}).get("collapsed", false))
 			tr.mute = bool(saved.get(spec["key"], {}).get("mute", false))
 			tr.solo = bool(saved.get(spec["key"], {}).get("solo", false))
 			tr.positions = positions
@@ -2094,7 +2091,7 @@ func _collect() -> void:
 			entry.erase("strobe")
 		else:
 			entry["strobe"] = _spans_to(tr.strobe_segments)
-		for flag in ["mute", "solo"]:
+		for flag in ["mute", "solo", "collapsed"]:
 			if tr.get(flag):
 				entry[flag] = true
 			else:
@@ -2151,10 +2148,9 @@ func _on_collapse_toggled(tr: TimelineTrack, plate: Control) -> void:
 			other.collapsed = tr.collapsed
 			(plate if other == tr else other.get_parent().get_child(1)).visible = not tr.collapsed
 			if tr.collapsed:
-				_collapsed[k] = true
 				gone[k] = true
-			else:
-				_collapsed.erase(k)
+	if _path != "":
+		_dirty = true                   # saved with the timelines (not an undo step)
 	if gone.is_empty():
 		return
 	var blocks: Array = []
@@ -2212,7 +2208,7 @@ func _on_structure_edited() -> void:
 # ------------------------------------------------------------ UNDO / REDO --
 
 ## The open song's timelines as they stand: {tracks, structure?} — less
-## mute / solo, which aren't edits (undo leaves them be).
+## mute / solo / collapsed, which aren't edits (undo leaves them be).
 func _snapshot() -> Dictionary:
 	_collect()
 	var d := song_data()
@@ -2221,6 +2217,7 @@ func _snapshot() -> Dictionary:
 		var entry: Dictionary = snap["tracks"][key]
 		entry.erase("mute")
 		entry.erase("solo")
+		entry.erase("collapsed")
 		if entry.is_empty():
 			snap["tracks"].erase(key)
 	if d.get("structure") is Dictionary:
@@ -2296,7 +2293,7 @@ func _restore(snap: Dictionary) -> void:
 		tr.strobe_segments = _spans_from(tracks.get(String(tr.get_meta("key")), {}).get("strobe", []))
 		tr.position_segments = _pos_from(tracks.get(String(tr.get_meta("key")), {}).get("position", []))
 		tr.movement_segments = _moves_from(tracks.get(String(tr.get_meta("key")), {}).get("movement", []))
-	_collect()                          # the tracks' mute / solo back in
+	_collect()                          # the tracks' mute / solo / collapsed back in
 	if _struct_cache.has(_path):
 		_apply_saved_structure(_path, _struct_cache[_path])
 		_set_structure(_struct_cache[_path])

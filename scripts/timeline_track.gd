@@ -213,7 +213,7 @@ var silenced := false:
 			queue_redraw()
 			mix_changed.emit()
 ## Collapsed: no rows, just a bar styled as its name plate — the name at
-## the left, M / S at the right. Still plays.
+## the left, M / S at the right. Still plays. Saved with the timelines.
 var collapsed := false:
 	set(v):
 		if v != collapsed:
