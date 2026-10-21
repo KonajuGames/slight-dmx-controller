@@ -1971,6 +1971,7 @@ func _rebuild_fixture_tracks() -> void:
 			row.add_child(tr)
 			var plate := TimelineTrack.NamePlate.new()
 			plate.track = tr
+			plate.fill = fx.get("colour", TimelineTrack.NamePlate.FILL)
 			plate.custom_minimum_size = Vector2(plate_w, 0)
 			row.add_child(plate)
 			_fixture_list.add_child(row)

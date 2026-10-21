@@ -13,6 +13,8 @@ var mode := 0
 var fixture_id := 0
 var display_name := ""
 var profile: FixtureProfile
+## The body's colour: its model's (UniversePanel.MODEL_COLOURS). Set before setup().
+var body_colour := Color(0.14, 0.14, 0.14)
 
 var selected := false: set = _set_selected
 var shadows := false: set = _set_shadows
@@ -141,6 +143,7 @@ func _spawn_geo(node: Dictionary, parent: Node3D, mdir: String, mmap: Dictionary
 	if mkey != "" and mmap.has(mkey):
 		var scene := _load_glb("%s/%s" % [mdir, mmap[mkey]])
 		if scene:
+			_tint(scene)
 			n.add_child(scene)
 
 	if String(node.get("kind", "")) == "beam":
@@ -162,12 +165,27 @@ static func _load_glb(path: String) -> Node3D:
 	return scene if scene is Node3D else null
 
 
+## Paint a glTF model's surfaces in body_colour (keeping their textures and
+## finish).
+func _tint(scene: Node3D) -> void:
+	for mi in scene.find_children("*", "MeshInstance3D", true, false):
+		var inst := mi as MeshInstance3D
+		if inst.mesh == null:
+			continue
+		for s in range(inst.mesh.get_surface_count()):
+			var mat := inst.get_active_material(s)
+			if mat is BaseMaterial3D:
+				var m := (mat as BaseMaterial3D).duplicate() as BaseMaterial3D
+				m.albedo_color = body_colour
+				inst.set_surface_override_material(s, m)
+
+
 # ------------------------------------------------------- SCHEMATIC BODY --
 
-func _metal(shade := 0.14) -> StandardMaterial3D:
+func _metal() -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
-	m.albedo_color = Color(shade, shade, shade)
-	m.metallic = 0.55
+	m.albedo_color = body_colour
+	m.metallic = 0.3
 	m.roughness = 0.5
 	return m
 

@@ -1318,7 +1318,7 @@ class NamePlate:
 
 	const FILL := Color(0.20, 0.20, 0.24)
 	## A head's plate is a shade darker than its fixture's.
-	const HEAD_FILL := Color(0.15, 0.15, 0.18)
+	const HEAD_DARKEN := 0.25
 	const BORDER := Color(0, 0, 0, 0.6)
 	const TEXT := Color(0.85, 0.85, 0.9)
 	const FONT_SIZE := 12
@@ -1328,6 +1328,11 @@ class NamePlate:
 	var track: TimelineTrack:
 		set(v):
 			track = v
+			queue_redraw()
+	## The plate's colour: a fixture's model colour (UniversePanel.MODEL_COLOURS).
+	var fill := FILL:
+		set(v):
+			fill = v
 			queue_redraw()
 
 	func _ready() -> void:
@@ -1358,7 +1363,7 @@ class NamePlate:
 
 	func _draw() -> void:
 		var head := track != null and track.target == TimelineTrack.Target.HEAD
-		draw_rect(Rect2(Vector2.ZERO, size), HEAD_FILL if head else FILL)
+		draw_rect(Rect2(Vector2.ZERO, size), fill.darkened(HEAD_DARKEN) if head else fill)
 		draw_rect(Rect2(Vector2.ZERO, size), BORDER, false, 1.0)
 		var text := lines()
 		if text.is_empty():

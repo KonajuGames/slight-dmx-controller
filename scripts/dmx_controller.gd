@@ -623,6 +623,7 @@ func _add_universe_tab(sender: ArtNetUniverse) -> UniversePanel:
 			for f in p.patched_fixtures:
 				names.append(String(f["name"]))
 		return names
+	panel.panels_cb = func(): return _panels
 	panel.patch_changed.connect(_on_patch_changed)
 	universe_tabs.add_child(panel)
 	_panels.append(panel)
@@ -765,6 +766,8 @@ func _list_patched_fixtures() -> Array:
 
 
 func _on_patch_changed() -> void:
+	for p in _panels:
+		p.recolour()                          # a model's colour can move with the patch
 	if groups_panel:
 		groups_panel.sync_to_patch()
 	if viz_panel:
@@ -835,12 +838,14 @@ func _edit_playback_layer(n: int) -> Array:
 ## category group (1-4) for show generation.
 func _timeline_fixtures() -> Array:
 	var out: Array = []
+	var colours := UniversePanel.model_colours(_panels)
 	for ui in range(_panels.size()):
 		for fx in _panels[ui].patched_fixtures:
 			out.append({"key": String(fx["uid"]), "name": String(fx["name"]),
 				"profile": fx["profile"], "mode": int(fx.get("mode", 0)),
 				"category": String(fx.get("category", "")),
-				"category_group": int(fx.get("category_group", 1))})
+				"category_group": int(fx.get("category_group", 1)),
+				"colour": colours[(fx["profile"] as FixtureProfile).full_name()]})
 	return out
 
 

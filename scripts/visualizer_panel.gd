@@ -799,10 +799,12 @@ func rebuild() -> void:
 	for c in _fixture_root.get_children():
 		c.queue_free()
 	var want_shadows := _shadow_check.button_pressed if _shadow_check else false
+	var colours := UniversePanel.model_colours(panels)
 	for u in range(panels.size()):
 		for f in panels[u].patched_fixtures:
 			var fv := FixtureView.new()
 			fv.shadows = want_shadows
+			fv.body_colour = colours[(f["profile"] as FixtureProfile).full_name()]
 			_fixture_root.add_child(fv)
 			fv.setup(u, int(f["start"]), int(f.get("mode", 0)),
 				f["profile"], int(f["id"]), String(f["name"]))

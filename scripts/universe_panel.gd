@@ -24,6 +24,26 @@ var profile_action_cb := Callable()
 ## so an unnamed fixture's "Model #n" is unique show-wide. Unset: this
 ## universe's names only.
 var patch_names_cb := Callable()
+## Every universe's panel, in order (set by the shell), so each model's
+## colour is the same show-wide. Unset: this universe alone.
+var panels_cb := Callable()
+
+## Backgrounds that tell fixture models apart — in the fixture list, behind
+## a fixture's timelines and on its body in the 3D Visualiser. Dark and
+## muted so light text stays readable on them, ordered so neighbours
+## differ most, and clear of the cornflower blue of selected buttons.
+const MODEL_COLOURS := [
+	Color(0.12, 0.32, 0.33),   # teal
+	Color(0.42, 0.22, 0.13),   # rust
+	Color(0.33, 0.20, 0.38),   # plum
+	Color(0.27, 0.33, 0.13),   # olive
+	Color(0.42, 0.15, 0.24),   # wine
+	Color(0.12, 0.31, 0.19),   # forest
+	Color(0.40, 0.31, 0.10),   # ochre
+	Color(0.22, 0.20, 0.42),   # indigo
+	Color(0.30, 0.24, 0.19),   # brown
+	Color(0.20, 0.27, 0.36),   # slate
+]
 
 var patched_fixtures: Array = []
 ## Fixtures lit full white for finding them (set_highlight()): fixture id
@@ -614,6 +634,37 @@ func add_patched(profile: FixtureProfile, p_start: int, p_mode: int, p_name: Str
 		patch_changed.emit()
 
 
+## Each model patched across `panels` (UniversePanels) -> its colour, keyed
+## by FixtureProfile.full_name(): MODEL_COLOURS in the order the models
+## first appear in the patch, so the models in a show differ (up to the
+## palette's size, then it repeats).
+static func model_colours(panels: Array) -> Dictionary:
+	var out := {}
+	for p in panels:
+		for fx in p.patched_fixtures:
+			var key := (fx["profile"] as FixtureProfile).full_name()
+			if not out.has(key):
+				out[key] = MODEL_COLOURS[out.size() % MODEL_COLOURS.size()]
+	return out
+
+
+static func model_colour(panels: Array, profile: FixtureProfile) -> Color:
+	return model_colours(panels).get(profile.full_name(), MODEL_COLOURS[0])
+
+
+## Colour every fixture row by its model (call when the patch, here or in
+## another universe, changes).
+func recolour() -> void:
+	var colours := model_colours(panels_cb.call() if panels_cb.is_valid() else [self])
+	for row in fixtures_vbox.get_children():
+		if row.has_meta("model"):
+			var sb = get_theme_stylebox("panel", "PanelContainer").duplicate()
+			if not sb is StyleBoxFlat:
+				sb = StyleBoxFlat.new()
+			sb.bg_color = colours.get(String(row.get_meta("model")), MODEL_COLOURS[0])
+			row.add_theme_stylebox_override("panel", sb)
+
+
 func _on_remove_fixture(fixture_id: int) -> void:
 	set_highlight(fixture_id, false)
 	for i in range(patched_fixtures.size()):
@@ -638,6 +689,7 @@ func _refresh_fixtures_vbox() -> void:
 			sender.remove_virtual_dimmer(key)
 	for fixture in patched_fixtures:
 		fixtures_vbox.add_child(_build_fixture_row(fixture))
+	recolour()
 
 
 ## Builds one fixture's control panel for its selected mode:
@@ -657,6 +709,7 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 	var chans: Array = profile.channels_for_mode(mode)
 
 	var panel := PanelContainer.new()
+	panel.set_meta("model", profile.full_name())   # its background (recolour())
 	var vbox := VBoxContainer.new()
 	panel.add_child(vbox)
 

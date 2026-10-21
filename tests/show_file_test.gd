@@ -34,6 +34,7 @@ func _run() -> void:
 	await _test_groups_by_uid()
 	await _test_new_show()
 	await _test_default_names()
+	await _test_model_colours()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
 
@@ -597,6 +598,54 @@ func _test_default_names() -> void:
 		.find_children("*", "Label", true, false)[0]
 	ok(title.text.begins_with(model + " #1  (ch ") and title.text.count(model) == 1 and model in title.tooltip_text,
 		"the list shows just its name (%s); the model's in the tooltip" % title.text)
+	main.queue_free()
+	await process_frame
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(STORE))
+
+
+## The fixture list's row backgrounds, in order.
+func _row_colours(panel) -> Array:
+	var out: Array = []
+	for row in panel.fixtures_vbox.get_children():
+		if not row.is_queued_for_deletion():
+			out.append((row.get_theme_stylebox("panel") as StyleBoxFlat).bg_color)
+	return out
+
+
+func _test_model_colours() -> void:
+	print("- Model colours")
+	var main: Control = load("res://main.tscn").instantiate()
+	main.last_show_store = STORE
+	root.add_child(main)
+	await process_frame
+	var dim := FixtureProfile.new("dim", "Dimmer", [{"name": "Dimmer", "role": "DIMMER"}])
+	var panel = main._panels[0]
+	var C: Array = panel.MODEL_COLOURS
+	panel.add_patched(_rgb(), 0, 0, "", Vector3.ZERO, Vector3.ZERO)
+	panel.add_patched(_bar(), 3, 0, "", Vector3.ZERO, Vector3.ZERO)
+	panel.add_patched(_rgb(), 9, 0, "", Vector3.ZERO, Vector3.ZERO)
+	main._on_add_universe()
+	main._panels[1].add_patched(dim, 0, 0, "", Vector3.ZERO, Vector3.ZERO)
+	main._panels[1].add_patched(_bar(), 1, 0, "", Vector3.ZERO, Vector3.ZERO)
+	await process_frame
+	ok(_row_colours(panel) == [C[0], C[1], C[0]], "a model's rows share a colour, in the order the models appear")
+	ok(_row_colours(main._panels[1]) == [C[2], C[1]], "...across universes")
+	var fills: Array = []
+	for p in main.music_panel.timeline()._fixture_list.get_children():
+		if not p.is_queued_for_deletion() and p.get_child_count() == 2:
+			fills.append(p.get_child(1).fill)
+	# The bar's two heads are timelines of their own, in its colour too.
+	ok(fills == [C[0], C[1], C[1], C[1], C[0], C[2], C[1], C[1], C[1]], "the timelines' plates: %s" % str(fills))
+	var bodies: Array = []
+	for fv in main.viz_panel._fixture_root.get_children():
+		if "body_colour" in fv and not fv.is_queued_for_deletion():
+			bodies.append(fv.body_colour)
+	ok(bodies == [C[0], C[1], C[0], C[2], C[1]], "the 3D Visualiser's bodies")
+	# Removing the first RGB par leaves the bar first: the colours follow.
+	panel._on_remove_fixture(panel.patched_fixtures[0]["id"])
+	await process_frame
+	ok(_row_colours(panel) == [C[0], C[1]] and _row_colours(main._panels[1]) == [C[2], C[0]],
+		"removing a fixture recolours every universe")
 	main.queue_free()
 	await process_frame
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(STORE))
