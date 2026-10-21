@@ -189,7 +189,9 @@ hangs every patched fixture in a tidy grid to start from; drag a fixture
 on the floor (or type exact X/Y/Z and heading/tilt) to place it precisely.
 Got it wrong? **Undo** and **Redo** (or Ctrl+Z / Ctrl+Y with the pointer
 over the visualizer) step back and forth through your moves — a whole
-drag, each typed value, or an Auto-arrange is one step each. **Add Truss** and **Load Model…** bring in rigging and set pieces. **Haze**
+drag, each typed value, or an Auto-arrange is one step each. Any fixture
+with pan or tilt channels hangs in a moving yoke and follows them,
+whatever its category. **Add Truss** and **Load Model…** bring in rigging and set pieces. **Haze**
 adds real volumetric fog so beams show up in the air; **Room** switches
 between a few preset spaces. **Screenshot** and **Record** save a still or
 an MP4 straight from this view. Drag the **3D Visualizer** tab off the tab
@@ -225,7 +227,8 @@ timeline (select a folder to go back). It opens fully zoomed out:
   waveform, the bar ruler or any timeline to move it.
 - Above the waveform is the song's **structure** — Intro, Verse, Chorus
   and so on — worked out in the background when the song opens. It's
-  locked by default; click the padlock to fix a section border the
+  locked by default (and locks again whenever you open another song);
+  click the padlock to fix a section border the
   analyser put slightly wrong (drag it), or right-click a section to
   relabel, split or delete it. Right-click > **Snapping** chooses
   whether borders and selections snap to bars, beats or nothing.
@@ -262,6 +265,14 @@ each time, and the last time the loudest one comes round is the
 finale, with everything. Not keen on the result? Click **Generate**
 again for another variation. Each press replaces what the timelines
 had, as a single undo step — a good starting point to edit by hand.
+
+**Generate just part of it.** With areas selected on the timelines (see
+*Select, then edit* below), **Generate** only fills those areas, row by
+row, and leaves the rest of the song as it was — handy for redoing one
+chorus without losing the edits around it. **Shift**-click **Generate**
+to analyse the song's structure afresh first (dropping any changes you
+made to it), then generate from the new structure; both happen as one
+undo step, and if the analysis fails the old structure is kept.
 
 **Generate casts each fixture by its category** (chosen in the Patch
 tab). Washes carry the bulk of the colour. Movers carry the movement,
@@ -322,6 +333,31 @@ elsewhere — a ghost shows where it will land.
 | **Ctrl+Z / Ctrl+Y** | Undo / redo (each song keeps its own history, up to 100 steps) |
 | **Ctrl+A** | Select everything |
 | **Escape** or **Ctrl+D** | Clear the selection |
+
+**Mute, solo and tidy up.** Each timeline's name plate, at the right, has
+an **M** (mute) button, and every one but the master's an **S** (solo).
+
+- **Mute** leaves a timeline out of playback. Muting the master stops
+  everything; muting a fixture mutes its heads too; muting a head
+  silences just that head.
+- **Solo**: while any timeline is soloed, only the soloed ones play. A
+  soloed head still gets its fixture's and the master's timelines, since
+  it builds on them.
+- Timelines left out are drawn faded, and their channels are left to the
+  console, as if the song didn't cover them.
+
+Click a fixture's or head's name plate (away from M / S) to **collapse**
+its timeline to a slim bar with its name — collapsing a fixture folds
+its heads away with it, though each head can then be expanded on its
+own. Click the bar to expand it again. A collapsed timeline still plays,
+but can't be edited or selected, so selections pass it by. It's a quick
+way to get the fixtures you aren't working on out of the way.
+
+![XA-400 BSW #1 soloed, so everything else is faded; #2 also muted, and #3 and #4 collapsed to name bars](img/15-mute-solo-collapse.png)
+
+Mute, solo and collapse are saved with each song's timelines (so every
+song keeps its own layout) and DJ Perform Mode plays the song the same
+way, but they aren't undo steps — Ctrl+Z leaves them as they are.
 
 A song's timelines are saved automatically when you leave it — open
 another song, switch view, or close the app — and with **Save Show**.
