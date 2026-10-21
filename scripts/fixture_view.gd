@@ -83,6 +83,14 @@ func _resolve_category() -> String:
 	return "generic"
 
 
+## Whether this mode has a PAN or TILT channel.
+func _pans_or_tilts() -> bool:
+	for ch in profile.channels_for_mode(mode):
+		if String(ch["role"]) in ["PAN", "TILT"]:
+			return true
+	return false
+
+
 ## [{ pos: Vector3, rot: Vector3 (radians) }] — one per head, from the
 ## profile. A single implicit head when the fixture has no RGB triplets.
 func _head_placements() -> Array:
@@ -213,8 +221,13 @@ func _cyl(rt: float, rb: float, h: float, mat: Material) -> MeshInstance3D:
 
 func _build_schematic() -> void:
 	var metal := _metal()
+	# Anything with pan or tilt (a beam, a moving wash, ...) hangs in a
+	# yoke that follows them — whatever its category says, bars aside.
+	var kind := _category
+	if _pans_or_tilts() and not kind in ["moving_head", "scanner", "strip", "bar", "pixel_bar"]:
+		kind = "moving_head"
 
-	match _category:
+	match kind:
 		"moving_head", "scanner":
 			add_child(_cyl(0.13, 0.15, 0.10, metal))
 			_yoke = Node3D.new()
@@ -230,7 +243,7 @@ func _build_schematic() -> void:
 			_head.position.y = 0.22
 			_yoke.add_child(_head)
 			_head.add_child(_box(Vector3(0.24, 0.20, 0.24), metal))
-			_build_heads(_head, Vector3(0, 0, -0.13), true, false)
+			_build_heads(_head, Vector3(0, 0, -0.13), true, false, 32.0 if _category == "wash" else 0.0)
 		"blinder", "strobe":
 			add_child(_box(Vector3(0.55, 0.38, 0.12), metal))
 			_build_heads(self, Vector3(0, 0, -0.07), false, true, 65.0)
