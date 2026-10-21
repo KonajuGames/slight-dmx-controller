@@ -127,6 +127,7 @@ var _gen_btn: TransportButton
 var _structure_locked := true
 var _struct_cache: Dictionary = {}   # path -> SongAnalysis (with any edits)
 var _generated: Dictionary = {}      # path -> times Generate has run on it (the next variation)
+var _regenerate: Dictionary = {}     # path -> true: generate once its fresh structure is in (Shift+Generate)
 var _button_col: Control
 var _overview: WaveHeatmap
 var _box: ViewBox
@@ -267,8 +268,12 @@ func _ready() -> void:
 	buttons.add_child(_lock_btn)
 	_gen_btn = TransportButton.new()
 	_gen_btn.glyph = TransportButton.Glyph.GENERATE
-	_gen_btn.tooltip_text = "Generate a light show into the timelines from this song's structure, tempo and energy — press again for another variation (replaces them, or just the selected areas; Ctrl+Z undoes)"
-	_gen_btn.pressed.connect(generate_show)
+	_gen_btn.tooltip_text = "Generate a light show into the timelines from this song's structure, tempo and energy — press again for another variation (replaces them, or just the selected areas; Ctrl+Z undoes). Shift+click analyses the song structure afresh first"
+	_gen_btn.pressed.connect(func():
+		if Input.is_key_pressed(KEY_SHIFT):
+			reanalyse_and_generate()
+		else:
+			generate_show())
 	buttons.add_child(_gen_btn)
 	for b in [_reset_btn, _play_btn, _lock_btn, _gen_btn]:
 		b.focus_mode = Control.FOCUS_NONE
@@ -2442,6 +2447,20 @@ func generate_show() -> bool:
 	return true
 
 
+## Shift+Generate: analyse the song's structure afresh (dropping any edits
+## to it), then generate from it once that's in — the new structure and
+## the show as one undo step. The old structure stays if the analysis
+## fails. Returns whether it started.
+func reanalyse_and_generate() -> bool:
+	if _path == "" or not _struct_cache.has(_path) or not FileAccess.file_exists(_path) \
+			or not SongAnalyzer.fast_available() \
+			or (SongAnalyzer.is_os_format(_path) and not SongAnalyzer.os_decoding_available()):
+		return false
+	_regenerate[_path] = true
+	_load_structure(_path, true)
+	return true
+
+
 ## Put a generated `show` ({track key: {dimmer, colour, ...}}) into the
 ## selected areas only, row by row (each row's overlapping spans merged
 ## first), leaving the timelines outside them as they were. The tracks
@@ -2516,8 +2535,9 @@ func _update_structure_buttons() -> void:
 
 ## Analyse `path`'s structure in the background (cached per track, edits
 ## included). Needs the native extension (seconds; no muted playback).
-func _load_structure(path: String) -> void:
-	if _struct_cache.has(path):
+## `fresh`: analyse it again even if it's cached.
+func _load_structure(path: String, fresh := false) -> void:
+	if _struct_cache.has(path) and not fresh:
 		_set_structure(_struct_cache[path])
 		return
 	_set_structure(null)
@@ -2541,8 +2561,11 @@ func _load_structure(path: String) -> void:
 		_structure_ready(path, a, song))
 	an.failed.connect(func(m: String):
 		an.queue_free()
+		_regenerate.erase(path)
 		if path == _path:
 			_structure.placeholder = "couldn't analyse the structure: " + m.trim_suffix(".")
+			if _struct_cache.has(path):
+				_set_structure(_struct_cache[path])      # re-analysing: keep the old one
 			_structure.queue_redraw())
 	an.analyse(path)
 
@@ -2550,10 +2573,18 @@ func _load_structure(path: String) -> void:
 func _structure_ready(path: String, a: SongAnalysis, song: VirtualDjDatabase.Song) -> void:
 	if song != null:
 		apply_vdj_grid(a, song)
+	# Re-analysed for Shift+Generate: its edits go (an edit, undone with
+	# the show) — unless the song's since been left.
+	var regenerate: bool = _regenerate.has(path) and path == _path
+	_regenerate.erase(path)
+	if regenerate:
+		song_data().erase("structure")
 	_apply_saved_structure(path, a)
 	_struct_cache[path] = a
 	if path == _path:
 		_set_structure(a)
+	if regenerate and not generate_show():
+		_mark_dirty()
 
 
 func _set_structure(a: SongAnalysis) -> void:

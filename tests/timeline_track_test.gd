@@ -37,6 +37,7 @@ func _run() -> void:
 	_test_clear_dimmer()
 	await _test_delete_selection()
 	await _test_generate_into_selection()
+	await _test_reanalyse_and_generate()
 	_test_dimmer_segments()
 	await _test_copy_paste()
 	await _test_undo_redo()
@@ -602,6 +603,45 @@ func _test_generate_into_selection() -> void:
 	ok(is_equal_approx(par.dimmer_at(15.0), 0.3), "a track with nothing selected is left alone (%s)" % str(par.dimmer_nodes))
 	tl.selection().set_blocks([TimelineSelection.block(PackedStringArray(["par|%d" % R.DIMMER]), 30.0, 40.0)])
 	ok(not tl._splice_show(show, {"par": true}), "a left-out fixture's selected rows are left alone")
+	tl.queue_free()
+	await process_frame
+
+
+func _structure_analysis(label: String) -> SongAnalysis:
+	var a := SongAnalysis.new()
+	a.duration = 40.0
+	a.bpm = 120.0
+	for arr in [a.wave_lo, a.wave_mid, a.wave_hi, a.wave_peak]:
+		arr.resize(4000)
+	a.sections = [{"start": 0.0, "end": 20.0, "label": label, "energy": 0.3, "cluster": 0},
+		{"start": 20.0, "end": 40.0, "label": "Chorus", "energy": 0.9, "cluster": 1}]
+	return a
+
+
+func _test_reanalyse_and_generate() -> void:
+	print("- Shift+Generate re-analyses the structure, then generates")
+	var path := "user://_reanalyse_song.wav"
+	var tl := MusicTimeline.new()
+	root.add_child(tl)
+	tl.size = Vector2(1100, 700)
+	var old := _structure_analysis("Intro")
+	tl._set_analysis(old)
+	tl.open(path)
+	tl._set_analysis(old)
+	tl._structure_ready(path, old, null)
+	await process_frame
+	old.sections[0]["label"] = "Verse"                # an edit to the structure
+	tl._on_structure_edited()
+	var before := tl.master_track().dimmer_nodes
+	ok(not tl.reanalyse_and_generate(), "no such file: nothing to re-analyse")
+	tl._regenerate[path] = true                        # as reanalyse_and_generate() leaves it
+	tl._structure_ready(path, _structure_analysis("Intro"), null)
+	ok(not tl.song_data().has("structure"), "the structure's edits are dropped")
+	ok(tl.structure().sections[0]["label"] == "Intro", "the fresh analysis is shown")
+	ok(tl.master_track().dimmer_nodes != before, "and a show's generated from it")
+	ok(not tl._regenerate.has(path), "only once")
+	ok(tl.undo() and tl.song_data().get("structure", {}).get("sections", [{}])[0].get("label") == "Verse"
+		and tl.master_track().dimmer_nodes == before, "one undo brings back the edited structure and the old show")
 	tl.queue_free()
 	await process_frame
 
