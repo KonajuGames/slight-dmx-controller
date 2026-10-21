@@ -51,6 +51,7 @@ func _run() -> void:
 	await _test_dimmer_inheritance()
 	await _test_off_screen()
 	await _test_mute_solo()
+	await _test_collapse()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
 
@@ -1629,6 +1630,85 @@ func _test_mute_solo() -> void:
 	tl.undo()
 	ok(again["b1"].solo and again["b1/h0"].mute and tl.song_data()["tracks"]["b1"].get("solo") == true,
 		"undoing an edit leaves mute / solo as they are")
+	tl._dirty = false
+	tl.queue_free()
+	await process_frame
+
+
+## A left press at `pos` on `c` (a track or a plate).
+func _tap(c: Control, pos: Vector2) -> void:
+	var e := InputEventMouseButton.new()
+	e.button_index = MOUSE_BUTTON_LEFT
+	e.pressed = true
+	e.position = pos
+	c._gui_input(e)
+
+
+func _test_collapse() -> void:
+	print("- collapsing a timeline")
+	var bar := FixtureProfile.new("bar", "Bar", [{"name": "R", "role": "RED"}, {"name": "G", "role": "GREEN"},
+		{"name": "B", "role": "BLUE"}, {"name": "R", "role": "RED"}, {"name": "G", "role": "GREEN"}, {"name": "B", "role": "BLUE"}])
+	var fixtures := [{"key": "p1", "name": "Par 1", "profile": _par(), "mode": 0},
+		{"key": "b1", "name": "Bar 1", "profile": bar, "mode": 0, "colour": Color(0.3, 0.2, 0.4)}]
+	var tl := MusicTimeline.new()
+	tl.fixtures_provider = func(): return fixtures
+	root.add_child(tl)
+	tl.size = Vector2(1100, 700)
+	var a := SongAnalysis.new()
+	a.duration = 60.0
+	for arr in [a.wave_lo, a.wave_mid, a.wave_hi, a.wave_peak]:
+		arr.resize(6000)
+	tl.open("user://_collapse_song.wav")
+	tl._set_analysis(a)
+	await process_frame
+	var t := {}
+	for tr in tl.fixture_tracks():
+		t[String(tr.get_meta("key"))] = tr
+	var b1: TimelineTrack = t["b1"]
+	var plate: TimelineTrack.NamePlate = b1.get_parent().get_child(1)
+	var NP := TimelineTrack.NamePlate
+	var full_h := b1.custom_minimum_size.y
+	tl.select_all()
+	ok(tl.selection().spans_for("b1", TimelineTrack.Row.DIMMER).size() == 1, "selected all, the bar's rows too")
+
+	# A click on the plate (not on M / S) collapses it.
+	_tap(plate, plate.name_rect().get_center())
+	await process_frame
+	ok(b1.collapsed and not plate.visible and b1.custom_minimum_size.y == TimelineTrack.COLLAPSED_HEIGHT and full_h > 20.0,
+		"a click on the plate: collapsed to a %d px bar, the plate hidden" % TimelineTrack.COLLAPSED_HEIGHT)
+	ok(b1.size.x > t["p1"].size.x, "...the bar across the plate's column too (%.0f / %.0f)" % [b1.size.x, t["p1"].size.x])
+	ok(not t["b1/h0"].collapsed, "...its heads as they were")
+	ok(b1.row_at(Vector2(100, 10)) == -1 and b1.dimmer_polyline().is_empty(), "no rows to edit")
+	ok(tl.selection().spans_for("b1", TimelineTrack.Row.DIMMER).is_empty()
+		and tl.selection().spans_for("p1", TimelineTrack.Row.DIMMER).size() == 1, "its rows leave the selection, the others' stay")
+	ok(not tl._row_list().any(func(e): return e["track"] == b1), "...and area selections pass it by")
+	ok(t["b1/h1"].collapsed_name() == "Bar 1 · Head 2" and b1.collapsed_name() == "Bar 1", "the name on one line")
+	var m := b1.collapsed_button_rect(NP.MUTE)
+	var s2 := b1.collapsed_button_rect(NP.SOLO)
+	ok(m.size.x > 0.0 and s2.position.x > m.end.x and s2.end.x <= b1.size.x and s2.end.x > b1.size.x - 6.0,
+		"M and S at the right end")
+	ok(b1.plate_fill == Color(0.3, 0.2, 0.4), "in the plate's colour")
+
+	# Its M / S still work; a click elsewhere expands it.
+	_tap(b1, m.get_center())
+	ok(b1.collapsed and b1.mute and t["b1/h0"].silenced and tl.has_unsaved_timelines(), "M on the bar: muted, still collapsed")
+	_tap(b1, m.get_center())
+	ok(not b1.mute, "...and back")
+	tl.refresh_fixtures()
+	await process_frame
+	for tr in tl.fixture_tracks():
+		t[String(tr.get_meta("key"))] = tr
+	b1 = t["b1"]
+	plate = b1.get_parent().get_child(1)
+	ok(b1.collapsed and not plate.visible, "still collapsed when the tracks are rebuilt")
+	_tap(b1, Vector2(200, 10))
+	await process_frame
+	ok(not b1.collapsed and plate.visible and b1.custom_minimum_size.y == full_h, "a click on the bar: expanded")
+
+	# Not the master.
+	var mp := tl.master_plate()
+	_tap(mp, mp.name_rect().get_center())
+	ok(not tl.master_track().collapsed and mp.visible, "the master's plate doesn't collapse it")
 	tl._dirty = false
 	tl.queue_free()
 	await process_frame

@@ -65,6 +65,9 @@ signal context_requested(track: TimelineTrack, row: int, global_pos: Vector2, ti
 signal mix_toggled(track: TimelineTrack)
 ## `mute`, `solo` or `silenced` changed (by the user or not).
 signal mix_changed
+## The user collapsed the track (a click on its name plate) or expanded it
+## (a click on the collapsed bar).
+signal collapse_toggled(track: TimelineTrack)
 
 ## The kinds of row (stacked bottom to top in this order: ROW_ORDER).
 enum Row { POSITION, STROBE, MOVEMENT, COLOUR, DIMMER }
@@ -75,6 +78,10 @@ const ROW_ORDER := [Row.POSITION, Row.STROBE, Row.MOVEMENT, Row.COLOUR, Row.DIMM
 const ROW_NAMES := {Row.POSITION: "Position", Row.STROBE: "Strobe", Row.MOVEMENT: "Movement",
 	Row.COLOUR: "Colour", Row.DIMMER: "Dimmer"}
 const ROW_HEIGHT := 10.0
+## A collapsed track's height.
+const COLLAPSED_HEIGHT := 20.0
+## The width of a collapsed bar's M / S buttons.
+const COLLAPSED_BUTTON_WIDTH := 22.0
 const DIMMER_HEIGHT := 80.0
 
 const _BG := [Color(0.10, 0.10, 0.12), Color(0.12, 0.12, 0.14)]
@@ -186,6 +193,7 @@ var mute := false:
 	set(v):
 		if v != mute:
 			mute = v
+			queue_redraw()                  # a collapsed bar's M
 			mix_changed.emit()
 ## Soloed (the plate's S button; not on the master): while any track is,
 ## only the soloed ones play (a soloed fixture's heads too, and a soloed
@@ -194,6 +202,7 @@ var solo := false:
 	set(v):
 		if v != solo:
 			solo = v
+			queue_redraw()
 			mix_changed.emit()
 ## Whether it's left out of playback now, by its own mute / solo or
 ## another's (plays()): drawn faded.
@@ -203,6 +212,19 @@ var silenced := false:
 			silenced = v
 			queue_redraw()
 			mix_changed.emit()
+## Collapsed: no rows, just a bar styled as its name plate — the name at
+## the left, M / S at the right. Still plays.
+var collapsed := false:
+	set(v):
+		if v != collapsed:
+			collapsed = v
+			_fit_height()
+			queue_redraw()
+## The collapsed bar's colour (its name plate's fill).
+var plate_fill := NamePlate.FILL:
+	set(v):
+		plate_fill = v
+		queue_redraw()
 var _selecting := false
 var _dragging_playhead := false
 
@@ -316,7 +338,7 @@ func row_height(r: Row) -> float:
 
 ## A row's rectangle within the track (empty if the track hasn't got it).
 func row_rect(r: Row) -> Rect2:
-	if not has_row(r):
+	if collapsed or not has_row(r):
 		return Rect2()
 	var y := size.y
 	for row in rows:                # bottom to top
@@ -331,6 +353,8 @@ func _fit_height() -> void:
 	var h := 0.0
 	for r in rows:
 		h += row_height(r)
+	if collapsed:
+		h = COLLAPSED_HEIGHT
 	custom_minimum_size = Vector2(custom_minimum_size.x, h)
 
 
@@ -887,6 +911,18 @@ func _replace_tagged(spans: Array, t0: float, t1: float, segments: Array, tag: S
 
 
 func _gui_input(event: InputEvent) -> void:
+	if collapsed:
+		# A press on M / S toggles it; anywhere else expands the track.
+		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			var b := collapsed_button_at(event.position)
+			if b >= 0:
+				toggle_mix(b)
+			else:
+				collapsed = false
+				collapse_toggled.emit(self)
+			accept_event()
+		return
 	# The playhead being dragged: follow it to the release.
 	if _dragging_playhead:
 		if event is InputEventMouseMotion:
@@ -1124,6 +1160,9 @@ func _draw() -> void:
 	_stale = false
 	update_playhead()               # the view may have moved under it
 	update_selection()
+	if collapsed:
+		_draw_collapsed()
+		return
 	var font := get_theme_default_font()
 	var i := 0
 	for row in rows:
@@ -1154,6 +1193,63 @@ func _draw() -> void:
 			_draw_ghost(row, r)
 	if silenced:
 		draw_rect(Rect2(Vector2.ZERO, size), _SILENCED)
+
+
+## Collapsed: the bar, as its name plate — the name (and head) at the left,
+## faded if it's left out of playback, and M / S at the right.
+func _draw_collapsed() -> void:
+	var box := Rect2(Vector2.ZERO, size)
+	draw_rect(box, plate_fill.darkened(NamePlate.HEAD_DARKEN) if target == Target.HEAD else plate_fill)
+	draw_rect(box, NamePlate.BORDER, false, 1.0)
+	var font := get_theme_default_font()
+	for b in NamePlate.buttons_for(self):
+		NamePlate.draw_button(self, font, collapsed_button_rect(b), b, mute if b == NamePlate.MUTE else solo)
+	var fs := NamePlate.FONT_SIZE
+	var room := maxf(collapsed_button_rect(NamePlate.MUTE).position.x - 12.0, 0.0)
+	draw_string(font, Vector2(6.0, size.y * 0.5 + fs * 0.35), collapsed_name(), HORIZONTAL_ALIGNMENT_LEFT, room, fs,
+		NamePlate.TEXT if not silenced else Color(NamePlate.TEXT, 0.4))
+
+
+## The name on the collapsed bar: the plate's lines on one ("Bar 1 · Head 2").
+func collapsed_name() -> String:
+	return " · ".join(title.split("\n", false))
+
+
+## An M / S button's rectangle on the collapsed bar: side by side at its
+## right end (empty when not collapsed, or without it).
+func collapsed_button_rect(which: int) -> Rect2:
+	var bs := NamePlate.buttons_for(self)
+	var i := bs.find(which)
+	if not collapsed or i < 0:
+		return Rect2()
+	var g := NamePlate.BUTTON_GAP
+	var h := minf(NamePlate.BUTTON_HEIGHT, size.y - 2.0 * g)
+	var x := size.x - (bs.size() - i) * (COLLAPSED_BUTTON_WIDTH + g)
+	return Rect2(x, (size.y - h) * 0.5, COLLAPSED_BUTTON_WIDTH, h)
+
+
+## The collapsed bar's button at `pos`, or -1.
+func collapsed_button_at(pos: Vector2) -> int:
+	for b in NamePlate.buttons_for(self):
+		if collapsed_button_rect(b).has_point(pos):
+			return b
+	return -1
+
+
+## Toggle mute (NamePlate.MUTE) or solo (NamePlate.SOLO), as the user.
+func toggle_mix(which: int) -> void:
+	if which == NamePlate.MUTE:
+		mute = not mute
+	else:
+		solo = not solo
+	mix_toggled.emit(self)
+
+
+func _get_tooltip(at: Vector2) -> String:
+	if not collapsed:
+		return tooltip_text
+	var b := collapsed_button_at(at)
+	return NamePlate.button_tip(self, b) if b >= 0 else "Click to expand"
 
 
 ## The moving selection's ghost on this row: the spot it's leaving
@@ -1479,6 +1575,7 @@ class NamePlate:
 			track = v
 			if track != null:
 				track.mix_changed.connect(queue_redraw)
+			mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND if collapsible() else Control.CURSOR_ARROW
 			queue_redraw()
 	## The plate's colour: a fixture's model colour (UniversePanel.MODEL_COLOURS).
 	var fill := FILL:
@@ -1491,9 +1588,36 @@ class NamePlate:
 
 	## The buttons it has: M, and S (not on the master's).
 	func buttons() -> Array:
-		if track == null:
+		return buttons_for(track)
+
+	## The buttons `tr`'s plate (or collapsed bar) has.
+	static func buttons_for(tr: TimelineTrack) -> Array:
+		if tr == null:
 			return []
-		return [MUTE] if track.target == TimelineTrack.Target.MASTER else [MUTE, SOLO]
+		return [MUTE] if tr.target == TimelineTrack.Target.MASTER else [MUTE, SOLO]
+
+	## Whether a click on it collapses its track (a fixture's or a head's;
+	## not the master's).
+	func collapsible() -> bool:
+		return track != null and track.target != TimelineTrack.Target.MASTER
+
+	## An M / S button: lit when on, its letter in the middle.
+	static func draw_button(on_item: CanvasItem, font: Font, r: Rect2, which: int, on: bool) -> void:
+		on_item.draw_rect(r, (MUTE_ON if which == MUTE else SOLO_ON) if on else BUTTON_OFF)
+		on_item.draw_rect(r, BORDER, false, 1.0)
+		var bfs := clampi(int(r.size.y) - 4, 6, 10)
+		var letter := "M" if which == MUTE else "S"
+		var lw := font.get_string_size(letter, HORIZONTAL_ALIGNMENT_LEFT, -1, bfs).x
+		on_item.draw_string(font, Vector2(r.get_center().x - lw * 0.5, r.get_center().y + bfs * 0.35), letter,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, bfs, BUTTON_TEXT_ON if on else TEXT)
+
+	## An M / S button's tooltip on `tr`'s plate or bar.
+	static func button_tip(tr: TimelineTrack, which: int) -> String:
+		if which == MUTE:
+			return "Mute: leave out of playback" + (" (every fixture)" if tr.target == TimelineTrack.Target.MASTER
+				else " (its heads too)" if tr.target == TimelineTrack.Target.FIXTURE else "")
+		return "Solo: play only this" + (" fixture (its unmuted heads too)" if tr.target == TimelineTrack.Target.FIXTURE
+			else " head")
 
 	## A button's rectangle: side by side across the top, as tall as the
 	## plate allows (a lone 10 px row's plate has them small).
@@ -1518,26 +1642,24 @@ class NamePlate:
 		var top := button_rect(MUTE).end.y if track != null else 0.0
 		return Rect2(0.0, top, size.x, maxf(size.y - top, 0.0))
 
+	## A press on M / S toggles it; anywhere else on a fixture's or head's
+	## plate collapses its track.
 	func _gui_input(event: InputEvent) -> void:
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 			var b := button_at(event.position)
-			if b == MUTE:
-				track.mute = not track.mute
-			elif b == SOLO:
-				track.solo = not track.solo
 			if b >= 0:
-				track.mix_toggled.emit(track)
+				track.toggle_mix(b)
+				accept_event()
+			elif collapsible():
+				track.collapsed = true
+				track.collapse_toggled.emit(track)
 				accept_event()
 
 	func _get_tooltip(at: Vector2) -> String:
-		match button_at(at):
-			MUTE:
-				return "Mute: leave out of playback" + (" (every fixture)" if track.target == TimelineTrack.Target.MASTER
-					else " (its heads too)" if track.target == TimelineTrack.Target.FIXTURE else "")
-			SOLO:
-				return "Solo: play only this" + (" fixture (its unmuted heads too)" if track.target == TimelineTrack.Target.FIXTURE
-					else " head")
-		return ""
+		var b := button_at(at)
+		if b >= 0:
+			return button_tip(track, b)
+		return "Click to collapse" if collapsible() else ""
 
 	func title() -> String:
 		return track.title if track != null else ""
@@ -1568,15 +1690,7 @@ class NamePlate:
 		draw_rect(Rect2(Vector2.ZERO, size), BORDER, false, 1.0)
 		var font := get_theme_default_font()
 		for b in buttons():
-			var r := button_rect(b)
-			var on: bool = track.mute if b == MUTE else track.solo
-			draw_rect(r, (MUTE_ON if b == MUTE else SOLO_ON) if on else BUTTON_OFF)
-			draw_rect(r, BORDER, false, 1.0)
-			var bfs := clampi(int(r.size.y) - 4, 6, 10)
-			var letter := "M" if b == MUTE else "S"
-			var lw := font.get_string_size(letter, HORIZONTAL_ALIGNMENT_LEFT, -1, bfs).x
-			draw_string(font, Vector2(r.get_center().x - lw * 0.5, r.get_center().y + bfs * 0.35), letter,
-				HORIZONTAL_ALIGNMENT_LEFT, -1, bfs, BUTTON_TEXT_ON if on else TEXT)
+			draw_button(self, font, button_rect(b), b, track.mute if b == MUTE else track.solo)
 		var text := lines()
 		if text.is_empty():
 			return
@@ -1608,6 +1722,8 @@ class SelectionLayer:
 	var track: TimelineTrack
 
 	func _draw() -> void:
+		if track.collapsed:
+			return
 		for row in track.rows:
 			track._draw_selection(self, row, track.row_rect(row))
 
@@ -1620,6 +1736,8 @@ class Playhead:
 	var track: TimelineTrack
 
 	func _draw() -> void:
+		if track.collapsed:
+			return
 		var x := track.playhead_x()
 		if x >= 0.0:
 			draw_line(Vector2(x, 0), Vector2(x, size.y), track.wave.cursor_color, 2.0)

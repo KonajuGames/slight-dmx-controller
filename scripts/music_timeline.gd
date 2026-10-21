@@ -89,6 +89,9 @@ var _fixture_scroll: ScrollContainer
 var _fixture_list: VBoxContainer
 var _fixture_empty: Label
 var _fixture_tracks: Array[TimelineTrack] = []
+## Track key -> true: collapsed (kept through patch changes and other
+## songs, for the session).
+var _collapsed := {}
 ## The show's named positions (set by the shell): the Position submenu's
 ## choices, and what the position rows draw in.
 var positions: PositionLibrary:
@@ -614,6 +617,8 @@ func selection() -> TimelineSelection:
 func _row_list() -> Array:
 	var out: Array = []
 	for tr in Array(_fixture_tracks) + [_master]:
+		if tr.collapsed:
+			continue                    # no rows to select on
 		var rs: Array = tr.rows.duplicate()
 		rs.reverse()                    # rows are kept bottom to top
 		for r in rs:
@@ -1974,6 +1979,7 @@ func _rebuild_fixture_tracks() -> void:
 			tr.strobe_segments = _spans_from(saved.get(spec["key"], {}).get("strobe", []))
 			tr.position_segments = _pos_from(saved.get(spec["key"], {}).get("position", []))
 			tr.movement_segments = _moves_from(saved.get(spec["key"], {}).get("movement", []))
+			tr.collapsed = _collapsed.has(spec["key"])
 			tr.mute = bool(saved.get(spec["key"], {}).get("mute", false))
 			tr.solo = bool(saved.get(spec["key"], {}).get("solo", false))
 			tr.positions = positions
@@ -1988,6 +1994,9 @@ func _rebuild_fixture_tracks() -> void:
 			plate.track = tr
 			plate.fill = fx.get("colour", TimelineTrack.NamePlate.FILL)
 			plate.custom_minimum_size = Vector2(plate_w, 0)
+			plate.visible = not tr.collapsed
+			tr.plate_fill = plate.fill
+			tr.collapse_toggled.connect(_on_collapse_toggled.bind(plate))
 			row.add_child(plate)
 			_fixture_list.add_child(row)
 			_fixture_tracks.append(tr)
@@ -2128,6 +2137,31 @@ func _default_master_line() -> void:
 	var h := _hist()
 	if h["state"] != null:
 		h["state"] = _snapshot()        # undo stops here, with the default line
+
+
+## A track collapsed (to a bar, its plate hidden) or expanded. Collapsed,
+## its rows leave the selection.
+func _on_collapse_toggled(tr: TimelineTrack, plate: Control) -> void:
+	plate.visible = not tr.collapsed
+	var key := String(tr.get_meta("key"))
+	if not tr.collapsed:
+		_collapsed.erase(key)
+		return
+	_collapsed[key] = true
+	var prefix := key + "|"
+	var blocks: Array = []
+	var dropped := false
+	for b in _selection.blocks:
+		var keep := PackedStringArray()
+		for id in b["rows"]:
+			if String(id).begins_with(prefix):
+				dropped = true
+			else:
+				keep.append(id)
+		if not keep.is_empty():
+			blocks.append(TimelineSelection.block(keep, b["t0"], b["t1"]))
+	if dropped:
+		_selection.set_blocks(blocks)
 
 
 ## Mute / solo toggled on a track's plate: saved with the timelines, but
