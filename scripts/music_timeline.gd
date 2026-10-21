@@ -267,7 +267,7 @@ func _ready() -> void:
 	buttons.add_child(_lock_btn)
 	_gen_btn = TransportButton.new()
 	_gen_btn.glyph = TransportButton.Glyph.GENERATE
-	_gen_btn.tooltip_text = "Generate a light show into the timelines from this song's structure, tempo and energy — press again for another variation (replaces them; Ctrl+Z undoes)"
+	_gen_btn.tooltip_text = "Generate a light show into the timelines from this song's structure, tempo and energy — press again for another variation (replaces them, or just the selected areas; Ctrl+Z undoes)"
 	_gen_btn.pressed.connect(generate_show)
 	buttons.add_child(_gen_btn)
 	for b in [_reset_btn, _play_btn, _lock_btn, _gen_btn]:
@@ -2369,7 +2369,8 @@ func set_structure_locked(locked: bool) -> void:
 ## from its structure (sections and their energy), its beat grid / tempo,
 ## the fixtures' rows and the named positions (TimelineGenerator). Each
 ## press makes another variation of the song's show. Replaces what the
-## timelines had, as one undo step. Returns whether it ran.
+## timelines had, as one undo step — with areas selected, only what's in
+## them (_splice_show()). Returns whether it ran.
 func generate_show() -> bool:
 	var a: SongAnalysis = _structure.analysis
 	if a == null or _wave.analysis == null or _path == "":
@@ -2422,6 +2423,14 @@ func generate_show() -> bool:
 	var show := TimelineGenerator.generate(a.sections, beats, _wave.beats_per_bar, _wave.duration(),
 		tracks, ids, _path.get_file(), variation, bar_phase,
 		{"peak": a.wave_peak, "lo": a.wave_lo, "hi": a.wave_hi})
+	if not _selection.is_empty():
+		var skip := {}
+		for tr in [_master] + Array(_fixture_tracks):
+			if left_out.call(tr):
+				skip[String(tr.get_meta("key"))] = true
+		if _splice_show(show, skip):
+			_mark_dirty()
+		return true
 	for tr in [_master] + Array(_fixture_tracks):
 		var c: Dictionary = show.get(String(tr.get_meta("key")), {})
 		tr.dimmer_nodes = c.get("dimmer", PackedVector2Array())
@@ -2431,6 +2440,52 @@ func generate_show() -> bool:
 		tr.movement_segments = c.get("movement", [])
 	_mark_dirty()
 	return true
+
+
+## Put a generated `show` ({track key: {dimmer, colour, ...}}) into the
+## selected areas only, row by row (each row's overlapping spans merged
+## first), leaving the timelines outside them as they were. The tracks
+## keyed in `skip` (left out of generation) are left alone. Returns
+## whether anything changed.
+func _splice_show(show: Dictionary, skip := {}) -> bool:
+	var changed := false
+	var src := TimelineTrack.new()          # the generated rows, to cut spans from
+	for tr in [_master] + Array(_fixture_tracks):
+		var key := String(tr.get_meta("key"))
+		if skip.has(key):
+			continue
+		var c: Dictionary = show.get(key, {})
+		src.target = tr.target
+		src.dimmer_nodes = c.get("dimmer", PackedVector2Array())
+		src.colour_segments = c.get("colour", [])
+		src.strobe_segments = c.get("strobe", [])
+		src.position_segments = c.get("position", [])
+		src.movement_segments = c.get("movement", [])
+		for row in tr.rows:
+			for span in _merged(_selection.spans_for(key, row)):
+				match row:
+					TimelineTrack.Row.DIMMER:
+						# Only where the generated line has values (a fixture /
+						# head may have none there: it inherits).
+						var d: Vector2 = src.dimmer_defined_span(span.x, span.y)
+						if d.x >= 0.0 and tr.replace_dimmer(d.x, d.y, src.dimmer_segment(d.x, d.y)):
+							changed = true
+					TimelineTrack.Row.COLOUR:
+						if tr.replace_colour(span.x, span.y, src.colour_segment(span.x, span.y)):
+							changed = true
+					TimelineTrack.Row.STROBE:
+						if tr.replace_strobe(span.x, span.y, src.strobe_segment(span.x, span.y)):
+							changed = true
+					TimelineTrack.Row.POSITION:
+						if tr.replace_position(span.x, span.y, src.position_segment(span.x, span.y)):
+							changed = true
+					TimelineTrack.Row.MOVEMENT:
+						if tr.replace_movement(span.x, span.y, src.movement_segment(span.x, span.y)):
+							changed = true
+					_:
+						pass
+	src.free()
+	return changed
 
 
 ## How far apart a position's points are: their mean distance from

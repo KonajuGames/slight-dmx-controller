@@ -36,6 +36,7 @@ func _run() -> void:
 	await _test_area_selection()
 	_test_clear_dimmer()
 	await _test_delete_selection()
+	await _test_generate_into_selection()
 	_test_dimmer_segments()
 	await _test_copy_paste()
 	await _test_undo_redo()
@@ -561,6 +562,46 @@ func _test_delete_selection() -> void:
 	ev.pressed = true
 	root.push_input(ev)
 	ok(m.dimmer_nodes == mn, "nothing selected: Delete does nothing")
+	tl.queue_free()
+	await process_frame
+
+
+func _test_generate_into_selection() -> void:
+	print("- Generate with areas selected fills only those")
+	var R := TimelineTrack.Row
+	var fixtures := [{"key": "par", "name": "Par", "profile": _par(), "mode": 0}]
+	var tl := MusicTimeline.new()
+	tl.fixtures_provider = func(): return fixtures
+	root.add_child(tl)
+	tl.size = Vector2(1100, 700)
+	var a := SongAnalysis.new()
+	a.duration = 60.0
+	for arr in [a.wave_lo, a.wave_mid, a.wave_hi, a.wave_peak]:
+		arr.resize(6000)
+	tl._set_analysis(a)
+	tl.open("user://_gen_sel_song.wav")
+	tl._set_analysis(a)
+	tl.refresh_fixtures()
+	await process_frame
+	var m := tl.master_track()
+	var par := tl.fixture_tracks()[0]
+	m.dimmer_nodes = PackedVector2Array([Vector2(0, 0.5), Vector2(60, 0.5)])
+	m.colour_segments = [{"t0": 0.0, "t1": 60.0, "c0": Color.RED, "c1": Color.RED}]
+	par.dimmer_nodes = PackedVector2Array([Vector2(0, 0.3), Vector2(60, 0.3)])
+	var show := {
+		"master": {"dimmer": PackedVector2Array([Vector2(0, 1.0), Vector2(60, 1.0)]),
+			"colour": [{"t0": 0.0, "t1": 60.0, "c0": Color.BLUE, "c1": Color.BLUE}]},
+		"par": {"dimmer": PackedVector2Array([Vector2(0, 0.9), Vector2(60, 0.9)])}}
+	tl.selection().set_blocks([
+		TimelineSelection.block(PackedStringArray(["master|%d" % R.DIMMER, "master|%d" % R.COLOUR]), 10.0, 20.0)])
+	ok(tl._splice_show(show), "reports a change")
+	ok(m.dimmer_at(15.0) == 1.0 and m.dimmer_at(5.0) == 0.5 and m._dimmer_after(20.0) == 0.5,
+		"the master's dimmer: generated inside the area, kept outside")
+	ok(m.segment_colour_at(m.colour_segments, 15.0) == Color.BLUE and m.segment_colour_at(m.colour_segments, 5.0) == Color.RED
+		and m.segment_colour_at(m.colour_segments, 30.0) == Color.RED, "its colour too")
+	ok(is_equal_approx(par.dimmer_at(15.0), 0.3), "a track with nothing selected is left alone (%s)" % str(par.dimmer_nodes))
+	tl.selection().set_blocks([TimelineSelection.block(PackedStringArray(["par|%d" % R.DIMMER]), 30.0, 40.0)])
+	ok(not tl._splice_show(show, {"par": true}), "a left-out fixture's selected rows are left alone")
 	tl.queue_free()
 	await process_frame
 
