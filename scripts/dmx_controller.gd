@@ -808,7 +808,8 @@ func _perform_fixtures() -> Array:
 	for ui in range(_panels.size()):
 		for fx in _panels[ui].patched_fixtures:
 			out.append({"uid": String(fx["uid"]), "u": ui, "start": int(fx["start"]),
-				"profile": fx["profile"], "mode": int(fx.get("mode", 0))})
+				"profile": fx["profile"], "mode": int(fx.get("mode", 0)),
+				"exclude_generate": bool(fx.get("exclude_generate", false))})
 	return out
 
 
@@ -834,8 +835,8 @@ func _edit_playback_layer(n: int) -> Array:
 
 ## Every patched fixture, universe by universe, for the DJ Edit Mode
 ## timeline's per-fixture tracks — keyed by its uid, which the show's saved
-## timelines use — with its category (FixtureProfile.SHOW_CATEGORIES) and
-## category group (1-4) for show generation.
+## timelines use — with its category (FixtureProfile.SHOW_CATEGORIES),
+## category group (1-4) and whether it's left out, for show generation.
 func _timeline_fixtures() -> Array:
 	var out: Array = []
 	var colours := UniversePanel.model_colours(_panels)
@@ -845,6 +846,7 @@ func _timeline_fixtures() -> Array:
 				"profile": fx["profile"], "mode": int(fx.get("mode", 0)),
 				"category": String(fx.get("category", "")),
 				"category_group": int(fx.get("category_group", 1)),
+				"exclude_generate": bool(fx.get("exclude_generate", false)),
 				"colour": colours[(fx["profile"] as FixtureProfile).full_name()]})
 	return out
 

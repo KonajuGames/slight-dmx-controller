@@ -112,8 +112,22 @@ func _test_round_trip() -> void:
 		and absf(cat_rect.end.x - right) < 12.0
 		and absf(row_btns["Remove"].get_global_rect().end.x - right) < 12.0,
 		"the category, groups and Flash/Home/Remove at the right of the fixture's name")
-	ok(row_btns.size() == 4 and row_btns.has("Flash") and row_btns.has("Home") and row_btns.has("Expand"),
-		"Expand, Flash, Home and Remove are icons (named in their tooltips)")
+	ok(row_btns.size() == 5 and row_btns.has("Flash") and row_btns.has("Home") and row_btns.has("Expand")
+		and row_btns.has("Leave out of show generation"),
+		"Expand, Flash, Home, Remove and leave-out are icons (named in their tooltips)")
+	var exclude_btn: Button = row_btns.get("Leave out of show generation")
+	ok(exclude_btn != null and exclude_btn.toggle_mode and not exclude_btn.button_pressed
+		and not panel.patched_fixtures[1].get("exclude_generate", false), "...a fixture is in show generation by default")
+	if exclude_btn != null:
+		exclude_btn.button_pressed = true
+	ok(panel.patched_fixtures[1]["exclude_generate"] and not panel.patched_fixtures[0]["exclude_generate"]
+		and exclude_btn.tooltip_text.begins_with("Left out"), "...toggled on: that fixture is left out")
+	var tl_fx: Array = main._timeline_fixtures()
+	ok(tl_fx.size() == 2 and tl_fx[1]["exclude_generate"] and not tl_fx[0]["exclude_generate"],
+		"...and the timelines are told so")
+	var ex_rect: Rect2 = exclude_btn.get_global_rect() if exclude_btn != null else Rect2()
+	ok(is_equal_approx(ex_rect.get_center().y, cat_rect.get_center().y) and ex_rect.end.x <= cat_rect.position.x,
+		"...its button just left of the category")
 	var controls: Control = row.get_child(0).get_child(1)
 	var collapsed := not controls.visible
 	row_btns["Expand"].pressed.emit()
@@ -164,6 +178,8 @@ func _test_round_trip() -> void:
 	ok(pf.size() == 2 and pf[0]["category_group"] == 1 and pf[1]["category_group"] == 3
 		and _group_buttons(main._panels[0], 1)[2].button_pressed,
 		"category groups, as changed (and shown)")
+	ok(pf.size() == 2 and not pf[0]["exclude_generate"] and pf[1]["exclude_generate"],
+		"left out of show generation, as changed")
 	u = main._panels[0].sender
 	ok(u.get_channel(0) == 200 and u.get_channel(1) == 40 and u.get_channel(2) == 10, "live levels (the actual colour)")
 	var new_par := int(pf[0]["id"]) if pf.size() > 0 else -1
@@ -195,6 +211,7 @@ func _test_round_trip() -> void:
 	for sf in doc["universes"][0]["fixtures"]:
 		sf.erase("category")
 		sf.erase("category_group")
+		sf.erase("exclude_generate")
 	doc.erase("format")
 	doc.erase("version")
 	f = FileAccess.open(bad, FileAccess.WRITE)
@@ -207,6 +224,7 @@ func _test_round_trip() -> void:
 		and main._panels[0].patched_fixtures[1]["category"] == "Primary Multi-cell",
 		"...its fixtures in their default categories")
 	ok(main._panels[0].patched_fixtures[1]["category_group"] == 1, "...and category group 1")
+	ok(not main._panels[0].patched_fixtures[1]["exclude_generate"], "...in show generation")
 	# One saved in the old Auto Show run mode (gone): opens in Cue Mode.
 	doc["run_mode"] = 2
 	doc["auto_show"] = {"song": "C:/old.mp3"}

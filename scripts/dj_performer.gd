@@ -321,23 +321,33 @@ func layer(n: int) -> Array:
 ## colour scaled down to its own level); on one without, the colour
 ## channels — the timeline's colour, or the console's (`bases`) — are
 ## scaled by the level (its virtual dimmer). Only what the timelines cover
-## is driven.
+## is driven. A fixture left out of show generation (its
+## "exclude_generate") ignores the master: only its own timelines (and its
+## heads') drive it.
 static func song_output(tracks: Dictionary, t: float, fixtures: Array, bases: Array, n: int,
 		positions: PositionLibrary = null) -> Array:
 	var out: Array = []
 	for i in range(n):
 		out.append({})
 	var master: Dictionary = tracks.get("master", {})
-	var master_line: PackedVector2Array = master.get("dimmer", PackedVector2Array())
-	var lm := TimelineTrack.level_at(master_line, t)
-	var master_colour = TimelineTrack.segment_colour_at(master.get("colour", []), t)
-	var master_strobe := TimelineTrack.speed_at(master.get("strobe", []), t)
-	var master_place := TimelineTrack.position_id_at(master.get("position", []), t)
-	var master_move := TimelineTrack.movement_segment_at(master.get("movement", []), t)
+	var all_line: PackedVector2Array = master.get("dimmer", PackedVector2Array())
+	var all_lm := TimelineTrack.level_at(all_line, t)
+	var all_colour = TimelineTrack.segment_colour_at(master.get("colour", []), t)
+	var all_strobe := TimelineTrack.speed_at(master.get("strobe", []), t)
+	var all_place := TimelineTrack.position_id_at(master.get("position", []), t)
+	var all_move := TimelineTrack.movement_segment_at(master.get("movement", []), t)
 	for fx in fixtures:
 		var u: int = fx["u"]
 		if u < 0 or u >= n:
 			continue
+		# The master's, unless it's left out of the show: then none.
+		var own_only := bool(fx.get("exclude_generate", false))
+		var master_line: PackedVector2Array = PackedVector2Array() if own_only else all_line
+		var lm := 1.0 if own_only else all_lm
+		var master_colour = null if own_only else all_colour
+		var master_strobe := -1 if own_only else all_strobe
+		var master_place := "" if own_only else all_place
+		var master_move: Dictionary = {} if own_only else all_move
 		var uid := String(fx["uid"])
 		var profile: FixtureProfile = fx["profile"]
 		var mode: int = fx.get("mode", 0)

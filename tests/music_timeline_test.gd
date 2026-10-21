@@ -662,6 +662,35 @@ func _test_structure() -> void:
 	gen.pressed.emit()
 	ok(lib.positions.size() == 2, "with positions already: none added")
 	tl.positions = null
+	# A fixture left out of generation has its timelines cleared (its
+	# heads' too).
+	var rgb := FixtureProfile.new("bar", "Bar", [{"name": "R", "role": "RED"}, {"name": "G", "role": "GREEN"},
+		{"name": "B", "role": "BLUE"}, {"name": "R", "role": "RED"}, {"name": "G", "role": "GREEN"}, {"name": "B", "role": "BLUE"}])
+	tl.fixtures_provider = func(): return [
+		{"key": "in", "name": "In", "mode": 0, "profile": rgb},
+		{"key": "out", "name": "Out", "mode": 0, "profile": rgb, "exclude_generate": true}]
+	tl.refresh_fixtures()
+	var marker := PackedVector2Array([Vector2(1.0, 0.123), Vector2(2.0, 0.123)])
+	var red := [{"t0": 0.0, "t1": 5.0, "c0": Color.RED, "c1": Color.RED}]
+	for tr in tl.fixture_tracks():
+		tr.dimmer_nodes = marker
+		tr.colour_segments = red.duplicate(true)
+	tl._mark_dirty()                                  # as an edit by hand records it
+	gen.pressed.emit()
+	var kept := {}
+	var cleared := {}
+	for tr in tl.fixture_tracks():
+		kept[String(tr.get_meta("key"))] = tr.dimmer_nodes == marker
+		cleared[String(tr.get_meta("key"))] = tr.dimmer_nodes.is_empty() and tr.colour_segments.is_empty() \
+			and tr.strobe_segments.is_empty() and tr.position_segments.is_empty() and tr.movement_segments.is_empty()
+	ok(kept.size() == 6 and cleared["out"] and cleared["out/h0"] and cleared["out/h1"],
+		"a fixture left out of generation has its old timelines cleared, its heads' too")
+	ok(not kept["in"] and not kept["in/h0"] and not kept["in/h1"], "...the others are generated")
+	tl.undo()
+	var back := tl.fixture_tracks().all(func(tr): return tr.dimmer_nodes == marker and tr.colour_segments.size() == 1)
+	ok(back, "...and one undo brings them all back")
+	tl.fixtures_provider = Callable()
+	tl.refresh_fixtures()
 
 	# Cached per track, edits included.
 	a.sections[0]["label"] = "Bridge"

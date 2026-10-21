@@ -221,6 +221,24 @@ func _test_song_output() -> void:
 	ok(P.song_output({"master": at_left}, 5.0, fx, bases, 1, null)[0].is_empty(), "no positions library: nothing")
 	var gone := {"position": [{"t0": 0.0, "t1": 10.0, "pos": "deleted"}]}
 	ok(P.song_output({"master": gone}, 5.0, fx, bases, 1, lib)[0].is_empty(), "a deleted position: nothing")
+	# Left out of show generation: the master doesn't drive it, its own rows do.
+	var everything: Dictionary = _nodes([[0, 0.5]])
+	everything.merge(_colour(0, 10, Color(1, 0, 0), Color(1, 0, 0)))
+	everything["position"] = at_left["position"]
+	everything["strobe"] = on["strobe"]
+	everything["movement"] = [{"t0": 0.0, "t1": 10.0, "fx": "circle", "period": 2.0, "size": 0.1}]
+	var left_out: Array = []
+	for f in fx + [plain]:
+		var g: Dictionary = f.duplicate()
+		g["exclude_generate"] = String(f["uid"]) in ["d", "q"]
+		left_out.append(g)
+	o = P.song_output({"master": everything}, 5.0, left_out, bases, 1, lib)[0]
+	ok(o.get(0) == 128 and o.get(10) == 128 and o.get(90) == null and not o.has(91),
+		"a fixture left out of generation ignores the master (the others still follow it) (%s / %s / %s)" % [o.get(0), o.get(10), o.get(90)])
+	ok(not o.has(40) and not o.has(41) and not o.has(42) and not o.has(43),
+		"...its pan / tilt, dimmer and colour all left alone")
+	o = P.song_output({"master": everything, "d": _nodes([[0, 0.4], [10, 0.4]])}, 5.0, left_out, bases, 1, lib)[0]
+	ok(o.get(42) == 102 and not o.has(40) and not o.has(43), "...but its own rows still drive it (%s)" % o.get(42))
 	var avg: Array = P.average_channels(fx, 1)
 	var mixed: Array = P.mix([P.song_output({"master": at_left}, 5.0, fx, bases, 1, lib),
 		P.song_output({"d": {"position": [{"t0": 0.0, "t1": 10.0, "pos": right["id"]}]}}, 5.0, fx, bases, 1, lib)], avg, 1)

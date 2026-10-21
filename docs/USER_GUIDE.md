@@ -274,6 +274,12 @@ drop, in the finale and in some of the loudest moments, primary and
 secondary play as one. The **1–4** category group buttons split a
 category up: fixtures in the same group often step together, so a
 chase or a fan can run group by group (left and right, front and back).
+To keep a fixture out of the generated show altogether, toggle on the
+struck-through wand button beside its category. It stays in the patch,
+but Generate clears its timelines (and its heads') instead of filling
+them. It ignores the master timeline too, so it plays nothing from the
+generated show. Anything you then draw on its own timelines still
+plays.
 
 **Each timeline has rows** for what its fixture can do:
 

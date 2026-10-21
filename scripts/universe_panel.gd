@@ -127,6 +127,8 @@ const _HEADER_ICON_SVG := {
 	"chevron_down": '<path d="M3.4 6 8 10.6 12.6 6"/>',
 	# two sheets, the front one with a "+" — the back one peeking out
 	"duplicate": '<path d="M3.8 10.4H3A1.2 1.2 0 0 1 1.8 9.2V3A1.2 1.2 0 0 1 3 1.8h6.2a1.2 1.2 0 0 1 1.2 1.2v.8"/><rect x="5.6" y="5.6" width="8.6" height="8.6" rx="1.2"/><path d="M9.9 7.9v4.2M7.8 10h4.2"/>',
+	# a magic wand with sparkles, struck through (left out of Generate)
+	"no_generate": '<path d="M1.6 13.2 8.4 6.4l1.2 1.2-6.8 6.8z"/><path d="M11.6 1.4l.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7z"/><path d="M1.8 1.8l12.4 12.4"/>',
 }
 static var _header_icons := {}
 
@@ -765,6 +767,18 @@ func _build_fixture_row(fixture: Dictionary) -> Control:
 	category_option.item_selected.connect(func(i: int):
 		fixture["category"] = FixtureProfile.SHOW_CATEGORIES[i]
 	)
+	# Left out of show generation: Generate leaves its timelines alone.
+	var exclude_btn := _icon_button("no_generate", "")
+	exclude_btn.toggle_mode = true
+	var show_excluded := func(on: bool):
+		fixture["exclude_generate"] = on
+		exclude_btn.tooltip_text = "Left out of show generation (click to include)" if on \
+			else "Leave out of show generation"
+		category_option.modulate.a = 0.5 if on else 1.0
+	exclude_btn.button_pressed = bool(fixture.get("exclude_generate", false))
+	show_excluded.call(exclude_btn.button_pressed)
+	exclude_btn.toggled.connect(show_excluded)
+	category_row.add_child(exclude_btn)
 	category_row.add_child(category_option)
 
 	# Category group 1-4 within the category: one at a time, like radio
@@ -1336,6 +1350,7 @@ func patch_dict() -> Dictionary:
 			"mode": int(fixture.get("mode", 0)),
 			"category": String(fixture.get("category", "")),
 			"category_group": int(fixture.get("category_group", 1)),
+			"exclude_generate": bool(fixture.get("exclude_generate", false)),
 			"profile": profile.to_dict(),
 			"pos": _v3_to_arr(fixture.get("pos", Vector3.ZERO)),
 			"rot": _v3_to_arr(fixture.get("rot", Vector3.ZERO)),
@@ -1401,6 +1416,7 @@ func apply_patch_dict(d: Dictionary) -> void:
 			"mode": mode,
 			"category": category,
 			"category_group": clampi(int(entry.get("category_group", 1)), 1, 4),
+			"exclude_generate": bool(entry.get("exclude_generate", false)),
 			"pos": _arr_to_v3(entry.get("pos", null), auto_place(i)),
 			"rot": _arr_to_v3(entry.get("rot", null), Vector3(90, 0, 0)),
 		})

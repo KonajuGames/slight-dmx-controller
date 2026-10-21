@@ -2380,12 +2380,19 @@ func generate_show() -> bool:
 	if beats.is_empty():
 		beats = TimelineGenerator._even_beats(a.bpm, _wave.duration())
 	# Each fixture with its category and category group, as the patch has
-	# them now (changing them doesn't rebuild the tracks).
+	# them now (changing them doesn't rebuild the tracks). One left out of
+	# generation (and its heads) isn't in the show: its timelines are
+	# cleared.
 	var parts := {}
 	for fx in (fixtures_provider.call() if fixtures_provider.is_valid() else []):
 		parts[String(fx["key"])] = fx
+	var left_out := func(tr: TimelineTrack) -> bool:
+		var fixture_key := String(tr.get_meta("key")).get_slice("/", 0)
+		return parts.has(fixture_key) and bool(parts[fixture_key].get("exclude_generate", false))
 	var tracks: Array = []
 	for tr in [_master] + Array(_fixture_tracks):
+		if left_out.call(tr):
+			continue
 		var key := String(tr.get_meta("key"))
 		var t := {"key": key, "target": tr.target, "rows": tr.rows}
 		if parts.has(key):
