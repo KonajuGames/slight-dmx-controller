@@ -1227,7 +1227,8 @@ static func _shape(name: String, a: float, b: float, i: int, n: int, pick: Dicti
 			var m := 0
 			var span := bar * (2.0 if name == "duo" else 1.0)
 			var low := peak * 0.12 if name == "solo" else 0.0
-			while t < b - 0.001:
+			# At least one step, even for a span shorter than the tolerance.
+			while t < b - 0.001 or out.is_empty():
 				var e := minf(t + span, b)
 				var lit := m % maxi(n, 1) == i
 				if name == "duo":
