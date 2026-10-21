@@ -736,8 +736,12 @@ func _on_select_drag(_track: TimelineTrack, phase: int, gpos: Vector2, ctrl: boo
 		# Shift: from the last area through the new one — every row and
 		# all the time between them.
 		span = Vector2(minf(span.x, extend["t0"]), maxf(span.y, extend["t1"]))
+		var in_extend := {}
+		for id in extend["rows"]:
+			in_extend[id] = true
+		var ids := _row_ids(rows, 0, rows.size() - 1)
 		for k in range(rows.size()):
-			if _row_ids(rows, k, k)[0] in extend["rows"]:
+			if in_extend.has(ids[k]):
 				lo = mini(lo, k)
 				hi = maxi(hi, k)
 	var blocks: Array = (_sel_drag["keep"] as Array).duplicate()

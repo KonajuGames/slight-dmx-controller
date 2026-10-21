@@ -10,7 +10,14 @@ extends RefCounted
 
 signal changed
 
-var blocks: Array = []
+var blocks: Array = []:
+	set(v):
+		blocks = v
+		_by_row = {}
+# Each row id's spans, [Vector2(t0, t1), ...], built from `blocks` when
+# first asked for after they change (spans_for is called per row, per
+# track, on every redraw and pointer move).
+var _by_row := {}
 
 
 static func row_id(track_key: String, row: int) -> String:
@@ -29,6 +36,7 @@ func clear() -> void:
 	if blocks.is_empty():
 		return
 	blocks.clear()
+	_by_row = {}
 	changed.emit()
 
 
@@ -39,12 +47,13 @@ func set_blocks(b: Array) -> void:
 
 ## The selected time spans on one row, as [Vector2(t0, t1), ...].
 func spans_for(track_key: String, row: int) -> Array:
-	var id := row_id(track_key, row)
-	var out: Array = []
-	for b in blocks:
-		if id in b["rows"]:
-			out.append(Vector2(b["t0"], b["t1"]))
-	return out
+	if _by_row.is_empty() and not blocks.is_empty():
+		for b in blocks:
+			for id in b["rows"]:
+				if not _by_row.has(id):
+					_by_row[id] = []
+				_by_row[id].append(Vector2(b["t0"], b["t1"]))
+	return (_by_row.get(row_id(track_key, row), []) as Array).duplicate()
 
 
 ## Whether time `t` on a row is selected.

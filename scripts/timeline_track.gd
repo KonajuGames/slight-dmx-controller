@@ -169,12 +169,12 @@ var editable := true
 ## them: meta "key"). Null = none.
 var selection: TimelineSelection:
 	set(v):
-		if selection != null and selection.changed.is_connected(queue_redraw):
-			selection.changed.disconnect(queue_redraw)
+		if selection != null and selection.changed.is_connected(update_selection):
+			selection.changed.disconnect(update_selection)
 		selection = v
 		if selection != null:
-			selection.changed.connect(queue_redraw)
-		queue_redraw()
+			selection.changed.connect(update_selection)
+		update_selection()
 var _selecting := false
 var _dragging_playhead := false
 
@@ -216,6 +216,12 @@ static func rows_for_roles(roles: Array) -> Array:
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_PASS
 	_fit_height()
+	set_notify_transform(true)          # scrolled into view: catch up (_stale)
+	_selection_layer = SelectionLayer.new()
+	_selection_layer.track = self
+	_selection_layer.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_selection_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_selection_layer)
 	_playhead = Playhead.new()
 	_playhead.track = self
 	_playhead.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -224,13 +230,43 @@ func _ready() -> void:
 
 
 var _playhead: Playhead
+var _selection_layer: SelectionLayer
+# The nearest ancestor clipping the track (the fixtures' scroll panel), or
+# null. While the track's scrolled out of it nothing's drawn: _stale is
+# set instead, and it's redrawn when it comes back into view.
+var _clip: Control
+var _stale := false
 
 
 ## Redraw just the playhead line (it moves every frame while playing; the
 ## rows themselves needn't be redrawn for it).
 func update_playhead() -> void:
-	if _playhead != null:
-		_playhead.queue_redraw()
+	_redraw_layer(_playhead)
+
+
+## Redraw just the selected areas (the rows beneath stay as they are).
+func update_selection() -> void:
+	_redraw_layer(_selection_layer)
+
+
+func _redraw_layer(layer: Control) -> void:
+	if not is_on_screen():
+		_stale = true
+	elif layer != null:
+		layer.queue_redraw()
+
+
+## Whether any of the track shows (isn't scrolled out of its panel).
+func is_on_screen() -> bool:
+	if _clip == null:
+		return true
+	return get_global_rect().intersects(_clip.get_global_rect())
+
+
+## Draw what was skipped while out of view, if it's back in view.
+func _catch_up() -> void:
+	if _stale and is_on_screen():
+		queue_redraw()
 
 
 ## Where the playhead line is drawn across the rows, x in the track; -1
@@ -993,6 +1029,20 @@ func _set_hover(i: int, line := false, pos := Vector2(-1, -1)) -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_MOUSE_EXIT and _drag < 0 and _drag_line.is_empty():
 		_set_hover(-1)
+	elif what == NOTIFICATION_TRANSFORM_CHANGED:
+		_catch_up()
+	elif what == NOTIFICATION_ENTER_TREE:
+		_clip = null
+		var p := get_parent()
+		while p != null and not (p is Control and p.clip_contents):
+			p = p.get_parent()
+		if p != null:
+			_clip = p
+			_clip.resized.connect(_catch_up)
+	elif what == NOTIFICATION_EXIT_TREE:
+		if _clip != null and _clip.resized.is_connected(_catch_up):
+			_clip.resized.disconnect(_catch_up)
+		_clip = null
 
 
 func _view() -> Vector2:
@@ -1040,7 +1090,12 @@ func dimmer_polyline() -> PackedVector2Array:
 
 
 func _draw() -> void:
+	if not is_on_screen():
+		_stale = true
+		return
+	_stale = false
 	update_playhead()               # the view may have moved under it
+	update_selection()
 	var font := get_theme_default_font()
 	var i := 0
 	for row in rows:
@@ -1067,7 +1122,6 @@ func _draw() -> void:
 		var band := minf(r.size.y, 14.0)
 		draw_string(font, Vector2(4.0, r.position.y + band * 0.5 + fs * 0.35),
 			ROW_NAMES[row], HORIZONTAL_ALIGNMENT_LEFT, -1, fs, _LABEL)
-		_draw_selection(row, r)
 		if not ghost.is_empty():
 			_draw_ghost(row, r)
 
@@ -1135,8 +1189,9 @@ func _draw_grid() -> void:
 		draw_line(Vector2(x, 0), Vector2(x, size.y), _GRID_BAR if line[1] else _GRID_BEAT, 1.0)
 
 
-## This row's selected spans: a translucent blue fill, edged at each end.
-func _draw_selection(row: Row, r: Rect2) -> void:
+## This row's selected spans, on `on` (the selection layer): a
+## translucent blue fill, edged at each end.
+func _draw_selection(on: CanvasItem, row: Row, r: Rect2) -> void:
 	if selection == null or not has_meta("key"):
 		return
 	for span in selection.spans_for(String(get_meta("key")), row):
@@ -1144,11 +1199,11 @@ func _draw_selection(row: Row, r: Rect2) -> void:
 			continue                    # out of view
 		var x0 := clampf(_t2x(span.x), 0.0, size.x)
 		var x1 := clampf(_t2x(span.y), 0.0, size.x)
-		draw_rect(Rect2(x0, r.position.y, maxf(x1 - x0, 1.0), r.size.y), _SELECT_FILL)
+		on.draw_rect(Rect2(x0, r.position.y, maxf(x1 - x0, 1.0), r.size.y), _SELECT_FILL)
 		for t in [span.x, span.y]:
 			var x := _t2x(t)
 			if x >= 0.0 and x <= size.x:
-				draw_line(Vector2(x, r.position.y), Vector2(x, r.end.y), _SELECT_EDGE, 1.0)
+				on.draw_line(Vector2(x, r.position.y), Vector2(x, r.end.y), _SELECT_EDGE, 1.0)
 
 
 ## The colour segments in view: a band each, shaded from its start colour
@@ -1383,6 +1438,19 @@ class NamePlate:
 			draw_string(font, Vector2(-w * 0.5, y), line, HORIZONTAL_ALIGNMENT_LEFT, room, fs, TEXT)
 			y += line_h
 		draw_set_transform(Vector2.ZERO)
+
+
+## The selected areas over a track's rows: their own layer, so changing
+## the selection (every pointer move while dragging one out) doesn't
+## redraw the rows beneath.
+class SelectionLayer:
+	extends Control
+
+	var track: TimelineTrack
+
+	func _draw() -> void:
+		for row in track.rows:
+			track._draw_selection(self, row, track.row_rect(row))
 
 
 ## The playhead line over a track's rows (as on the waveform): its own

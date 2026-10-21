@@ -49,6 +49,7 @@ func _run() -> void:
 	await _test_position_row()
 	await _test_movement_row()
 	await _test_dimmer_inheritance()
+	await _test_off_screen()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
 
@@ -1503,4 +1504,43 @@ func _test_dimmer_inheritance() -> void:
 	ok(not tl.clipboard()["tracks"][0]["rows"][R.DIMMER][0].has("nodes"), "copying an empty row: nothing to paste")
 	tl._dirty = false
 	tl.queue_free()
+	await process_frame
+
+
+func _test_off_screen() -> void:
+	print("- drawing only what's in view")
+	var sc := ScrollContainer.new()
+	sc.size = Vector2(400, 150)
+	root.add_child(sc)
+	var list := VBoxContainer.new()
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sc.add_child(list)
+	var sel := TimelineSelection.new()
+	var tracks: Array = []
+	for i in range(4):
+		var tr := TimelineTrack.new()
+		tr.set_meta("key", "f%d" % i)
+		tr.selection = sel
+		list.add_child(tr)
+		tracks.append(tr)
+	await process_frame
+	await process_frame
+	ok(tracks[0].is_on_screen() and not tracks[0]._stale, "a track in view is drawn")
+	ok(not tracks[3].is_on_screen() and tracks[3]._stale, "one scrolled out of view is left until it's back (%s)" % str(tracks[3].get_global_rect()))
+	sc.scroll_vertical = 1000
+	await process_frame
+	await process_frame
+	ok(tracks[3].is_on_screen() and not tracks[3]._stale, "scrolled into view: drawn then")
+	ok(not tracks[0].is_on_screen(), "...and the first one's now out of view")
+	# Selection lookups by row, kept up to date as the blocks change.
+	var R := TimelineTrack.Row
+	sel.set_blocks([TimelineSelection.block(PackedStringArray(["f0|%d" % R.DIMMER, "f1|%d" % R.DIMMER]), 1.0, 2.0),
+		TimelineSelection.block(PackedStringArray(["f1|%d" % R.DIMMER]), 4.0, 3.0)])
+	ok(sel.spans_for("f1", R.DIMMER) == [Vector2(1, 2), Vector2(3, 4)] and sel.spans_for("f0", R.DIMMER) == [Vector2(1, 2)]
+		and sel.spans_for("f2", R.DIMMER).is_empty(), "each row's selected spans")
+	sel.spans_for("f1", R.DIMMER).clear()
+	ok(sel.spans_for("f1", R.DIMMER).size() == 2, "...a copy (changing it leaves the selection be)")
+	sel.blocks = []
+	ok(sel.spans_for("f0", R.DIMMER).is_empty(), "...and none once the blocks are replaced")
+	sc.queue_free()
 	await process_frame
