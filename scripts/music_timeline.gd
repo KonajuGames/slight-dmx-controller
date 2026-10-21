@@ -217,6 +217,7 @@ func _ready() -> void:
 	_master.select_drag.connect(_on_select_drag)
 	_master.playhead_drag.connect(_on_playhead_drag)
 	_master.context_requested.connect(_on_context)
+	_master.mix_toggled.connect(_on_mix_toggled)
 	_master.positions = positions
 	wave_col.add_child(_master)
 	_master.item_rect_changed.connect(_place_buttons)
@@ -1906,7 +1907,8 @@ func live_tracks() -> Dictionary:
 		return out
 	for tr in [_master] + Array(_fixture_tracks):
 		out[String(tr.get_meta("key"))] = {"dimmer": tr.dimmer_nodes, "colour": tr.colour_segments,
-			"strobe": tr.strobe_segments, "position": tr.position_segments, "movement": tr.movement_segments}
+			"strobe": tr.strobe_segments, "position": tr.position_segments, "movement": tr.movement_segments,
+			"mute": tr.mute, "solo": tr.solo}
 	return out
 
 
@@ -1972,12 +1974,15 @@ func _rebuild_fixture_tracks() -> void:
 			tr.strobe_segments = _spans_from(saved.get(spec["key"], {}).get("strobe", []))
 			tr.position_segments = _pos_from(saved.get(spec["key"], {}).get("position", []))
 			tr.movement_segments = _moves_from(saved.get(spec["key"], {}).get("movement", []))
+			tr.mute = bool(saved.get(spec["key"], {}).get("mute", false))
+			tr.solo = bool(saved.get(spec["key"], {}).get("solo", false))
 			tr.positions = positions
 			tr.dimmer_edited.connect(_mark_dirty)
 			tr.selection = _selection
 			tr.select_drag.connect(_on_select_drag)
 			tr.playhead_drag.connect(_on_playhead_drag)
 			tr.context_requested.connect(_on_context)
+			tr.mix_toggled.connect(_on_mix_toggled)
 			row.add_child(tr)
 			var plate := TimelineTrack.NamePlate.new()
 			plate.track = tr
@@ -1987,6 +1992,7 @@ func _rebuild_fixture_tracks() -> void:
 			_fixture_list.add_child(row)
 			_fixture_tracks.append(tr)
 	_fixture_empty.visible = _fixture_tracks.is_empty()
+	_update_silenced()
 
 
 # ----------------------------------------------------- SAVED TIMELINES --
@@ -2079,6 +2085,11 @@ func _collect() -> void:
 			entry.erase("strobe")
 		else:
 			entry["strobe"] = _spans_to(tr.strobe_segments)
+		for flag in ["mute", "solo"]:
+			if tr.get(flag):
+				entry[flag] = true
+			else:
+				entry.erase(flag)
 		if entry.is_empty():
 			tracks.erase(key)
 		else:
@@ -2095,6 +2106,7 @@ func _show_song_data() -> void:
 		_master.strobe_segments = _spans_from(tracks.get("master", {}).get("strobe", []))
 		_master.position_segments = _pos_from(tracks.get("master", {}).get("position", []))
 		_master.movement_segments = _moves_from(tracks.get("master", {}).get("movement", []))
+		_master.mute = bool(tracks.get("master", {}).get("mute", false))
 	_rebuild_fixture_tracks()
 	if _path != "" and _struct_cache.has(_path):
 		_apply_saved_structure(_path, _struct_cache[_path])
@@ -2118,6 +2130,27 @@ func _default_master_line() -> void:
 		h["state"] = _snapshot()        # undo stops here, with the default line
 
 
+## Mute / solo toggled on a track's plate: saved with the timelines, but
+## not an undo step.
+func _on_mix_toggled(_track: TimelineTrack) -> void:
+	if _path != "":
+		_dirty = true
+	_update_silenced()
+
+
+## Fade the tracks mute / solo leave out of playback (as
+## TimelineTrack.plays() has it).
+func _update_silenced() -> void:
+	if _master == null:
+		return
+	var flags := {}
+	for tr in [_master] + Array(_fixture_tracks):
+		flags[String(tr.get_meta("key"))] = {"mute": tr.mute, "solo": tr.solo}
+	var mix := TimelineTrack.mix_state(flags)
+	for tr in [_master] + Array(_fixture_tracks):
+		tr.silenced = not TimelineTrack.plays(flags, mix, String(tr.get_meta("key")))
+
+
 ## An edit's been made: the song's timelines are unsaved, and the state
 ## before it goes on the undo list.
 func _mark_dirty() -> void:
@@ -2136,11 +2169,18 @@ func _on_structure_edited() -> void:
 
 # ------------------------------------------------------------ UNDO / REDO --
 
-## The open song's timelines as they stand: {tracks, structure?}.
+## The open song's timelines as they stand: {tracks, structure?} — less
+## mute / solo, which aren't edits (undo leaves them be).
 func _snapshot() -> Dictionary:
 	_collect()
 	var d := song_data()
 	var snap := {"tracks": (d["tracks"] as Dictionary).duplicate(true)}
+	for key in snap["tracks"].keys():
+		var entry: Dictionary = snap["tracks"][key]
+		entry.erase("mute")
+		entry.erase("solo")
+		if entry.is_empty():
+			snap["tracks"].erase(key)
 	if d.get("structure") is Dictionary:
 		snap["structure"] = (d["structure"] as Dictionary).duplicate(true)
 	return snap
@@ -2214,6 +2254,7 @@ func _restore(snap: Dictionary) -> void:
 		tr.strobe_segments = _spans_from(tracks.get(String(tr.get_meta("key")), {}).get("strobe", []))
 		tr.position_segments = _pos_from(tracks.get(String(tr.get_meta("key")), {}).get("position", []))
 		tr.movement_segments = _moves_from(tracks.get(String(tr.get_meta("key")), {}).get("movement", []))
+	_collect()                          # the tracks' mute / solo back in
 	if _struct_cache.has(_path):
 		_apply_saved_structure(_path, _struct_cache[_path])
 		_set_structure(_struct_cache[_path])

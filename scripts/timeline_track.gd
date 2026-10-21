@@ -61,6 +61,10 @@ signal playhead_drag(track: TimelineTrack, phase: int, time: float)
 ## A right-click on `row` (not a Ctrl+right-click on a dimmer node, which
 ## removes it), at `global_pos` / `time` seconds.
 signal context_requested(track: TimelineTrack, row: int, global_pos: Vector2, time: float)
+## The user toggled mute or solo on the track's name plate.
+signal mix_toggled(track: TimelineTrack)
+## `mute`, `solo` or `silenced` changed (by the user or not).
+signal mix_changed
 
 ## The kinds of row (stacked bottom to top in this order: ROW_ORDER).
 enum Row { POSITION, STROBE, MOVEMENT, COLOUR, DIMMER }
@@ -175,6 +179,30 @@ var selection: TimelineSelection:
 		if selection != null:
 			selection.changed.connect(update_selection)
 		update_selection()
+## Muted: left out of playback (the plate's M button); a muted master
+## silences every fixture, a muted fixture its heads. Saved with the
+## timelines.
+var mute := false:
+	set(v):
+		if v != mute:
+			mute = v
+			mix_changed.emit()
+## Soloed (the plate's S button; not on the master): while any track is,
+## only the soloed ones play (a soloed fixture's heads too, and a soloed
+## head's fixture and the master, which it inherits from). Saved.
+var solo := false:
+	set(v):
+		if v != solo:
+			solo = v
+			mix_changed.emit()
+## Whether it's left out of playback now, by its own mute / solo or
+## another's (plays()): drawn faded.
+var silenced := false:
+	set(v):
+		if v != silenced:
+			silenced = v
+			queue_redraw()
+			mix_changed.emit()
 var _selecting := false
 var _dragging_playhead := false
 
@@ -1124,6 +1152,8 @@ func _draw() -> void:
 			ROW_NAMES[row], HORIZONTAL_ALIGNMENT_LEFT, -1, fs, _LABEL)
 		if not ghost.is_empty():
 			_draw_ghost(row, r)
+	if silenced:
+		draw_rect(Rect2(Vector2.ZERO, size), _SILENCED)
 
 
 ## The moving selection's ghost on this row: the spot it's leaving
@@ -1171,6 +1201,10 @@ func _draw_ghost(row: Row, r: Rect2) -> void:
 		var gx0 := _t2x(start)
 		var gx1 := _t2x(at + part["t1"])
 		draw_rect(Rect2(gx0, r.position.y, maxf(gx1 - gx0, 1.0), r.size.y), _GHOST_LINE, false, 1.0)
+
+
+## Over a track left out of playback (muted, or not soloed).
+const _SILENCED := Color(0.05, 0.05, 0.07, 0.55)
 
 
 ## The waveform's beat grid behind the rows: the same beat and bar lines
@@ -1323,6 +1357,55 @@ func _draw_movement(r: Rect2, segs: Array, shift: float, alpha: float) -> void:
 		draw_polyline(pts, col, 1.2, true)
 
 
+## What mute / solo leave playing, worked out once from `tracks` (keys
+## "master", a fixture uid, "<uid>/h<n>", each with "mute" / "solo"):
+## {solo: whether any track's soloed, solo_fixtures: {uid: true} for each
+## fixture soloed or with a soloed head}. For plays().
+static func mix_state(tracks: Dictionary) -> Dictionary:
+	var any := false
+	var fixtures := {}
+	for key in tracks:
+		if key == "master" or not tracks[key] is Dictionary or not bool(tracks[key].get("solo", false)):
+			continue
+		any = true
+		fixtures[_fixture_of(String(key))] = true
+	return {"solo": any, "solo_fixtures": fixtures}
+
+
+## Whether the track `key` plays, by mute / solo (`mix`: mix_state()):
+##   master: unless muted (muted, nothing plays)
+##   a fixture: unless it or the master's muted; while any track's soloed,
+##     only if it or one of its heads is (it's what they inherit from)
+##   a head: unless it, its fixture or the master's muted; while any
+##     track's soloed, only if it or its fixture is
+static func plays(tracks: Dictionary, mix: Dictionary, key: String) -> bool:
+	if _muted(tracks, "master"):
+		return false
+	if key == "master":
+		return true
+	var fixture := _fixture_of(key)
+	if _muted(tracks, fixture) or (mix["solo"] and not mix["solo_fixtures"].has(fixture)):
+		return false
+	if key == fixture:
+		return true
+	return not _muted(tracks, key) and (not mix["solo"] or _soloed(tracks, fixture) or _soloed(tracks, key))
+
+
+static func _muted(tracks: Dictionary, key: String) -> bool:
+	return tracks.get(key) is Dictionary and bool(tracks[key].get("mute", false))
+
+
+static func _soloed(tracks: Dictionary, key: String) -> bool:
+	return tracks.get(key) is Dictionary and bool(tracks[key].get("solo", false))
+
+
+## The fixture a track key belongs to: a head's ("<uid>/h<n>") its uid,
+## otherwise the key itself.
+static func _fixture_of(key: String) -> String:
+	var i := key.rfind("/h")
+	return key.substr(0, i) if i > 0 and key.substr(i + 2).is_valid_int() else key
+
+
 ## The height of a strobe segment's dashed line in the row `r`, by speed.
 static func strobe_line_y(r: Rect2, speed: int) -> float:
 	match speed:
@@ -1380,9 +1463,22 @@ class NamePlate:
 	## Shrinks to this to fit a long name before trimming it.
 	const MIN_FONT_SIZE := 9
 
+	## The mute / solo buttons along its top.
+	enum { MUTE, SOLO }
+	const BUTTON_HEIGHT := 14.0
+	const BUTTON_GAP := 2.0
+	const BUTTON_OFF := Color(0, 0, 0, 0.35)
+	const MUTE_ON := Color(0.95, 0.45, 0.2)
+	const SOLO_ON := Color(0.95, 0.85, 0.25)
+	const BUTTON_TEXT_ON := Color(0.08, 0.08, 0.1)
+
 	var track: TimelineTrack:
 		set(v):
+			if track != null and track.mix_changed.is_connected(queue_redraw):
+				track.mix_changed.disconnect(queue_redraw)
 			track = v
+			if track != null:
+				track.mix_changed.connect(queue_redraw)
 			queue_redraw()
 	## The plate's colour: a fixture's model colour (UniversePanel.MODEL_COLOURS).
 	var fill := FILL:
@@ -1391,7 +1487,57 @@ class NamePlate:
 			queue_redraw()
 
 	func _ready() -> void:
-		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		mouse_filter = Control.MOUSE_FILTER_PASS     # the wheel still scrolls the panel
+
+	## The buttons it has: M, and S (not on the master's).
+	func buttons() -> Array:
+		if track == null:
+			return []
+		return [MUTE] if track.target == TimelineTrack.Target.MASTER else [MUTE, SOLO]
+
+	## A button's rectangle: side by side across the top, as tall as the
+	## plate allows (a lone 10 px row's plate has them small).
+	func button_rect(which: int) -> Rect2:
+		var bs := buttons()
+		var i := bs.find(which)
+		if i < 0:
+			return Rect2()
+		var h := minf(BUTTON_HEIGHT, maxf(size.y - 2.0 * BUTTON_GAP, 4.0))
+		var w := (size.x - BUTTON_GAP * (bs.size() + 1)) / bs.size()
+		return Rect2(BUTTON_GAP + i * (w + BUTTON_GAP), BUTTON_GAP, w, h)
+
+	## The button at `pos`, or -1.
+	func button_at(pos: Vector2) -> int:
+		for b in buttons():
+			if button_rect(b).has_point(pos):
+				return b
+		return -1
+
+	## The space below the buttons, where the name goes.
+	func name_rect() -> Rect2:
+		var top := button_rect(MUTE).end.y if track != null else 0.0
+		return Rect2(0.0, top, size.x, maxf(size.y - top, 0.0))
+
+	func _gui_input(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			var b := button_at(event.position)
+			if b == MUTE:
+				track.mute = not track.mute
+			elif b == SOLO:
+				track.solo = not track.solo
+			if b >= 0:
+				track.mix_toggled.emit(track)
+				accept_event()
+
+	func _get_tooltip(at: Vector2) -> String:
+		match button_at(at):
+			MUTE:
+				return "Mute: leave out of playback" + (" (every fixture)" if track.target == TimelineTrack.Target.MASTER
+					else " (its heads too)" if track.target == TimelineTrack.Target.FIXTURE else "")
+			SOLO:
+				return "Solo: play only this" + (" fixture (its unmuted heads too)" if track.target == TimelineTrack.Target.FIXTURE
+					else " head")
+		return ""
 
 	func title() -> String:
 		return track.title if track != null else ""
@@ -1404,7 +1550,7 @@ class NamePlate:
 	## to MIN_FONT_SIZE at which its longest line fits the plate's height.
 	func font_size() -> int:
 		var font := get_theme_default_font()
-		var room := maxf(size.y - 8.0, 0.0)
+		var room := maxf(name_rect().size.y - 8.0, 0.0)
 		var fs := FONT_SIZE
 		while fs > MIN_FONT_SIZE and _longest(font, fs) > room:
 			fs -= 1
@@ -1420,22 +1566,35 @@ class NamePlate:
 		var head := track != null and track.target == TimelineTrack.Target.HEAD
 		draw_rect(Rect2(Vector2.ZERO, size), fill.darkened(HEAD_DARKEN) if head else fill)
 		draw_rect(Rect2(Vector2.ZERO, size), BORDER, false, 1.0)
+		var font := get_theme_default_font()
+		for b in buttons():
+			var r := button_rect(b)
+			var on: bool = track.mute if b == MUTE else track.solo
+			draw_rect(r, (MUTE_ON if b == MUTE else SOLO_ON) if on else BUTTON_OFF)
+			draw_rect(r, BORDER, false, 1.0)
+			var bfs := clampi(int(r.size.y) - 4, 6, 10)
+			var letter := "M" if b == MUTE else "S"
+			var lw := font.get_string_size(letter, HORIZONTAL_ALIGNMENT_LEFT, -1, bfs).x
+			draw_string(font, Vector2(r.get_center().x - lw * 0.5, r.get_center().y + bfs * 0.35), letter,
+				HORIZONTAL_ALIGNMENT_LEFT, -1, bfs, BUTTON_TEXT_ON if on else TEXT)
 		var text := lines()
 		if text.is_empty():
 			return
-		var font := get_theme_default_font()
-		# Rotate a quarter turn anticlockwise about the plate's centre, then
+		var nr := name_rect()
+		# Rotate a quarter turn anticlockwise about the centre of the space
+		# below the buttons, then
 		# centre the text on it (its length runs up the plate; each further
 		# line sits to the right of the one before). A smaller font if that
 		# makes it fit the plate's height, else trimmed.
-		var room := maxf(size.y - 8.0, 0.0)
+		var room := maxf(nr.size.y - 8.0, 0.0)
 		var fs := font_size()
 		var line_h := font.get_height(fs)
 		var y := -line_h * text.size() * 0.5 + font.get_ascent(fs)
-		draw_set_transform(size * 0.5, -PI * 0.5)
+		var colour := TEXT if not track.silenced else Color(TEXT, 0.4)
+		draw_set_transform(nr.get_center(), -PI * 0.5)
 		for line in text:
 			var w := minf(font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x, room)
-			draw_string(font, Vector2(-w * 0.5, y), line, HORIZONTAL_ALIGNMENT_LEFT, room, fs, TEXT)
+			draw_string(font, Vector2(-w * 0.5, y), line, HORIZONTAL_ALIGNMENT_LEFT, room, fs, colour)
 			y += line_h
 		draw_set_transform(Vector2.ZERO)
 

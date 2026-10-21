@@ -50,6 +50,7 @@ func _run() -> void:
 	await _test_movement_row()
 	await _test_dimmer_inheritance()
 	await _test_off_screen()
+	await _test_mute_solo()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
 
@@ -1543,4 +1544,91 @@ func _test_off_screen() -> void:
 	sel.blocks = []
 	ok(sel.spans_for("f0", R.DIMMER).is_empty(), "...and none once the blocks are replaced")
 	sc.queue_free()
+	await process_frame
+
+
+## A press on a name plate's button.
+func _press_button(plate: TimelineTrack.NamePlate, which: int) -> void:
+	var e := InputEventMouseButton.new()
+	e.button_index = MOUSE_BUTTON_LEFT
+	e.pressed = true
+	e.position = plate.button_rect(which).get_center()
+	plate._gui_input(e)
+
+
+func _test_mute_solo() -> void:
+	print("- mute / solo")
+	var bar := FixtureProfile.new("bar", "Bar", [{"name": "R", "role": "RED"}, {"name": "G", "role": "GREEN"},
+		{"name": "B", "role": "BLUE"}, {"name": "R", "role": "RED"}, {"name": "G", "role": "GREEN"}, {"name": "B", "role": "BLUE"}])
+	var fixtures := [{"key": "p1", "name": "Par 1", "profile": _par(), "mode": 0},
+		{"key": "b1", "name": "Bar 1", "profile": bar, "mode": 0}]
+	var tl := MusicTimeline.new()
+	tl.fixtures_provider = func(): return fixtures
+	root.add_child(tl)
+	tl.size = Vector2(1100, 700)
+	var a := SongAnalysis.new()
+	a.duration = 60.0
+	for arr in [a.wave_lo, a.wave_mid, a.wave_hi, a.wave_peak]:
+		arr.resize(6000)
+	tl.open("user://_mute_song.wav")
+	tl._set_analysis(a)
+	await process_frame
+	var m := tl.master_track()
+	var t := {}
+	var plates := {}
+	for tr in tl.fixture_tracks():
+		t[String(tr.get_meta("key"))] = tr
+		plates[String(tr.get_meta("key"))] = tr.get_parent().get_child(1)
+	ok(t.keys() == ["p1", "b1", "b1/h0", "b1/h1"], "a par and a two-head bar (%s)" % str(t.keys()))
+	var NP := TimelineTrack.NamePlate
+	ok(tl.master_plate().buttons() == [NP.MUTE] and plates["b1/h0"].buttons() == [NP.MUTE, NP.SOLO],
+		"M and S on each plate; just M on the master's")
+	var r: Rect2 = plates["p1"].button_rect(NP.MUTE)
+	var s2: Rect2 = plates["p1"].button_rect(NP.SOLO)
+	ok(r.size.x > 4.0 and r.size.y > 4.0 and s2.position.x > r.end.x and is_equal_approx(r.position.y, s2.position.y)
+		and plates["p1"].name_rect().position.y >= r.end.y, "side by side along the top, the name below them")
+	ok(not tl.has_unsaved_timelines() and t.values().all(func(tr): return not tr.silenced), "nothing muted to start with")
+
+	# Mute a fixture: it and its heads are left out.
+	_press_button(plates["b1"], NP.MUTE)
+	ok(t["b1"].mute and t["b1"].silenced and t["b1/h0"].silenced and t["b1/h1"].silenced and not t["p1"].silenced
+		and not m.silenced, "M on a fixture: it and its heads faded, the rest not")
+	ok(tl.has_unsaved_timelines() and not tl.can_undo(), "...saved with the timelines, but not an undo step")
+	ok(tl.live_tracks()["b1"]["mute"] == true, "...and in what plays while editing")
+	_press_button(plates["b1"], NP.MUTE)
+	ok(not t["b1"].mute and not t["b1/h1"].silenced, "M again: back on")
+
+	# Solo a head: every other head and fixture is left out.
+	_press_button(plates["b1/h1"], NP.SOLO)
+	ok(t["b1/h1"].solo and not t["b1/h1"].silenced and not t["b1"].silenced and not m.silenced
+		and t["b1/h0"].silenced and t["p1"].silenced, "S on a head: it plays (with its fixture and the master); the rest don't")
+	_press_button(plates["b1"], NP.SOLO)
+	ok(not t["b1/h0"].silenced and t["p1"].silenced, "S on its fixture too: all its heads play")
+	_press_button(plates["b1/h0"], NP.MUTE)
+	ok(t["b1/h0"].silenced and not t["b1/h1"].silenced, "...but a muted one")
+
+	# The master's M: everything.
+	_press_button(tl.master_plate(), NP.MUTE)
+	ok(m.mute and m.silenced and t.values().all(func(tr): return tr.silenced), "M on the master: everything faded")
+	_press_button(tl.master_plate(), NP.MUTE)
+
+	# Saved: in the song's data, kept across a patch refresh.
+	tl._collect()
+	var saved: Dictionary = tl.song_data()["tracks"]
+	ok(saved["b1"].get("solo") == true and saved["b1/h1"].get("solo") == true and saved["b1/h0"].get("mute") == true
+		and not saved.get("master", {}).has("mute") and not saved.has("p1"), "in the song's timelines (%s)" % str(saved))
+	tl.refresh_fixtures()
+	var again := {}
+	for tr in tl.fixture_tracks():
+		again[String(tr.get_meta("key"))] = tr
+	ok(again["b1"].solo and again["b1/h1"].solo and again["b1/h0"].mute and again["p1"].silenced,
+		"read back when the tracks are rebuilt")
+	# Undo leaves them be.
+	m.dimmer_nodes = PackedVector2Array([Vector2(10, 0.5)])
+	m.dimmer_edited.emit()
+	tl.undo()
+	ok(again["b1"].solo and again["b1/h0"].mute and tl.song_data()["tracks"]["b1"].get("solo") == true,
+		"undoing an edit leaves mute / solo as they are")
+	tl._dirty = false
+	tl.queue_free()
 	await process_frame

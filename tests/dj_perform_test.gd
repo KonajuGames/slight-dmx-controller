@@ -35,6 +35,7 @@ func _run() -> void:
 	PanelScript = load("res://scripts/dj_perform_panel.gd")
 	_test_song_output()
 	_test_wheel()
+	_test_mute_solo()
 	_test_mix()
 	_test_report_time()
 	await _test_performer()
@@ -96,6 +97,45 @@ func _colour(t0: float, t1: float, c0: Color, c1: Color) -> Dictionary:
 
 ## A colour wheel spot (no RGB): a dimmer at 1, its wheel at 2 — open,
 ## red, green, blue.
+## `track` with `flags` ({mute: true} / {solo: true}) added.
+func _with(track: Dictionary, flags: Dictionary) -> Dictionary:
+	var out := track.duplicate()
+	out.merge(flags, true)
+	return out
+
+
+func _test_mute_solo() -> void:
+	print("- mute / solo")
+	var fx := _fixtures()
+	var bases := _bases()
+	var half := _nodes([[0, 0.5]])
+	var o: Dictionary = P.song_output({"master": _with(half, {"mute": true})}, 5.0, fx, bases, 1)[0]
+	ok(o.is_empty(), "the master muted: nothing driven")
+	o = P.song_output({"master": half, "a": {"mute": true}}, 5.0, fx, bases, 1)[0]
+	ok(not o.has(0) and o.get(42) == 128 and o.get(20) == 50, "a fixture muted: not driven, the master's still on the rest")
+	o = P.song_output({"master": half, "c": {"mute": true}}, 5.0, fx, bases, 1)[0]
+	ok(not o.has(20) and not o.has(23), "a muted fixture's heads are muted too")
+	o = P.song_output({"master": half, "c/h0": {"mute": true}}, 5.0, fx, bases, 1)[0]
+	ok(not o.has(20) and o.get(23) == 50 and o.get(0) == 128, "a head muted: just that head")
+	o = P.song_output({"master": half, "b": {"solo": true}}, 5.0, fx, bases, 1)[0]
+	ok(o.get(10) == 100 and not o.has(0) and not o.has(20) and not o.has(42), "a fixture soloed: only it plays (with the master's line)")
+	o = P.song_output({"master": half, "c": {"solo": true}, "c/h1": {"mute": true}}, 5.0, fx, bases, 1)[0]
+	ok(o.get(20) == 50 and not o.has(23) and not o.has(0), "...its heads too, unless muted")
+	o = P.song_output({"master": half, "c/h1": {"solo": true}}, 5.0, fx, bases, 1)[0]
+	ok(o.get(23) == 50 and not o.has(20) and not o.has(0) and not o.has(10), "a head soloed: only it, of its fixture and the rest")
+	o = P.song_output({"master": half, "a": {"solo": true}, "c/h0": {"solo": true}}, 5.0, fx, bases, 1)[0]
+	ok(o.get(0) == 128 and o.get(20) == 50 and not o.has(23) and not o.has(42), "two soloed: both play")
+	o = P.song_output({"master": half, "a": {"solo": true, "mute": true}}, 5.0, fx, bases, 1)[0]
+	ok(o.is_empty(), "soloed but muted: muted (and the rest still left out)")
+	# The rules on their own.
+	var tracks := {"master": {}, "f": {"solo": true}, "g/h2": {"solo": true}, "g/h3": {}}
+	var mix := TimelineTrack.mix_state(tracks)
+	ok(TimelineTrack.plays(tracks, mix, "master") and TimelineTrack.plays(tracks, mix, "f/h0")
+		and TimelineTrack.plays(tracks, mix, "g") and TimelineTrack.plays(tracks, mix, "g/h2")
+		and not TimelineTrack.plays(tracks, mix, "g/h3") and not TimelineTrack.plays(tracks, mix, "x"),
+		"plays(): the master and a soloed head's fixture play on; its other heads and other fixtures don't")
+
+
 func _test_wheel() -> void:
 	print("- a colour wheel fixture")
 	var spot := FixtureProfile.new("spot", "Wheel Spot", [
@@ -369,6 +409,12 @@ func _test_performer() -> void:
 	ok(l[0].get(0) == 204 and l[0].get(42) == 64, "two decks playing: highest takes precedence (%s, %s)" % [l[0].get(0), l[0].get(42)])
 	_vdj(perf, "deck 2 play", "off")
 	ok(perf.layer(1)[0].get(0) == 64, "deck 2 paused: deck 1's again")
+	# Mute / solo come with a song's timelines — a track with just those too.
+	perf._loaded(2, perf.deck(2).load_id, {"tracks": {"master": {"dimmer": [[0, 0.5]]}, "a": {"mute": true},
+		"c/h1": {"solo": true}}})
+	var mixed: Dictionary = perf.deck(2).tracks
+	ok(mixed.get("a", {}).get("mute") == true and mixed.get("c/h1", {}).get("solo") == true
+		and mixed["master"].get("mute") == false, "a deck's timelines keep their mute / solo")
 	# A song without timelines; a song changed while loading.
 	_vdj(perf, "deck 2 get_filepath", song3)
 	ok(await _wait_loads(perf) and perf.deck(2).load_state == P.Load.NO_TIMELINES, "a song with no timelines")

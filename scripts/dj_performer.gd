@@ -256,10 +256,12 @@ func _loaded(num: int, id: int, data: Dictionary) -> void:
 			var strobes := MusicTimeline._spans_from(saved[key].get("strobe", []))
 			var places := MusicTimeline._pos_from(saved[key].get("position", []))
 			var moves := MusicTimeline._moves_from(saved[key].get("movement", []))
+			var muted := bool(saved[key].get("mute", false))
+			var soloed := bool(saved[key].get("solo", false))
 			if not nodes.is_empty() or not segs.is_empty() or not strobes.is_empty() or not places.is_empty() \
-					or not moves.is_empty():
+					or not moves.is_empty() or muted or soloed:
 				tracks[String(key)] = {"dimmer": nodes, "colour": segs, "strobe": strobes, "position": places,
-					"movement": moves}
+					"movement": moves, "mute": muted, "solo": soloed}
 	d.tracks = tracks
 	d.load_state = Load.LOADED if not tracks.is_empty() else Load.NO_TIMELINES
 	state_changed.emit()
@@ -323,12 +325,17 @@ func layer(n: int) -> Array:
 ## scaled by the level (its virtual dimmer). Only what the timelines cover
 ## is driven. A fixture left out of show generation (its
 ## "exclude_generate") ignores the master: only its own timelines (and its
-## heads') drive it.
+## heads') drive it. A fixture or head left out by mute / solo
+## (TimelineTrack.plays()) isn't driven at all; the master muted, nothing
+## is.
 static func song_output(tracks: Dictionary, t: float, fixtures: Array, bases: Array, n: int,
 		positions: PositionLibrary = null) -> Array:
 	var out: Array = []
 	for i in range(n):
 		out.append({})
+	var mix := TimelineTrack.mix_state(tracks)
+	if not TimelineTrack.plays(tracks, mix, "master"):
+		return out
 	var master: Dictionary = tracks.get("master", {})
 	var all_line: PackedVector2Array = master.get("dimmer", PackedVector2Array())
 	var all_lm := TimelineTrack.level_at(all_line, t)
@@ -349,6 +356,8 @@ static func song_output(tracks: Dictionary, t: float, fixtures: Array, bases: Ar
 		var master_place := "" if own_only else all_place
 		var master_move: Dictionary = {} if own_only else all_move
 		var uid := String(fx["uid"])
+		if not TimelineTrack.plays(tracks, mix, uid):
+			continue
 		var profile: FixtureProfile = fx["profile"]
 		var mode: int = fx.get("mode", 0)
 		var start: int = fx["start"]
@@ -405,26 +414,34 @@ static func song_output(tracks: Dictionary, t: float, fixtures: Array, bases: Ar
 		var heads: Array = []
 		var any_head := false
 		for h in range(groups.size()):
-			var head: Dictionary = tracks.get("%s/h%d" % [uid, h], {})
+			var head_key := "%s/h%d" % [uid, h]
+			var head: Dictionary = tracks.get(head_key, {})
 			var head_line: PackedVector2Array = head.get("dimmer", PackedVector2Array())
 			var own_head := TimelineTrack.line_defined_at(head_line, t)
-			any_head = any_head or own_head
+			var on := groups.size() < 2 or TimelineTrack.plays(tracks, mix, head_key)
+			any_head = any_head or (own_head and on)
 			var head_colour = TimelineTrack.segment_colour_at(head.get("colour", []), t)
 			heads.append({"own": own_head, "level": TimelineTrack.level_at(head_line, t) if own_head else inherited,
-				"colour": head_colour if head_colour != null else fixture_colour})
+				"colour": head_colour if head_colour != null else fixture_colour, "on": on})
 		# A DIMMER channel serves every head: the brightest head's level,
 		# each head's colour then scaled down to its own.
 		var dim_level := inherited
 		if dim >= 0 and any_head:
 			dim_level = 0.0
 			for hd in heads:
-				dim_level = maxf(dim_level, hd["level"])
+				if hd["on"]:
+					dim_level = maxf(dim_level, hd["level"])
 		if dim >= 0 and (fixture_dimmed or any_head):
 			out[u][start + dim] = int(round(255.0 * clampf(dim_level, 0.0, 1.0)))
 		var in_head := {}
 		for h in range(groups.size()):
 			var g: Dictionary = groups[h]
 			var hd: Dictionary = heads[h]
+			if not hd["on"]:
+				# Left out by mute / solo: its channels are the console's.
+				for k in [g["r"], g["g"], g["b"]] + Array(g["extra"]):
+					in_head[int(k)] = true
+				continue
 			var colour = hd["colour"]
 			var level: float
 			var dimmed: bool
