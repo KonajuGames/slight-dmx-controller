@@ -2139,22 +2139,30 @@ func _default_master_line() -> void:
 		h["state"] = _snapshot()        # undo stops here, with the default line
 
 
-## A track collapsed (to a bar, its plate hidden) or expanded. Collapsed,
-## its rows leave the selection.
+## A track collapsed (to a bar, its plate hidden) or expanded by the
+## user. A fixture's heads go with it (each can still be expanded or
+## collapsed on its own after). Collapsed, their rows leave the selection.
 func _on_collapse_toggled(tr: TimelineTrack, plate: Control) -> void:
-	plate.visible = not tr.collapsed
 	var key := String(tr.get_meta("key"))
-	if not tr.collapsed:
-		_collapsed.erase(key)
+	var gone := {}                      # the collapsed tracks' keys
+	for other in _fixture_tracks:
+		var k := String(other.get_meta("key"))
+		if other == tr or (tr.target == TimelineTrack.Target.FIXTURE and k.begins_with(key + "/h")):
+			other.collapsed = tr.collapsed
+			(plate if other == tr else other.get_parent().get_child(1)).visible = not tr.collapsed
+			if tr.collapsed:
+				_collapsed[k] = true
+				gone[k] = true
+			else:
+				_collapsed.erase(k)
+	if gone.is_empty():
 		return
-	_collapsed[key] = true
-	var prefix := key + "|"
 	var blocks: Array = []
 	var dropped := false
 	for b in _selection.blocks:
 		var keep := PackedStringArray()
 		for id in b["rows"]:
-			if String(id).begins_with(prefix):
+			if gone.has(String(id).get_slice("|", 0)):
 				dropped = true
 			else:
 				keep.append(id)

@@ -1677,10 +1677,12 @@ func _test_collapse() -> void:
 	ok(b1.collapsed and not plate.visible and b1.custom_minimum_size.y == TimelineTrack.COLLAPSED_HEIGHT and full_h > 20.0,
 		"a click on the plate: collapsed to a %d px bar, the plate hidden" % TimelineTrack.COLLAPSED_HEIGHT)
 	ok(b1.size.x > t["p1"].size.x, "...the bar across the plate's column too (%.0f / %.0f)" % [b1.size.x, t["p1"].size.x])
-	ok(not t["b1/h0"].collapsed, "...its heads as they were")
+	ok(t["b1/h0"].collapsed and t["b1/h1"].collapsed and not t["b1/h0"].get_parent().get_child(1).visible
+		and not t["p1"].collapsed, "...its heads with it, the other fixture not")
 	ok(b1.row_at(Vector2(100, 10)) == -1 and b1.dimmer_polyline().is_empty(), "no rows to edit")
 	ok(tl.selection().spans_for("b1", TimelineTrack.Row.DIMMER).is_empty()
-		and tl.selection().spans_for("p1", TimelineTrack.Row.DIMMER).size() == 1, "its rows leave the selection, the others' stay")
+		and tl.selection().spans_for("b1/h1", TimelineTrack.Row.DIMMER).is_empty()
+		and tl.selection().spans_for("p1", TimelineTrack.Row.DIMMER).size() == 1, "its and its heads' rows leave the selection, the others' stay")
 	ok(not tl._row_list().any(func(e): return e["track"] == b1), "...and area selections pass it by")
 	ok(t["b1/h1"].collapsed_name() == "Bar 1 · Head 2" and b1.collapsed_name() == "Bar 1", "the name on one line")
 	var m := b1.collapsed_button_rect(NP.MUTE)
@@ -1704,6 +1706,15 @@ func _test_collapse() -> void:
 	_tap(b1, Vector2(200, 10))
 	await process_frame
 	ok(not b1.collapsed and plate.visible and b1.custom_minimum_size.y == full_h, "a click on the bar: expanded")
+	ok(not t["b1/h0"].collapsed and not t["b1/h1"].collapsed and t["b1/h1"].get_parent().get_child(1).visible,
+		"...its heads too")
+	# A head on its own.
+	var h1: TimelineTrack = t["b1/h1"]
+	var hp: TimelineTrack.NamePlate = h1.get_parent().get_child(1)
+	_tap(hp, hp.name_rect().get_center())
+	ok(h1.collapsed and not hp.visible and not b1.collapsed and not t["b1/h0"].collapsed, "a head collapses on its own")
+	_tap(h1, Vector2(200, 10))
+	ok(not h1.collapsed and hp.visible, "...and expands on its own")
 
 	# Not the master.
 	var mp := tl.master_plate()
