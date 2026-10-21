@@ -3,7 +3,9 @@ extends Control
 ## 3D visualizer tab: a lit room with the patched fixtures, driven live by
 ## each universe's composited DMX output. Orbit the camera, click a
 ## fixture to select it, drag it on the floor or type its position, add
-## trusses, and set the haze / room.
+## trusses, and set the haze / room. Moving things — a drag, a typed (or
+## stepped) value, Auto-arrange — can be undone (Undo / Redo, Ctrl+Z /
+## Ctrl+Y or Ctrl+Shift+Z while the pointer's over the visualizer).
 
 ## Each room's walls and backdrop are tinted (not black), lit enough by the
 ## ambient light and work light that the fixtures' bodies stand out
@@ -17,6 +19,8 @@ const FLOOR_COLOUR := Color(0.20, 0.20, 0.23)
 const AMBIENT_ENERGY := 0.35
 const WORK_LIGHT_ENERGY := 0.5
 const HAZE_MAX := 0.05
+## Moves the undo history keeps.
+const UNDO_LIMIT := 100
 
 ## "Dock to Main" button (shown only while floating) — the shell moves
 ## this panel between the right-hand tab and its own window. Popping *out*
@@ -56,7 +60,13 @@ var _drag := ""            # "", "orbit", "pan", "move"
 var _drag_from := Vector2.ZERO
 var _drag_moved := false
 var _move_node: Node3D = null
+var _move_before := {}     # the dragged item's state when the drag began
 var _selected: Node3D = null
+
+# undo / redo: each step a list of {ref, before, after} (_ref_of(),
+# _state_of())
+var _undo: Array = []
+var _redo: Array = []
 
 var _room := "Black Box"
 
@@ -73,6 +83,8 @@ var _fov_spin: SpinBox
 var _ortho_check: CheckButton
 var _rec_btn: Button
 var _rec_label: Label
+var _undo_btn: Button
+var _redo_btn: Button
 var _popout_btn: Button
 var _prop_panel: PanelContainer
 var _prop_title: Label
@@ -289,6 +301,13 @@ func _build_overlay() -> void:
 	# --- row 3: scene + render ------------------------------------
 	var r3 := _flow()
 	col.add_child(r3)
+	_undo_btn = _btn("Undo", undo)
+	_undo_btn.tooltip_text = "Undo the last move (Ctrl+Z)"
+	r3.add_child(_undo_btn)
+	_redo_btn = _btn("Redo", redo)
+	_redo_btn.tooltip_text = "Redo the move undone (Ctrl+Y)"
+	r3.add_child(_redo_btn)
+	_refresh_undo_buttons()
 	r3.add_child(_btn("Add Truss", _add_truss))
 	r3.add_child(_btn("Load Model...", _load_model_dialog))
 	r3.add_child(_btn("Auto-arrange", _auto_arrange))
@@ -333,7 +352,7 @@ func _build_overlay() -> void:
 	_pz = _pos_spin()
 	grid.add_child(_pz)
 	for s in [_px, _py, _pz]:
-		s.value_changed.connect(func(_v): _write_selected_transform())
+		s.value_changed.connect(func(_v): _edit_from_props())
 
 	_prot_row = HBoxContainer.new()
 	_prot_row.add_child(_mklabel("Heading"))
@@ -343,7 +362,7 @@ func _build_overlay() -> void:
 	_ptilt = _ang_spin()
 	_prot_row.add_child(_ptilt)
 	for s in [_phead, _ptilt]:
-		s.value_changed.connect(func(_v): _write_selected_transform())
+		s.value_changed.connect(func(_v): _edit_from_props())
 	pv.add_child(_prot_row)
 
 	_plen_row = HBoxContainer.new()
@@ -354,7 +373,8 @@ func _build_overlay() -> void:
 	_plen.max_value = 40.0
 	_plen.step = 0.1
 	_plen.value = 4.0
-	_plen.value_changed.connect(func(_v): _write_selected_transform())
+	_plen.value_changed.connect(func(_v): _edit_from_props())
+	_drop_focus_on_enter(_plen)
 	_plen_row.add_child(_plen)
 	_plen_row.add_child(_btn("Delete", _delete_selected))
 	pv.add_child(_plen_row)
@@ -381,6 +401,7 @@ func _pos_spin() -> SpinBox:
 	s.max_value = 40
 	s.step = 0.1
 	s.custom_minimum_size = Vector2(64, 0)
+	_drop_focus_on_enter(s)
 	return s
 
 
@@ -390,7 +411,15 @@ func _ang_spin() -> SpinBox:
 	s.max_value = 180
 	s.step = 1
 	s.custom_minimum_size = Vector2(64, 0)
+	_drop_focus_on_enter(s)
 	return s
+
+
+## A typed value, once entered, lets go of the keyboard — so Ctrl+Z then
+## undoes the move, not the typing.
+func _drop_focus_on_enter(s: SpinBox) -> void:
+	var le := s.get_line_edit()
+	le.text_submitted.connect(func(_t): le.release_focus())
 
 
 # -------------------------------------------------------------- CAMERA --
@@ -521,10 +550,15 @@ func _begin_drag(pos: Vector2, shift: bool) -> void:
 	if hit.is_empty():
 		_drag = "orbit"
 	else:
-		var node: Node3D = hit["collider"].get_parent()
-		_select(node)
-		_move_node = node
-		_drag = "move"
+		_start_move(hit["collider"].get_parent())
+
+
+## Select `node` and start dragging it on the floor.
+func _start_move(node: Node3D) -> void:
+	_select(node)
+	_move_node = node
+	_move_before = _state_of(node)
+	_drag = "move"
 
 
 func _drag_motion(mm: InputEventMouseMotion) -> void:
@@ -555,6 +589,9 @@ func _drag_motion(mm: InputEventMouseMotion) -> void:
 func _end_drag() -> void:
 	if _drag == "orbit" and not _drag_moved:
 		_select(null)  # click on empty space clears selection
+	if _drag == "move" and _move_node != null:
+		# The whole drag, one step.
+		_record([{"ref": _ref_of(_move_node), "before": _move_before, "after": _state_of(_move_node)}])
 	_drag = ""
 	_move_node = null
 
@@ -663,6 +700,148 @@ func _patch_entry(fv: FixtureView) -> Dictionary:
 		if int(f["id"]) == fv.fixture_id:
 			return f
 	return {}
+
+
+# ---------------------------------------------------------- UNDO / REDO --
+
+## The properties panel changed a value: apply it, as one undoable step.
+func _edit_from_props() -> void:
+	if _syncing or _selected == null:
+		return
+	var before := _state_of(_selected)
+	_write_selected_transform()
+	_record([{"ref": _ref_of(_selected), "before": before, "after": _state_of(_selected)}])
+
+
+## What an undo step finds an item by: a fixture by its patch uid (its
+## view is rebuilt with every patch change), a truss or model by its node.
+func _ref_of(node: Node3D) -> Dictionary:
+	if node is FixtureView:
+		return {"uid": String(_patch_entry(node as FixtureView).get("uid", ""))}
+	return {"node": node}
+
+
+## Where an item is (and how it's turned, how long / big it is).
+func _state_of(node: Node3D) -> Dictionary:
+	if node is FixtureView:
+		var e := _patch_entry(node as FixtureView)
+		return {"pos": e.get("pos", node.position), "rot": e.get("rot", Vector3(90, 0, 0))}
+	if node.has_meta("prop"):
+		return {"pos": node.position, "scale": node.scale.x, "heading": node.rotation_degrees.y}
+	return {"pos": node.position, "len": float(node.get_meta("len", 4.0)), "heading": node.rotation_degrees.y}
+
+
+## Put the item `ref` names back to `st` (_state_of()). False when it's
+## gone (unpatched, deleted).
+func _set_state(ref: Dictionary, st: Dictionary) -> bool:
+	var node: Node3D = null
+	if ref.has("uid"):
+		for c in _fixture_root.get_children():
+			if c is FixtureView and not c.is_queued_for_deletion() \
+					and String(_patch_entry(c as FixtureView).get("uid", "")) == String(ref["uid"]):
+				node = c
+		if node == null:
+			return false
+		var e := _patch_entry(node as FixtureView)
+		e["pos"] = st["pos"]
+		e["rot"] = st["rot"]
+		(node as FixtureView).apply_transform(st["pos"], st["rot"])
+	else:
+		var held = ref["node"]              # untyped: it may have been freed
+		if not is_instance_valid(held) or (held as Node3D).is_queued_for_deletion():
+			return false
+		node = held
+		node.position = st["pos"]
+		node.rotation_degrees.y = float(st["heading"])
+		if st.has("scale"):
+			node.scale = Vector3.ONE * float(st["scale"])
+		else:
+			node.set_meta("len", float(st["len"]))
+			_reshape_truss(node, float(st["len"]))
+	if node == _selected:
+		_sync_props_from_selected()
+	return true
+
+
+## Add a step of `changes` ([{ref, before, after}]) to the history — those
+## that changed anything; none, no step.
+func _record(changes: Array) -> void:
+	var real := changes.filter(func(c): return c["before"] != c["after"])
+	if real.is_empty():
+		return
+	_undo.push_back(real)
+	if _undo.size() > UNDO_LIMIT:
+		_undo.pop_front()
+	_redo.clear()
+	_refresh_undo_buttons()
+
+
+func can_undo() -> bool:
+	return not _undo.is_empty()
+
+
+func can_redo() -> bool:
+	return not _redo.is_empty()
+
+
+## Undo the last move. Returns whether there was one.
+func undo() -> bool:
+	if _undo.is_empty():
+		return false
+	var step: Array = _undo.pop_back()
+	for k in range(step.size() - 1, -1, -1):
+		_set_state(step[k]["ref"], step[k]["before"])
+	_redo.push_back(step)
+	_refresh_undo_buttons()
+	return true
+
+
+## Redo the last move undone. Returns whether there was one.
+func redo() -> bool:
+	if _redo.is_empty():
+		return false
+	var step: Array = _redo.pop_back()
+	for c in step:
+		_set_state(c["ref"], c["after"])
+	_undo.push_back(step)
+	_refresh_undo_buttons()
+	return true
+
+
+## Forget the history (another show).
+func clear_history() -> void:
+	_undo.clear()
+	_redo.clear()
+	_refresh_undo_buttons()
+
+
+func _refresh_undo_buttons() -> void:
+	if _undo_btn != null:
+		_undo_btn.disabled = _undo.is_empty()
+		_redo_btn.disabled = _redo.is_empty()
+
+
+## Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z) while the pointer's over the visualizer
+## or one of its fields has the keyboard — ahead of the timeline's undo,
+## which otherwise takes them.
+func _shortcut_input(event: InputEvent) -> void:
+	if not (event is InputEventKey and event.pressed and event.is_command_or_control_pressed()
+			and (event.keycode == KEY_Z or event.keycode == KEY_Y)):
+		return
+	if not is_visible_in_tree() or not _has_attention():
+		return
+	if event.keycode == KEY_Y or event.shift_pressed:
+		redo()
+	else:
+		undo()
+	get_viewport().set_input_as_handled()
+
+
+func _has_attention() -> bool:
+	if get_global_rect().has_point(get_global_mouse_position()):
+		return true
+	var f := get_viewport().gui_get_focus_owner()
+	return f != null and is_ancestor_of(f)
 
 
 # --------------------------------------------------------------- TRUSS --
@@ -820,13 +999,18 @@ func rebuild() -> void:
 
 
 func _auto_arrange() -> void:
+	var changes: Array = []
 	for u in range(panels.size()):
 		var i := 0
 		for f in panels[u].patched_fixtures:
+			var before := {"pos": f.get("pos", UniversePanel.auto_place(0)), "rot": f.get("rot", Vector3(90, 0, 0))}
 			f["pos"] = UniversePanel.auto_place(i) + Vector3(0, 0, u * -2.0)
 			f["rot"] = Vector3(90, 0, 0)
+			changes.append({"ref": {"uid": String(f.get("uid", ""))}, "before": before,
+				"after": {"pos": f["pos"], "rot": f["rot"]}})
 			i += 1
 	rebuild()
+	_record(changes)                  # every fixture, one step
 
 
 func _set_shadows(on: bool) -> void:
@@ -979,6 +1163,7 @@ func to_dict() -> Dictionary:
 func from_dict(d: Dictionary) -> void:
 	if not (d is Dictionary):
 		return
+	clear_history()                   # another show: nothing to undo
 	_apply_room(String(d.get("room", _room)))
 	if d.has("haze"):
 		_haze_slider.value = float(d["haze"])

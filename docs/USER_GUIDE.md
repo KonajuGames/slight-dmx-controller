@@ -187,7 +187,9 @@ effects, and the grand master all show, updating continuously.
 Left-drag empty space to orbit the camera, wheel to zoom. **Auto-arrange**
 hangs every patched fixture in a tidy grid to start from; drag a fixture
 on the floor (or type exact X/Y/Z and heading/tilt) to place it precisely.
-**Add Truss** and **Load Model…** bring in rigging and set pieces. **Haze**
+Got it wrong? **Undo** and **Redo** (or Ctrl+Z / Ctrl+Y with the pointer
+over the visualizer) step back and forth through your moves — a whole
+drag, each typed value, or an Auto-arrange is one step each. **Add Truss** and **Load Model…** bring in rigging and set pieces. **Haze**
 adds real volumetric fog so beams show up in the air; **Room** switches
 between a few preset spaces. **Screenshot** and **Record** save a still or
 an MP4 straight from this view. Drag the **3D Visualizer** tab off the tab
