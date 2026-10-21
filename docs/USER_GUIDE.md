@@ -264,7 +264,9 @@ had, as a single undo step — a good starting point to edit by hand.
 **Generate casts each fixture by its category** (chosen in the Patch
 tab). Washes carry the bulk of the colour. Movers carry the movement,
 usually in the palette's accent colour. Multi-cells play chases, waves,
-bar graphs and colour patterns across their heads. Primary fixtures
+bar graphs and colour patterns across their heads. A mover with
+several heads moves as one, but now and then its heads break out into
+multi-cell chases and colours while it moves. Primary fixtures
 drive the show, and secondary ones support them with a calmer pattern
 in the palette the other way round, a little dimmer, their movers
 mirroring the primaries, following slower or holding still. Before a

@@ -33,6 +33,7 @@ func _run() -> void:
 	_test_contrast()
 	_test_positions()
 	_test_categories()
+	_test_head_movers()
 	_test_wheel()
 	_test_valid()
 	_test_edges()
@@ -581,6 +582,61 @@ func _test_categories() -> void:
 	ok(sorted, "every line in time order")
 	var same := _cat_show(3)
 	ok(str(same) == str(shows[3]), "the same variation, the same show")
+
+
+## A rig with two three-head movers, a plain mover and two washes.
+func _head_mover_tracks() -> Array:
+	var out: Array = [
+		{"key": "master", "target": T.MASTER, "rows": TimelineTrack.ROW_ORDER.duplicate()},
+		{"key": "w1", "target": T.FIXTURE, "rows": [R.COLOUR, R.DIMMER]},
+		{"key": "w2", "target": T.FIXTURE, "rows": [R.COLOUR, R.DIMMER]},
+		{"key": "spot", "target": T.FIXTURE, "rows": [R.POSITION, R.MOVEMENT, R.DIMMER]},
+	]
+	for m in ["mh1", "mh2"]:
+		out.append({"key": m, "target": T.FIXTURE, "rows": [R.POSITION, R.MOVEMENT, R.COLOUR, R.DIMMER]})
+		for h in range(3):
+			out.append({"key": "%s/h%d" % [m, h], "target": T.HEAD, "rows": [R.COLOUR, R.DIMMER]})
+	return out
+
+
+func _test_head_movers() -> void:
+	print("- movers with several heads")
+	var tracks := _head_mover_tracks()
+	ok(TimelineGenerator._role_of(tracks[4], [tracks[5], tracks[6], tracks[7]]) == ["mover", 1],
+		"a moving fixture with several heads is a mover")
+	var shows: Array = []
+	for v in range(10):
+		shows.append(TimelineGenerator.generate(_sections(), _beats(), 4, 120.0, tracks, ["posA", "posB"], "heads.mp3", v))
+	var moved := false
+	var fixture_lines := false
+	var cells := false
+	var as_one := false
+	var head_colours := false
+	var sorted := true
+	for sh in shows:
+		moved = moved or not sh["mh1"]["movement"].is_empty()
+		fixture_lines = fixture_lines or not sh["mh1"]["dimmer"].is_empty()
+		for a in range(0, 112, 8):
+			var h0: PackedVector2Array = sh["mh1/h0"]["dimmer"]
+			var h2: PackedVector2Array = sh["mh1/h2"]["dimmer"]
+			if _differs(h0, h2, a, a + 8.0):
+				cells = true
+			elif h0.size() >= 2 and h0[0].x <= a and h0[h0.size() - 1].x >= a + 8.0 \
+					and not _differs(h0, sh["mh1"]["dimmer"], a, a + 8.0) and _differs(sh["mh1"]["dimmer"], sh["master"]["dimmer"], a, a + 8.0):
+				as_one = true
+			var c0 = _colour_at(sh["mh1/h0"]["colour"], a + 1.0)
+			var c2 = _colour_at(sh["mh1/h2"]["colour"], a + 1.0)
+			head_colours = head_colours or (c0 != null and c2 != null and c0 != c2)
+		for k in sh:
+			sorted = sorted and _is_sorted(sh[k]["dimmer"])
+	ok(moved, "a multi-head mover still moves (fanned with the movers)")
+	ok(fixture_lines, "...and plays the movers' patterns on its own dimmer")
+	ok(cells, "its heads sometimes play patterns across them, as cells")
+	ok(as_one, "...and around those, the mover's pattern together")
+	ok(head_colours, "...and colours across them")
+	ok(sorted, "every line in time order")
+	var again := TimelineGenerator.generate(_sections(), _beats(), 4, 120.0, tracks, ["posA", "posB"], "heads.mp3", 4)
+	ok(str(again) == str(shows[4]), "the same variation, the same show")
 
 
 func _test_wheel() -> void:

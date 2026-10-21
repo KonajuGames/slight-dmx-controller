@@ -72,7 +72,11 @@ extends RefCounted
 ##                  above
 ##   movers         the movement — the fans across them are theirs — with
 ##                  patterns of their own (MOVER_PATTERNS) and, against the
-##                  washes, the palette's accent colour first
+##                  washes, the palette's accent colour first. A mover with
+##                  several heads moves as one, its heads playing its
+##                  pattern together — but some phrases (MOVER_CELLS) its
+##                  heads play as cells, a multi-cell's patterns and
+##                  colours across them
 ##   multi-cells    patterns and colours across their heads (CELL_PATTERNS,
 ##                  "stack" among them), each fixture's heads on their own
 ##                  or all the heads in a line across the rig
@@ -174,6 +178,10 @@ const CELL_PATTERNS := [
 		["odd_even", 1]],
 ]
 const CELL_BREAKDOWN := [["breathe_slow", 2], ["wave", 1], ["solo_dark", 1]]
+## How often a phrase has multi-head movers' heads play as cells, by tier
+## (calm, low, mid, high), and in a breakdown.
+const MOVER_CELLS := [0.2, 0.35, 0.5, 0.6]
+const MOVER_CELLS_BREAKDOWN := 0.35
 ## How bright secondary fixtures run while supporting the primaries.
 const SUPPORT_LEVEL := 0.75
 ## How secondary movers move against the primaries: mirrored (half a
@@ -294,10 +302,10 @@ static func generate(sections: Array, beats: PackedFloat32Array, per_bar: int, d
 			mo["position"] = _positions(secs, phrases, _ranked(positions), rng)
 
 	# --- dimmers --------------------------------------------------------
-	# Per phrase, each dimmer line's pick and its place [pick, i, n] among
-	# the fixtures (or heads) playing it together; a line only runs from
-	# the first phrase it does something other than follow the master to
-	# the last.
+	# Per phrase, each dimmer line's pick and its place [pick, i, n, own]
+	# among the fixtures (or heads) playing it together; a line only runs
+	# from the first phrase it does something of its own (other than
+	# follow the master, or its mover's pattern) to the last.
 	var ctx := {"beats": beats, "beat_len": beat_len, "bar_len": bar_len, "per_bar": per_bar,
 		"bar_phase": bar_phase, "master": master_line, "env": en}
 	var jobs := {}
@@ -308,14 +316,14 @@ static func generate(sections: Array, beats: PackedFloat32Array, per_bar: int, d
 					if not jobs.has(slot[0]):
 						jobs[slot[0]] = []
 						jobs[slot[0]].resize(phrases.size())
-					jobs[slot[0]][p] = [arr["pick"], slot[1], slot[2]]
+					jobs[slot[0]][p] = slot.slice(1)
 	for key in jobs:
 		var js: Array = jobs[key]
 		var first := -1
 		var last := -1
 		for p in range(phrases.size()):
 			var j = js[p]
-			if j != null and (j[0]["dim"] != "follow" or j[0]["fill"] != "" or float(j[0]["scale"]) < 1.0
+			if j != null and j[3] and (j[0]["dim"] != "follow" or j[0]["fill"] != "" or float(j[0]["scale"]) < 1.0
 					or phrases[p]["riser"].x >= 0.0):
 				if first < 0:
 					first = p
@@ -355,6 +363,18 @@ static func generate(sections: Array, beats: PackedFloat32Array, per_bar: int, d
 				var arr: Dictionary = each
 				var pick: Dictionary = arr["pick"]
 				var mode: String = pick["colour"]
+				# Multi-head movers playing as cells: the cells' colours
+				# across their heads; the rest as movers.
+				var cells: Dictionary = pick.get("cells", {})
+				if not cells.is_empty():
+					var heady: Array = arr["units"].filter(func(u): return _multi_head(u, TimelineTrack.Row.COLOUR))
+					if not heady.is_empty():
+						var cmode: String = cells["colour"]
+						_colour_cells(out, {"pick": cells, "units": heady}, cmode, spans_of.call(cmode),
+							pal if int(cells["rot"]) == 0 else [pal[1], pal[0], pal[2]], look)
+						arr = {"pick": pick, "units": arr["units"].filter(func(u): return not (u in heady))}
+						if arr["units"].is_empty():
+							continue
 				# All in the palette's main colour: the master's colour does it
 				# — but a colour wheel's row gets it, to show its own colours.
 				if mode == "all" and int(pick["rot"]) == 0:
@@ -745,7 +765,8 @@ static func _ensembles(fixtures: Array, heads_of: Dictionary) -> Dictionary:
 ## scale: its level, rot: 0 the palette as it is / 1 accent first,
 ## by_group: step by category group, span: a multi-cell's heads "each"
 ## fixture's alone or "across" them all, move: a secondary mover's
-## answer}. The washes' primary pick is the phrase's own (`plan`); `most`:
+## answer, cells: a mover's — what its multi-head movers' heads play as
+## cells, or {} (_mover_cells())}. The washes' primary pick is the phrase's own (`plan`); `most`:
 ## the most fixtures / heads one pattern might step across (for
 ## sparkle's orders).
 static func _role_plan(plan: Array, phrases: Array, ens: Dictionary, rng: RandomNumberGenerator, most: int,
@@ -789,6 +810,9 @@ static func _role_plan(plan: Array, phrases: Array, ens: Dictionary, rng: Random
 			prim["by_group"] = prim["dim"] != "sparkle" and rng.randf() < 0.6
 			var together: int = pair[0].size() + (pair[1].size() if merge else 0)
 			prim["span"] = "across" if together >= 2 and rng.randf() < 0.35 else "each"
+			if role == "mover":
+				prim["cells"] = _mover_cells(pair[0] + (pair[1] if merge else []), prim, ph, td, tc, calm, fin,
+					pickers, "", rng, most, steps)
 			picks[role + "/1"] = prim
 			if pair[1].is_empty() or merge:
 				continue
@@ -813,8 +837,32 @@ static func _role_plan(plan: Array, phrases: Array, ens: Dictionary, rng: Random
 				"tier": mini(int(base["tier"]), 2), "scale": SUPPORT_LEVEL, "rot": 1 - int(prim["rot"]),
 				"by_group": dim2 != "sparkle" and rng.randf() < 0.6, "span": "each",
 				"move": _picker(pickers, role + "/move2", rng).pick(SUPPORT_MOVES_CALM if calm or td <= 1 else SUPPORT_MOVES)}
+			if role == "mover":
+				var sec: Dictionary = picks["mover/2"]
+				sec["cells"] = _mover_cells(pair[1], sec, ph, maxi(td - 1, 0), mini(tc, 2), calm, false,
+					pickers, "2", rng, most, steps)
 		out.append({"merge": merge, "picks": picks})
 	return out
+
+
+## A mover pick's "cells": a multi-cell's pick for the multi-head movers
+## among `units` to play across their heads this phrase (its dim, colour
+## mode and span the mover pick's) — or {} where they play the mover's
+## pattern as one (always, with no multi-head movers: the rng's untouched,
+## so such rigs' shows don't change). `td` / `tc`: the dimmer / colour
+## tier; `suffix`: the pickers' ("" primary, "2" secondary).
+static func _mover_cells(units: Array, pick: Dictionary, ph: Dictionary, td: int, tc: int, calm: bool, fin: bool,
+		pickers: Dictionary, suffix: String, rng: RandomNumberGenerator, most: int, steps: int) -> Dictionary:
+	if not units.any(func(u): return _multi_head(u, TimelineTrack.Row.DIMMER) or _multi_head(u, TimelineTrack.Row.COLOUR)):
+		return {}
+	if rng.randf() >= (MOVER_CELLS_BREAKDOWN if calm else MOVER_CELLS[td]):
+		return {}
+	var dims: Array = CELL_BREAKDOWN if calm else (CELL_PATTERNS[td] if suffix != "" else _weighted(CELL_PATTERNS[td], ph, td))
+	var cols: Array = BREAKDOWN_COLOURS if calm else COLOUR_MODES[tc] + ([["rainbow", 3]] if fin else [])
+	var dim := _picker(pickers, "mover/cells" + suffix, rng).pick(dims)
+	return {"dim": dim, "fill": pick["fill"], "tier": pick["tier"], "scale": pick["scale"], "rot": pick["rot"],
+		"colour": _picker(pickers, "mover/cell_colour" + suffix, rng).pick(cols), "span": pick["span"],
+		"sparkle": _shuffles(rng, most, steps) if dim == "sparkle" else []}
 
 
 ## The picker named `name` in `pickers`, made on first use.
@@ -878,26 +926,44 @@ static func _cells(u: Dictionary, row: int) -> Array:
 	return [u["track"]] if row in u["track"]["rows"] else []
 
 
-## An arrangement's dimmer lines: [[track key, i, n]]. Washes and movers:
-## the fixtures (_places()); multi-cells: their heads — each fixture's
-## across its own, or ("across") all of them in a line.
+## Whether unit `u` has two or more heads with `row` (plays as cells).
+static func _multi_head(u: Dictionary, row: int) -> bool:
+	return u["heads"].filter(func(h): return row in h["rows"]).size() >= 2
+
+
+## An arrangement's dimmer lines: [[track key, pick, i, n, own]]. Washes
+## and movers: the fixtures (_places()) — a multi-head mover's heads too,
+## playing its pattern with it (not `own`: they only get lines around
+## phrases they play as cells) or, where the pick has "cells", that pick
+## across them; multi-cells: their heads — each fixture's across its own,
+## or ("across") all of them in a line.
 static func _dim_slots(arr: Dictionary, role: String) -> Array:
 	var pick: Dictionary = arr["pick"]
 	var out: Array = []
 	if role != "multi":
 		var units: Array = arr["units"].filter(func(u): return TimelineTrack.Row.DIMMER in u["track"]["rows"])
 		var places := _places(units, pick["by_group"])
+		var cells: Dictionary = pick.get("cells", {})
+		var heady: Array = []
 		for k in range(units.size()):
-			out.append([String(units[k]["track"]["key"]), places[k][0], places[k][1]])
+			out.append([String(units[k]["track"]["key"]), pick, places[k][0], places[k][1], true])
+			if role == "mover" and _multi_head(units[k], TimelineTrack.Row.DIMMER):
+				if cells.is_empty():
+					for h in _cells(units[k], TimelineTrack.Row.DIMMER):
+						out.append([String(h["key"]), pick, places[k][0], places[k][1], false])
+				else:
+					heady.append(units[k])
+		if not heady.is_empty():
+			out.append_array(_dim_slots({"pick": cells, "units": heady}, "multi"))
 		return out
 	for u in arr["units"]:
 		var cells := _cells(u, TimelineTrack.Row.DIMMER)
 		for c in range(cells.size()):
-			out.append([String(cells[c]["key"]), c, cells.size()])
+			out.append([String(cells[c]["key"]), pick, c, cells.size(), true])
 	if pick["span"] == "across":
 		for k in range(out.size()):
-			out[k][1] = k
-			out[k][2] = out.size()
+			out[k][2] = k
+			out[k][3] = out.size()
 	return out
 
 
