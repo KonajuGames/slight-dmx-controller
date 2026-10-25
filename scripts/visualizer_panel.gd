@@ -623,7 +623,16 @@ func _select(node: Node3D) -> void:
 
 
 func _toggle_ui() -> void:
-	_ui_visible = not _ui_visible
+	set_ui_visible(not _ui_visible)
+
+
+## Whether the toolbar and properties are shown (Hide UI / Show UI).
+func is_ui_visible() -> bool:
+	return _ui_visible
+
+
+func set_ui_visible(on: bool) -> void:
+	_ui_visible = on
 	_ui_toggle.text = "Hide UI" if _ui_visible else "Show UI"
 	_toolbar.visible = _ui_visible
 	_refresh_props()

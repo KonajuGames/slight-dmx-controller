@@ -35,6 +35,7 @@ func _run() -> void:
 	await _test_new_show()
 	await _test_default_names()
 	await _test_model_colours()
+	await _test_viz_ui_state()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
 
@@ -671,3 +672,37 @@ func _test_model_colours() -> void:
 
 func _artnet_count() -> int:
 	return root.get_node("ArtNet").universe_count()
+
+
+func _test_viz_ui_state() -> void:
+	print("- the 3D Visualiser's UI shown / hidden, kept between runs")
+	const UI_STORE := "user://_show_file_test_ui_state.json"
+	var main: Control = load("res://main.tscn").instantiate()
+	main.last_show_store = STORE
+	main.ui_state_store = UI_STORE
+	root.add_child(main)
+	await process_frame
+	ok(main.viz_panel.is_ui_visible() and main.viz_panel._toolbar.visible, "shown to start with")
+	main.viz_panel._toggle_ui()
+	ok(not main.viz_panel.is_ui_visible() and not main.viz_panel._toolbar.visible, "Hide UI hides it")
+	main._save_ui_state()
+	main.queue_free()
+	await process_frame
+	main = load("res://main.tscn").instantiate()
+	main.last_show_store = STORE
+	main.ui_state_store = UI_STORE
+	root.add_child(main)
+	await process_frame
+	main._restore_ui_state()
+	ok(not main.viz_panel.is_ui_visible() and not main.viz_panel._toolbar.visible
+		and main.viz_panel._ui_toggle.text == "Show UI", "...and it's still hidden next time")
+	# A state saved before this was kept: shown.
+	var f := FileAccess.open(UI_STORE, FileAccess.WRITE)
+	f.store_string(JSON.stringify({"viz_window": {"floating": false}}))
+	f.close()
+	main._restore_ui_state()
+	ok(main.viz_panel.is_ui_visible(), "an older saved state: shown")
+	main.queue_free()
+	await process_frame
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(UI_STORE))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(STORE))

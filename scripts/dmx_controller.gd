@@ -409,15 +409,17 @@ func _viz_title_over_tab_bar() -> bool:
 
 func _viz_window_dict() -> Dictionary:
 	if _viz_window == null:
-		return {"floating": false}
+		return {"floating": false, "ui": viz_panel.is_ui_visible()}
 	return {
 		"floating": true,
 		"rect": [_viz_window.position.x, _viz_window.position.y,
 			_viz_window.size.x, _viz_window.size.y],
+		"ui": viz_panel.is_ui_visible(),
 	}
 
 
 func _apply_viz_window(d: Dictionary) -> void:
+	viz_panel.set_ui_visible(bool(d.get("ui", true)))
 	var want_float := bool(d.get("floating", false))
 	var rect := Rect2i()
 	var ra = d.get("rect", null)
@@ -432,7 +434,8 @@ func _apply_viz_window(d: Dictionary) -> void:
 		_dock_viz()
 
 
-## Where the visualizer window's state (docked, or floating and where) is
+## Where the visualizer window's state (docked, or floating and where;
+## its UI shown or hidden) is
 ## kept between runs. It's this machine's screen layout, not the show's,
 ## so it isn't in the show file.
 var ui_state_store := "user://ui_state.json"
