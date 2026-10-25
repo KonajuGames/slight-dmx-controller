@@ -89,6 +89,15 @@ func set_point(id: String, uid: String, v: Vector2) -> void:
 	changed.emit()
 
 
+## Drop a fixture's point in a position: back to DEFAULT_POINT.
+func clear_point(id: String, uid: String) -> void:
+	var p := find(id)
+	if p.is_empty() or not p["points"].has(uid):
+		return
+	p["points"].erase(uid)
+	changed.emit()
+
+
 func clear() -> void:
 	positions.clear()
 	_next = 0

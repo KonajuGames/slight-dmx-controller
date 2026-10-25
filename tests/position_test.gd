@@ -28,6 +28,7 @@ func _run() -> void:
 	_test_icon()
 	await _test_editor()
 	await _test_copy_paste()
+	await _test_menu()
 	await _test_browser()
 	await _test_show()
 	await _test_highlight()
@@ -240,6 +241,63 @@ func _test_copy_paste() -> void:
 	_key(KEY_V)
 	await process_frame
 	ok(lib.point(b, "m2") == Vector2(0.1, 0.2), "(shown: it pastes)")
+	ed.queue_free()
+	await process_frame
+
+
+func _test_menu() -> void:
+	print("- the fixture list's right-click menu")
+	var lib := PositionLibrary.new()
+	var a: String = lib.add()["id"]
+	var fx: Array = []
+	for k in range(5):
+		fx.append({"uid": "m%d" % k, "name": "Mover %d" % k, "profile": _mover(), "mode": 0})
+	lib.set_point(a, "m0", Vector2(0.1, 0.2))
+	lib.set_point(a, "m1", Vector2(0.9, 0.9))
+	lib.set_point(a, "m3", Vector2(0.3, 0.1))
+	lib.set_point(a, "m4", Vector2(0.5, 0.8))
+	var ed := PositionEditor.new()
+	ed.library = lib
+	ed.fixtures_provider = func(): return fx
+	root.add_child(ed)
+	ed.size = Vector2(900, 600)
+	await process_frame
+	ed.open(a)
+	var list: ItemList = ed._list
+	var menu: PopupMenu = ed._menu
+	# Right-clicking an unselected fixture: just it, and the menu.
+	ed.select_uids(["m0", "m1"])
+	list.item_clicked.emit(3, Vector2(10, 10), MOUSE_BUTTON_RIGHT)
+	ok(ed.selected_uids() == ["m3"] and menu.visible, "right-click an unselected fixture: it's selected, the menu opens")
+	ok(menu.is_item_disabled(menu.get_item_index(PositionEditor.Menu.SNAP)) and menu.is_item_disabled(menu.get_item_index(PositionEditor.Menu.SPREAD))
+		and not menu.is_item_disabled(menu.get_item_index(PositionEditor.Menu.RESET)), "...one fixture: only Reset")
+	menu.hide()
+	# On the selection: kept.
+	ed.select_uids(["m0", "m1", "m4"])
+	list.item_clicked.emit(1, Vector2(10, 10), MOUSE_BUTTON_RIGHT)
+	ok(ed.selected_uids() == ["m0", "m1", "m4"] and not menu.is_item_disabled(menu.get_item_index(PositionEditor.Menu.SPREAD)),
+		"right-click a selected one: the selection's kept, everything offered")
+	menu.hide()
+	# Snap Together: the average.
+	ed.select_uids(["m0", "m1", "m3"])
+	menu.id_pressed.emit(PositionEditor.Menu.SNAP)
+	var mid := Vector2(1.3 / 3.0, 0.4)
+	ok(lib.point(a, "m0").is_equal_approx(mid) and lib.point(a, "m1").is_equal_approx(mid) and lib.point(a, "m3").is_equal_approx(mid)
+		and lib.point(a, "m4") == Vector2(0.5, 0.8), "Snap Together: every selected one at their average (%s), the rest left" % str(lib.point(a, "m0")))
+	# Spread: evenly between the first and last selected, in list order.
+	lib.set_point(a, "m0", Vector2(0.0, 0.2))
+	ed.select_uids(["m4", "m0", "m1", "m3"])
+	ok(ed.menu_action(PositionEditor.Menu.SPREAD), "Spread")
+	ok(lib.point(a, "m0") == Vector2(0.0, 0.2) and lib.point(a, "m4") == Vector2(0.5, 0.8)
+		and lib.point(a, "m1").is_equal_approx(Vector2(0.5 / 3, 0.4)) and lib.point(a, "m3").is_equal_approx(Vector2(1.0 / 3, 0.6)),
+		"...the first and last kept, those between evenly on the line between them (%s, %s)" % [lib.point(a, "m1"), lib.point(a, "m3")])
+	ed.select_uids(["m0", "m4"])
+	ok(not ed.menu_action(PositionEditor.Menu.SPREAD), "...not with two")
+	# Reset: back to the default.
+	ed.select_uids(["m1", "m4"])
+	menu.id_pressed.emit(PositionEditor.Menu.RESET)
+	ok(lib.point(a, "m1") == PositionLibrary.DEFAULT_POINT and lib.point(a, "m4") == PositionLibrary.DEFAULT_POINT
+		and not lib.find(a)["points"].has("m1") and lib.point(a, "m0") == Vector2(0.0, 0.2), "Reset: the selected back to the default, the rest left")
 	ed.queue_free()
 	await process_frame
 

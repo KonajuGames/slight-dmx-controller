@@ -391,6 +391,16 @@ and pasting onto several aims them all at the same spot. (While you're
 typing in the name field, Ctrl+C / Ctrl+V copy and paste its text
 instead.)
 
+Right-click the fixture list for more (right-clicking a fixture that
+isn't selected selects just that one):
+
+- **Snap Together** aims every selected fixture at the same spot: the
+  average of their points.
+- **Spread** keeps the first and last selected fixtures (in list order)
+  where they are and spaces the ones between evenly along the line
+  joining them. It needs at least three selected.
+- **Reset** puts the selected fixtures back to the default, centred.
+
 ![The position editor with four movers aimed at "Stage Left"](img/13-position-editor.png)
 
 Use them in a timeline's Position row (right-click > **Position**), or

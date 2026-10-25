@@ -17,12 +17,19 @@ extends HBoxContainer
 ## starting again from the first when there are more of them than points
 ## (so one copied point goes to every selected fixture). Not while the
 ## name field's being edited (it copies / pastes text).
+##
+## Right-click the list (on an unselected fixture: just that one selected)
+## for Snap Together (every selected fixture to their average point),
+## Spread (those between the first and last selected, in list order,
+## evenly on the line between their points) and Reset (back to the
+## default, centred).
 
 ## The fixtures to light up to find them: the selected ones while the
 ## editor's showing, else none.
 signal highlight_changed(uids: Array)
 
 const SIDE_WIDTH := 260.0
+enum Menu { SNAP, SPREAD, RESET }
 
 var library: PositionLibrary:
 	set(v):
@@ -41,6 +48,7 @@ var _name: LineEdit
 var _icon: TextureRect
 var _list: ItemList
 var _none: Label
+var _menu: PopupMenu
 ## The copied points, in list order (shared by every editor, so they
 ## paste into any position).
 static var _clip: Array = []
@@ -85,8 +93,15 @@ func _ready() -> void:
 	_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_list.multi_selected.connect(func(_i: int, _sel: bool): _selection_changed())
 	_list.item_selected.connect(func(_i: int): _selection_changed())
+	_list.item_clicked.connect(_on_item_clicked)
 	visibility_changed.connect(_selection_changed)
 	side.add_child(_list)
+	_menu = PopupMenu.new()
+	_menu.add_item("Snap Together", Menu.SNAP)
+	_menu.add_item("Spread", Menu.SPREAD)
+	_menu.add_item("Reset", Menu.RESET)
+	_menu.id_pressed.connect(func(id: int): menu_action(id))
+	add_child(_menu)
 	_none = Label.new()
 	_none.text = "No patched fixture has pan and tilt channels."
 	_none.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -184,6 +199,52 @@ func paste_points() -> bool:
 	for i in range(targets.size()):
 		library.set_point(position_id, targets[i], _clip[i % _clip.size()])
 	return not targets.is_empty()
+
+
+## A list item clicked: the right button opens the menu, on the selection
+## (an unselected fixture: just it, selected).
+func _on_item_clicked(index: int, at: Vector2, button: int) -> void:
+	if button != MOUSE_BUTTON_RIGHT:
+		return
+	if not _list.is_selected(index):
+		select_uids([String(_list.get_item_metadata(index))])
+	var n := selected_uids().size()
+	_menu.set_item_disabled(_menu.get_item_index(Menu.SNAP), n < 2)
+	_menu.set_item_disabled(_menu.get_item_index(Menu.SPREAD), n < 3)
+	_menu.popup(Rect2i(Vector2i(_list.get_screen_transform() * at), Vector2i.ZERO))
+
+
+## Do context-menu item `id` (Menu) on the selected fixtures. Returns
+## whether anything was done.
+func menu_action(id: int) -> bool:
+	if library == null or position_id == "" or library.find(position_id).is_empty():
+		return false
+	var uids := selected_uids()           # in list order
+	match id:
+		Menu.SNAP:
+			if uids.size() < 2:
+				return false
+			var mid := Vector2.ZERO
+			for uid in uids:
+				mid += library.point(position_id, uid)
+			mid /= uids.size()
+			for uid in uids:
+				library.set_point(position_id, uid, mid)
+		Menu.SPREAD:
+			if uids.size() < 3:
+				return false
+			var a := library.point(position_id, uids[0])
+			var b := library.point(position_id, uids[-1])
+			for i in range(1, uids.size() - 1):
+				library.set_point(position_id, uids[i], a.lerp(b, float(i) / (uids.size() - 1)))
+		Menu.RESET:
+			if uids.is_empty():
+				return false
+			for uid in uids:
+				library.clear_point(position_id, uid)
+		_:
+			return false
+	return true
 
 
 ## Whether there are copied points to paste.
