@@ -1786,9 +1786,9 @@ func _process(_delta: float) -> void:
 			_update_cursor()
 			_follow_playhead(before, _wave.song_pos)
 	elif _was_playing:
-		# Played to the end.
+		# Played to the end: back to the start, ready to play again.
 		_was_playing = false
-		_pos = _length()
+		rewind()
 		_update_transport()
 
 

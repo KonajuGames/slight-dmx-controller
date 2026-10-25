@@ -839,6 +839,8 @@ func _test_playback() -> void:
 	tl.play()
 	await _wait(1200)
 	ok(not tl.is_playing() and play.glyph == MusicTimeline.TransportButton.Glyph.PLAY, "stops at the end")
+	ok(tl.playback_position() == 0.0 and w.song_pos == 0.0 and w.view_start == 0.0,
+		"...the playhead back at the start, in view (%.2f)" % tl.playback_position())
 	tl.play()
 	ok(tl.is_playing() and tl.playback_position() < 0.5, "Play after the end starts over")
 	tl.pause()
