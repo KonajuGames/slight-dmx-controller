@@ -802,11 +802,14 @@ func _position_fixtures() -> Array:
 	return out
 
 
-## Every patched fixture for DJ Perform Mode's timeline playback.
-func _perform_fixtures() -> Array:
+## Every patched fixture for DJ Perform Mode's timeline playback (but the
+## ones highlighted, with `unlit_only`).
+func _perform_fixtures(unlit_only := false) -> Array:
 	var out: Array = []
 	for ui in range(_panels.size()):
 		for fx in _panels[ui].patched_fixtures:
+			if unlit_only and _panels[ui].is_highlighted(int(fx["id"])):
+				continue
 			out.append({"uid": String(fx["uid"]), "u": ui, "start": int(fx["start"]),
 				"profile": fx["profile"], "mode": int(fx.get("mode", 0)),
 				"exclude_generate": bool(fx.get("exclude_generate", false))})
@@ -816,12 +819,15 @@ func _perform_fixtures() -> Array:
 ## The DMX layer for ArtNet.tick() from the song open in DJ Edit Mode: its
 ## timelines (edits included, as they stand) at the playhead, the way DJ
 ## Perform Mode would play them — while it plays, and while it's paused
-## with DJ Edit Mode showing (holding the look at the playhead, following
-## it as it's moved). Nothing in the other views unless it's playing, and
-## nothing while DJ Perform Mode is on — the live decks own the rig then.
+## with its timeline showing (holding the look at the playhead, following
+## it as it's moved). Nothing in the other views (the Positions Editor
+## included) unless it's playing, and nothing while DJ Perform Mode is on
+## — the live decks own the rig then. Never the fixtures highlighted (the
+## Positions Editor's): they keep their white and aim.
 func _edit_playback_layer(n: int) -> Array:
 	var tl := music_panel.timeline()
-	if not tl.can_play() or not (tl.is_playing() or music_panel.visible) or performer.is_active():
+	var shown := music_panel.visible and music_panel.is_timeline_shown()
+	if not tl.can_play() or not (tl.is_playing() or shown) or performer.is_active():
 		var empty: Array = []
 		for i in range(n):
 			empty.append({})
@@ -830,7 +836,7 @@ func _edit_playback_layer(n: int) -> Array:
 	for i in range(n):
 		var u := ArtNet.get_universe(i)
 		bases.append(u.dmx_data if u != null else PackedByteArray())
-	return DjPerformer.song_output(tl.live_tracks(), tl.playback_position(), _perform_fixtures(), bases, n, positions)
+	return DjPerformer.song_output(tl.live_tracks(), tl.playback_position(), _perform_fixtures(true), bases, n, positions)
 
 
 ## Every patched fixture, universe by universe, for the DJ Edit Mode

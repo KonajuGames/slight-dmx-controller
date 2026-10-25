@@ -509,6 +509,7 @@ func _test_edit_playback() -> void:
 	tl.pause()
 	ok(main._edit_playback_layer(1)[0].is_empty(), "paused in another view: nothing goes out (the console has the rig)")
 	main.music_panel.visible = true
+	tl.visible = true                       # its timeline showing (as open_track() does)
 	tl.master_track().dimmer_nodes = PackedVector2Array([Vector2(0, 0.2), Vector2(3, 0.2), Vector2(3, 0.9), Vector2(6, 0.9)])
 	tl.seek(1.0)
 	l = main._edit_playback_layer(1)[0]
@@ -516,6 +517,20 @@ func _test_edit_playback() -> void:
 	tl.seek(4.0)
 	l = main._edit_playback_layer(1)[0]
 	ok(absi(int(l.get(2, -9)) - 230) <= 1, "...following the playhead as it's moved (dimmer %s)" % str(l.get(2)))
+	# The Positions Editor open in its place: the console (and its
+	# highlights) have the rig.
+	var pid := String(main.positions.add()["id"])
+	main.music_panel.open_position(pid)
+	ok(main._edit_playback_layer(1)[0].is_empty(), "paused, the Positions Editor showing: nothing goes out")
+	# Playing on behind it: a highlighted fixture is left out of it.
+	tl.play()
+	await create_timer(0.1).timeout
+	var spot := int(main._panels[0].patched_fixtures[0]["id"])
+	main._panels[0].set_highlight(spot, true)
+	ok(tl.is_playing() and main._edit_playback_layer(1)[0].is_empty(), "playing: a highlighted fixture keeps its highlight")
+	main._panels[0].set_highlight(spot, false)
+	ok(not main._edit_playback_layer(1)[0].is_empty(), "...and follows the timelines again once it's not")
+	tl.pause()
 	main.music_panel.visible = false
 	ok(main._edit_playback_layer(1)[0].is_empty(), "back to the console: nothing goes out")
 	main.queue_free()

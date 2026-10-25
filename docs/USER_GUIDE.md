@@ -241,7 +241,9 @@ timeline (select a folder to go back). It opens fully zoomed out:
 While the song plays, the lights and the 3D Visualizer follow the
 playhead exactly as they will in a live show — edits included. When
 it's paused, the look at the playhead holds, so you can scrub through
-and see each moment.
+and see each moment. Open a position in the Positions Editor and that
+hold lets go; the moving heads you're aiming light up even while a
+song plays on.
 
 **Let sLight start it for you.** Click **Generate** (beside the
 padlock) to build a complete show from the song's structure and
