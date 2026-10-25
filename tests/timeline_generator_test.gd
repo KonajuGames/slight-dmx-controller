@@ -435,6 +435,16 @@ func _test_positions() -> void:
 	print("- positions by energy")
 	ok(TimelineGenerator._ranked(_spread_positions()) == ["narrow", "mid", "wider", "wide"], "ranked narrow -> wide by spread")
 	ok(TimelineGenerator._ranked(["b", "a"]) == ["b", "a"], "...ids alone keep their order")
+	var ranks := TimelineGenerator._energy_ranks(TimelineGenerator._normalised(_sections(), 120.0))
+	ok(ranks == [0.0, 2.0 / 4, 3.0 / 4, 1.0 / 4, 1.0, 0.0], "sections ranked by energy, evenly spaced: %s" % [ranks])
+	# Over many songs, every position gets a fair share of the time.
+	var time := {}
+	for v in range(30):
+		var sh := TimelineGenerator.generate(_sections(), _beats(), 4, 120.0, _tracks(), ["A", "B", "C", "D", "E"], "fair%d.mp3" % v, v)
+		for sp in sh["master"]["position"]:
+			time[sp["pos"]] = time.get(sp["pos"], 0.0) + float(sp["t1"]) - float(sp["t0"])
+	var share: Array = time.values().map(func(x): return x / (30 * 120.0))
+	ok(time.size() == 5 and share.min() > 0.12 and share.max() < 0.28, "every position used about as much: %s" % [time])
 	ok(is_equal_approx(MusicTimeline._spread({"a": Vector2(0.4, 0.5), "b": Vector2(0.6, 0.5)}), 0.1) and MusicTimeline._spread({"a": Vector2(0.4, 0.5)}) == 0.0,
 		"a position's spread: its points' mean distance from their middle")
 	var show := TimelineGenerator.generate(_sections(), _beats(), 4, 120.0, _tracks(), _spread_positions(), "song.mp3")

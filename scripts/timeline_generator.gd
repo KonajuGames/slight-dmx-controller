@@ -48,9 +48,10 @@ extends RefCounted
 ##                  or slow swells, small slow movement, the narrowest
 ##                  position
 ##   position       the named positions ranked narrow -> wide (how far
-##                  apart they put the beams), picked by energy — the
-##                  loudest the widest — a new one each loud phrase, each
-##                  section where it's quieter (master)
+##                  apart they put the beams), picked by the section's
+##                  rank by energy — the loudest the widest, every one
+##                  getting its turn — a new one each loud phrase, every
+##                  two where it's quieter (master)
 ##   movement       per phrase a shape for the energy (MOVES), its size and
 ##                  speed growing with it; louder phrases sometimes fan the
 ##                  moving fixtures out across the shape (their own rows,
@@ -99,6 +100,9 @@ const LOW := 0.3
 const BUILD_RISE := 0.35
 ## Bars in a phrase: how often a section's look changes.
 const PHRASE_BARS := 8
+## A quiet section's moving heads go to a new position every this many
+## phrases.
+const QUIET_REPICK := 2
 ## Bars a riser into a build lasts.
 const RISER_BARS := 4
 ## Within a section: a bar under DIP x the section's median loudness is
@@ -1509,31 +1513,58 @@ static func _ranked(positions: Array) -> Array:
 	return list.map(func(x): return x[0])
 
 
-## The master's positions, per phrase: picked by energy from the ranked
-## list (`places`, narrow -> wide: the loudest the widest, a breakdown
-## the narrowest), around its rank and not the one it's at — a new pick
-## each loud phrase (tier 2+), each section's first phrase otherwise.
+## The master's positions, per phrase: picked from the ranked list
+## (`places`, narrow -> wide) by the section's place among the song's
+## sections by energy (_energy_ranks(): the quietest the narrowest, the
+## loudest the widest, so every position gets its turn; a breakdown the
+## narrowest, the finale the widest), around that rank — the end ones as
+## likely as any — and not the one it's at. A new pick each loud phrase
+## (tier 2+), otherwise each section's first phrase and every
+## QUIET_REPICK phrases after.
 static func _positions(secs: Array, phrases: Array, places: Array, rng: RandomNumberGenerator) -> Array:
 	var out: Array = []
 	var at := ""
 	var pick := _Picker.new(rng)
+	var ranks := _energy_ranks(secs)
+	var held := 0
 	for p in range(phrases.size()):
 		var ph: Dictionary = phrases[p]
 		var s: Dictionary = secs[ph["s"]]
 		var first: bool = p == 0 or phrases[p - 1]["s"] != ph["s"]
-		if first or (int(s["tier"]) >= 2 and not ph["dip"]):
-			var x: float = 0.0 if s["breakdown"] else (1.0 if s["finale"] else float(s["e"]) - (0.4 if ph["dip"] else 0.0))
+		held = 0 if first else held + 1
+		if first or (not ph["dip"] and (int(s["tier"]) >= 2 or held % QUIET_REPICK == 0)):
+			var x: float = 0.0 if s["breakdown"] else (1.0 if s["finale"] else ranks[ph["s"]] - (0.4 if ph["dip"] else 0.0))
 			var r := clampi(roundi(clampf(x, 0.0, 1.0) * (places.size() - 1)), 0, places.size() - 1)
 			var options: Array = []
+			var sides := int(r > 0) + int(r < places.size() - 1)
 			for k in [r - 1, r, r + 1]:
 				if k >= 0 and k < places.size() and (places[k] != at or places.size() == 1):
-					options.append([places[k], 3 if k == r else 1])
+					# One neighbour only (an end): it takes both sides' share.
+					options.append([places[k], 3 if k == r else (1 if sides == 2 else 2)])
 			if options.is_empty():
 				options.append([places[r], 1])
 			pick.recent.clear()
 			at = pick.pick(options)
 		out.append({"t0": ph["t0"], "t1": ph["t1"], "pos": at})
 	return _merged(out, ["pos"], false)
+
+
+## Each section's place among the song's by energy, 0 (the quietest) to 1
+## (the loudest), evenly spaced by rank; sections of the same energy
+## share one.
+static func _energy_ranks(secs: Array) -> Array:
+	var levels: Array = []
+	for s in secs:
+		if not levels.any(func(l): return absf(l - float(s["e"])) < 0.01):
+			levels.append(float(s["e"]))
+	levels.sort()
+	var out: Array = []
+	for s in secs:
+		var k := 0
+		while k < levels.size() - 1 and absf(levels[k] - float(s["e"])) >= 0.01:
+			k += 1
+		out.append(float(k) / (levels.size() - 1) if levels.size() > 1 else float(s["e"]))
+	return out
 
 
 ## `segs` (colour segments, in order) with `seg` laid over them: what it

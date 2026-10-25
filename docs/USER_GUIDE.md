@@ -259,7 +259,8 @@ fade towards white and a strobe runs, sometimes ending on a beat of
 blackout before the drop. Breakdowns go dark and cool, with one or two
 fixtures at a time or slow swells. Moving heads move to your named
 positions by energy — the ones that spread the beams widest for the
-loudest parts — changing every 8 bars when it's loud, with movement
+loudest parts, with every position getting its turn — changing every
+8 bars when it's loud and every 16 when it's quiet, with movement
 that grows with the energy, the heads sometimes fanned out across it. Sections that come back build
 each time, and the last time the loudest one comes round is the
 finale, with everything. Not keen on the result? Click **Generate**
