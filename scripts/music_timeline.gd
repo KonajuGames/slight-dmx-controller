@@ -2006,14 +2006,17 @@ func _rebuild_fixture_tracks() -> void:
 ## The open song's timelines: {tracks: {key: {dimmer: [[t, level], ...]}},
 ## structure?: {sections}} — from the store the first time, then kept.
 func song_data() -> Dictionary:
-	if _path == "":
-		return {}
-	if not _songs.has(_path):
-		var d := timeline_store.load_song(_path) if timeline_store != null else {}
+	return _data_for(_path) if _path != "" else {}
+
+
+## Song `path`'s timelines, as song_data() has the open song's.
+func _data_for(path: String) -> Dictionary:
+	if not _songs.has(path):
+		var d := timeline_store.load_song(path) if timeline_store != null else {}
 		if not d.get("tracks") is Dictionary:
 			d["tracks"] = {}
-		_songs[_path] = d
-	return _songs[_path]
+		_songs[path] = d
+	return _songs[path]
 
 
 ## Whether the open song's timelines have changed since they were saved.
@@ -2211,7 +2214,11 @@ func _on_structure_edited() -> void:
 ## mute / solo / collapsed, which aren't edits (undo leaves them be).
 func _snapshot() -> Dictionary:
 	_collect()
-	var d := song_data()
+	return _snapshot_of(song_data())
+
+
+## A song's timelines data `d` as a _snapshot().
+static func _snapshot_of(d: Dictionary) -> Dictionary:
 	var snap := {"tracks": (d["tracks"] as Dictionary).duplicate(true)}
 	for key in snap["tracks"].keys():
 		var entry: Dictionary = snap["tracks"][key]
@@ -2234,8 +2241,14 @@ func _hist() -> Dictionary:
 func _record_edit() -> void:
 	if _path == "":
 		return
-	var h := _hist()
-	var now := _snapshot()
+	_hist()
+	_record(_path, _snapshot())
+
+
+## Song `path`'s timelines now `now` (a _snapshot()): the state before on
+## its undo list, if it's changed.
+func _record(path: String, now: Dictionary) -> void:
+	var h: Dictionary = _history[path]
 	if h["state"] != null and now != h["state"]:
 		h["undo"].push_back(h["state"])
 		if h["undo"].size() > UNDO_LIMIT:
@@ -2285,19 +2298,24 @@ func _restore(snap: Dictionary) -> void:
 		d["structure"] = (snap["structure"] as Dictionary).duplicate(true)
 	else:
 		d.erase("structure")
-	# Onto the tracks as they are (not rebuilt: the panel keeps its scroll).
-	var tracks: Dictionary = d["tracks"]
-	for tr in [_master] + Array(_fixture_tracks):
-		tr.dimmer_nodes = _nodes_from(tracks.get(String(tr.get_meta("key")), {}).get("dimmer", []))
-		tr.colour_segments = _segs_from(tracks.get(String(tr.get_meta("key")), {}).get("colour", []))
-		tr.strobe_segments = _spans_from(tracks.get(String(tr.get_meta("key")), {}).get("strobe", []))
-		tr.position_segments = _pos_from(tracks.get(String(tr.get_meta("key")), {}).get("position", []))
-		tr.movement_segments = _moves_from(tracks.get(String(tr.get_meta("key")), {}).get("movement", []))
+	_show_tracks(d["tracks"])
 	_collect()                          # the tracks' mute / solo / collapsed back in
 	if _struct_cache.has(_path):
 		_apply_saved_structure(_path, _struct_cache[_path])
 		_set_structure(_struct_cache[_path])
 	_dirty = true
+
+
+## Saved `tracks` onto the tracks as they are (not rebuilt: the panel
+## keeps its scroll).
+func _show_tracks(tracks: Dictionary) -> void:
+	for tr in [_master] + Array(_fixture_tracks):
+		var entry: Dictionary = tracks.get(String(tr.get_meta("key")), {})
+		tr.dimmer_nodes = _nodes_from(entry.get("dimmer", []))
+		tr.colour_segments = _segs_from(entry.get("colour", []))
+		tr.strobe_segments = _spans_from(entry.get("strobe", []))
+		tr.position_segments = _pos_from(entry.get("position", []))
+		tr.movement_segments = _moves_from(entry.get("movement", []))
 
 
 ## Put the song's saved (edited) sections on its analysis — or, with none
@@ -2470,53 +2488,18 @@ func generate_show() -> bool:
 		beats = a.beat_times
 	if beats.is_empty():
 		beats = TimelineGenerator._even_beats(a.bpm, _wave.duration())
-	# Each fixture with its category and category group, as the patch has
-	# them now (changing them doesn't rebuild the tracks). One left out of
-	# generation (and its heads) isn't in the show: its timelines are
-	# cleared.
-	var parts := {}
-	for fx in (fixtures_provider.call() if fixtures_provider.is_valid() else []):
-		parts[String(fx["key"])] = fx
-	var left_out := func(tr: TimelineTrack) -> bool:
-		var fixture_key := String(tr.get_meta("key")).get_slice("/", 0)
-		return parts.has(fixture_key) and bool(parts[fixture_key].get("exclude_generate", false))
+	# Which beat starts a bar: the grid's, or the analysis's first downbeat.
+	var bar_phase := _wave.bar_phase if beats == _wave.grid_beats else _first_bar(a, beats)
+	var parts := _patch_parts()
 	var tracks: Array = []
 	for tr in [_master] + Array(_fixture_tracks):
-		if left_out.call(tr):
-			continue
-		var key := String(tr.get_meta("key"))
-		var t := {"key": key, "target": tr.target, "rows": tr.rows}
-		if parts.has(key):
-			t["category"] = String(parts[key].get("category", ""))
-			t["group"] = int(parts[key].get("category_group", 1))
-			var wheel: Array = (parts[key]["profile"] as FixtureProfile).wheel_colours(int(parts[key].get("mode", 0)))
-			if not wheel.is_empty():
-				t["wheel"] = wheel
-		tracks.append(t)
-	var ids: Array = []
-	if positions != null:
-		# Movement needs a position to move around: with none named yet, a
-		# "Centre" one (no points of its own: every fixture centred).
-		if positions.positions.is_empty():
-			positions.rename(String(positions.add()["id"]), "Centre")
-		# Each with how widely it spreads the beams (narrow -> wide by energy).
-		for pos in positions.positions:
-			ids.append({"id": String(pos["id"]), "spread": _spread(pos["points"])})
-	# Which beat starts a bar: the grid's, or the analysis's first downbeat.
-	var bar_phase := 0
-	if beats == _wave.grid_beats:
-		bar_phase = _wave.bar_phase
-	elif not a.downbeats.is_empty():
-		bar_phase = clampi(beats.bsearch(a.downbeats[0] - 0.01), 0, beats.size() - 1)
-	var variation: int = _generated.get(_path, 0)
-	_generated[_path] = variation + 1
-	var show := TimelineGenerator.generate(a.sections, beats, _wave.beats_per_bar, _wave.duration(),
-		tracks, ids, _path.get_file(), variation, bar_phase,
-		{"peak": a.wave_peak, "lo": a.wave_lo, "hi": a.wave_hi})
+		if not _left_out(parts, String(tr.get_meta("key"))):
+			tracks.append(_gen_track(parts, String(tr.get_meta("key")), tr.target, tr.rows))
+	var show := _generate(_path, a, beats, bar_phase, _wave.beats_per_bar, _wave.duration(), tracks)
 	if not _selection.is_empty():
 		var skip := {}
 		for tr in [_master] + Array(_fixture_tracks):
-			if left_out.call(tr):
+			if _left_out(parts, String(tr.get_meta("key"))):
 				skip[String(tr.get_meta("key"))] = true
 		if _splice_show(show, skip):
 			_mark_dirty()
@@ -2530,6 +2513,147 @@ func generate_show() -> bool:
 		tr.movement_segments = c.get("movement", [])
 	_mark_dirty()
 	return true
+
+
+## Each patched fixture by its key, with its category and category group
+## as the patch has them now (changing them doesn't rebuild the tracks).
+func _patch_parts() -> Dictionary:
+	var parts := {}
+	for fx in (fixtures_provider.call() if fixtures_provider.is_valid() else []):
+		parts[String(fx["key"])] = fx
+	return parts
+
+
+## Whether track `key` belongs to a fixture left out of generation: it
+## (and its heads) isn't in the show — its timelines are cleared.
+static func _left_out(parts: Dictionary, key: String) -> bool:
+	var fixture_key := key.get_slice("/", 0)
+	return parts.has(fixture_key) and bool(parts[fixture_key].get("exclude_generate", false))
+
+
+## A track as TimelineGenerator.generate() takes it.
+static func _gen_track(parts: Dictionary, key: String, target: int, rows: Array) -> Dictionary:
+	var t := {"key": key, "target": target, "rows": rows}
+	if parts.has(key):
+		t["category"] = String(parts[key].get("category", ""))
+		t["group"] = int(parts[key].get("category_group", 1))
+		var wheel: Array = (parts[key]["profile"] as FixtureProfile).wheel_colours(int(parts[key].get("mode", 0)))
+		if not wheel.is_empty():
+			t["wheel"] = wheel
+	return t
+
+
+## Which of `beats` starts a bar: the analysis's first downbeat's.
+static func _first_bar(a: SongAnalysis, beats: PackedFloat32Array) -> int:
+	if a.downbeats.is_empty() or beats.is_empty():
+		return 0
+	return clampi(beats.bsearch(a.downbeats[0] - 0.01), 0, beats.size() - 1)
+
+
+## The show for song `path`'s `tracks` (TimelineGenerator), the next
+## variation for it, around the named positions.
+func _generate(path: String, a: SongAnalysis, beats: PackedFloat32Array, bar_phase: int, per_bar: int,
+		duration: float, tracks: Array) -> Dictionary:
+	var ids: Array = []
+	if positions != null:
+		# Movement needs a position to move around: with none named yet, a
+		# "Centre" one (no points of its own: every fixture centred).
+		if positions.positions.is_empty():
+			positions.rename(String(positions.add()["id"]), "Centre")
+		# Each with how widely it spreads the beams (narrow -> wide by energy).
+		for pos in positions.positions:
+			ids.append({"id": String(pos["id"]), "spread": _spread(pos["points"])})
+	var variation: int = _generated.get(path, 0)
+	_generated[path] = variation + 1
+	return TimelineGenerator.generate(a.sections, beats, per_bar, duration, tracks, ids, path.get_file(),
+		variation, bar_phase, {"peak": a.wave_peak, "lo": a.wave_lo, "hi": a.wave_hi})
+
+
+## Song `path`'s analysed structure this session (its edits on it), or
+## null if it hasn't been analysed yet.
+func cached_structure(path: String) -> SongAnalysis:
+	return _struct_cache.get(path)
+
+
+## Take song `path`'s freshly analysed structure `a` (analysed away from
+## the timeline view, for generate_into()): VirtualDJ's grid on it (with
+## `song`), its saved edits too, and kept as if it had been opened.
+func add_structure(path: String, a: SongAnalysis, song: VirtualDjDatabase.Song = null) -> void:
+	if song != null:
+		apply_vdj_grid(a, song)
+	_data_for(path)
+	_apply_saved_structure(path, a)
+	_struct_cache[path] = a
+	if path == _path:
+		_set_structure(a)
+
+
+## Generate a show into song `path`'s saved timelines without its view
+## (the song list's Regenerate Lighting Timelines): as Generate does — its
+## structure (cached_structure(), edits and all), VirtualDJ's grid (with
+## `song`), the patch and the named positions; a new variation each time
+## — but always every track, never just a selection. Saved at once; an
+## undo step for the song (here and now if it's the one open, else for
+## when it's opened). Returns "" or what went wrong.
+func generate_into(path: String, song: VirtualDjDatabase.Song = null) -> String:
+	if timeline_store == null:
+		return "save the show first"
+	var a: SongAnalysis = _struct_cache.get(path)
+	if a == null:
+		return "its structure hasn't been analysed"
+	var d := _data_for(path)
+	if path == _path:
+		_collect()
+	_apply_saved_structure(path, a)
+	var beats := song.beat_times(a.duration) if song != null else PackedFloat32Array()
+	var bar_phase := song.first_beat_index(beats) if beats.size() >= 2 else 0
+	if beats.size() < 2:
+		beats = a.beat_times if not a.beat_times.is_empty() else TimelineGenerator._even_beats(a.bpm, a.duration)
+		bar_phase = _first_bar(a, beats)
+	var parts := _patch_parts()
+	var keys: Array = ["master"]
+	var tracks: Array = [_gen_track(parts, "master", TimelineTrack.Target.MASTER, _master.rows)]
+	for fx in parts.values():
+		for spec in fixture_track_specs(String(fx["key"]), String(fx["name"]), fx["profile"], int(fx.get("mode", 0))):
+			keys.append(spec["key"])
+			if not _left_out(parts, spec["key"]):
+				tracks.append(_gen_track(parts, spec["key"], spec["target"], spec["rows"]))
+	var show := _generate(path, a, beats, bar_phase, BEATS_PER_BAR, a.duration, tracks)
+	var before := _snapshot_of(d)
+	var saved: Dictionary = d["tracks"]
+	for key in keys:
+		var entry: Dictionary = saved.get(key, {})
+		_put_rows(entry, show.get(key, {}))
+		if entry.is_empty():
+			saved.erase(key)
+		else:
+			saved[key] = entry
+	if path == _path:
+		_show_tracks(saved)
+		_mark_dirty()
+		return flush()
+	if not _history.has(path):
+		_history[path] = {"undo": [], "redo": [], "state": null}
+	if _history[path]["state"] == null:
+		_history[path]["state"] = before
+	_record(path, _snapshot_of(d))
+	var err := timeline_store.save_song(path, d)
+	if err == "":
+		timelines_saved.emit(path)
+	return err
+
+
+## A generated track's rows (TimelineGenerator's form) into its saved
+## entry, replacing what it had (a row it has none of: dropped).
+static func _put_rows(entry: Dictionary, c: Dictionary) -> void:
+	var rows := {"dimmer": _nodes_to(c.get("dimmer", PackedVector2Array())), "colour": _segs_to(c.get("colour", [])),
+		"strobe": _spans_to(c.get("strobe", [])), "position": _pos_to(c.get("position", [])),
+		"movement": _moves_to(c.get("movement", []))}
+	for row in rows:
+		if (rows[row] as Array).is_empty():
+			entry.erase(row)
+		else:
+			entry[row] = rows[row]
 
 
 ## Shift+Generate: analyse the song's structure afresh (dropping any edits

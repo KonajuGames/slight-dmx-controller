@@ -56,7 +56,14 @@ var _menu_position := ""        # ...and the position it's for
 enum { PM_RENAME, PM_DUPLICATE, PM_DELETE }
 var _track_menu: PopupMenu      # a track's right-click menu
 var _menu_track := ""           # ...and the track (path) it's for
-enum { TM_OPEN, TM_SHOW_IN_FOLDER, TM_COPY_PATH, TM_REMOVE_TIMELINES }
+var _menu_tracks: Array = []    # ...and every selected one (Regenerate)
+enum { TM_OPEN, TM_SHOW_IN_FOLDER, TM_COPY_PATH, TM_REMOVE_TIMELINES, TM_REGENERATE }
+var _batch: TimelineBatch       # regenerating songs' timelines
+var _progress := {}             # path -> its regeneration's progress (0..1), drawn behind its row
+var _row_sync := {}             # TreeItem -> true: its cells' selection changed this frame
+var _syncing_rows := false
+const PROGRESS_COLOR := Color(0.45, 0.72, 0.95, 0.28)
+const QUEUED_COLOR := Color(0.45, 0.72, 0.95, 0.07)
 ## The show's named positions (set by the shell).
 var positions: PositionLibrary:
 	set(v):
@@ -164,7 +171,7 @@ func _ready() -> void:
 	_list.hide_root = true
 	_list.columns = COL_TITLES.size()
 	_list.column_titles_visible = true
-	_list.select_mode = Tree.SELECT_ROW
+	_list.select_mode = Tree.SELECT_MULTI
 	# Pad cells so a right-aligned column doesn't run into the next one's text.
 	_list.add_theme_constant_override("inner_item_margin_left", 6)
 	_list.add_theme_constant_override("inner_item_margin_right", 6)
@@ -187,15 +194,37 @@ func _ready() -> void:
 	_list.item_activated.connect(_on_track_activated)
 	_list.allow_rmb_select = true
 	_list.item_mouse_selected.connect(_on_track_clicked)
+	# Several tracks can be selected (Ctrl / Shift), always whole rows.
+	_list.multi_selected.connect(func(it: TreeItem, _column: int, _on: bool):
+		if _syncing_rows:
+			return
+		if _row_sync.is_empty():
+			_sync_rows.call_deferred()
+		_row_sync[it] = true)
+	_list.draw.connect(_draw_progress)
 	right.add_child(_list)
 	_track_menu = PopupMenu.new()
 	_track_menu.add_item("Open Timeline", TM_OPEN)
 	_track_menu.add_item("Show in File Explorer", TM_SHOW_IN_FOLDER)
 	_track_menu.add_item("Copy Path", TM_COPY_PATH)
 	_track_menu.add_separator()
+	_track_menu.add_item("Regenerate Lighting Timelines", TM_REGENERATE)
 	_track_menu.add_item("Remove Lighting Timelines…", TM_REMOVE_TIMELINES)
 	_track_menu.id_pressed.connect(track_menu_action)
 	add_child(_track_menu)
+	_batch = TimelineBatch.new()
+	_batch.timeline = _timeline
+	_batch.song_lookup = func(path: String): return _db.find_song(path) if _db != null else null
+	_batch.progress.connect(func(path: String, f: float):
+		_progress[path] = f
+		_list.queue_redraw())
+	_batch.done.connect(_on_regenerated)
+	add_child(_batch)
+	# Another show: its songs' timelines aren't these.
+	_timeline.timeline_store_changed.connect(func():
+		_batch.cancel()
+		_progress.clear()
+		_list.queue_redraw())
 
 	visibility_changed.connect(func():
 		if is_visible_in_tree():
@@ -348,19 +377,130 @@ func _on_track_activated() -> void:
 		open_track(r)
 
 
-## A right-click on a track: its menu, with what doesn't apply greyed out.
+## A right-click on a track: its menu, with what doesn't apply greyed out
+## — on the track clicked, and (Regenerate) every selected one; a track
+## that isn't selected is selected alone first.
 func _on_track_clicked(pos: Vector2, button: int) -> void:
-	var it := _list.get_selected()
+	var it := _list.get_item_at_position(pos)
 	if button != MOUSE_BUTTON_RIGHT or it == null:
 		return
+	if not _row_selected(it):
+		_list.deselect_all()
+		_select_row(it, true)
 	_menu_track = it.get_metadata(0)
+	_menu_tracks = selected_paths()
 	var row := _row_for(_menu_track)
 	var missing: bool = row.get("missing", true)
 	_track_menu.set_item_disabled(_track_menu.get_item_index(TM_OPEN), missing)
 	_track_menu.set_item_disabled(_track_menu.get_item_index(TM_SHOW_IN_FOLDER), missing)
 	_track_menu.set_item_disabled(_track_menu.get_item_index(TM_REMOVE_TIMELINES),
 		not has_timelines_mark(_menu_track))
+	var regen := _track_menu.get_item_index(TM_REGENERATE)
+	var n := _regenerable(_menu_tracks).size()
+	_track_menu.set_item_text(regen, "Regenerate Lighting Timelines" + (" (%d songs)" % n if n > 1 else ""))
+	_track_menu.set_item_disabled(regen, n == 0 or _timeline.timeline_store == null)
+	_track_menu.set_item_tooltip(regen, "Save the show first" if _timeline.timeline_store == null else "")
 	_track_menu.popup(Rect2i(Vector2i(_list.get_screen_position() + pos), Vector2i.ZERO))
+
+
+## The list selects cells (Tree's multi-select): after a click, each row
+## it touched is made whole — selected if one cell (a plain or Ctrl click)
+## or all of them (Shift) are, else (a Ctrl click taking one away) not.
+func _sync_rows() -> void:
+	_syncing_rows = true
+	for it in _row_sync:
+		if is_instance_valid(it):
+			var n := 0
+			for c in range(_list.columns):
+				n += int(it.is_selected(c))
+			_select_row(it, n == 1 or n == _list.columns)
+	_row_sync.clear()
+	_syncing_rows = false
+
+
+func _select_row(it: TreeItem, on: bool) -> void:
+	for c in range(_list.columns):
+		if it.is_selected(c) != on:
+			if on:
+				it.select(c)
+			else:
+				it.deselect(c)
+
+
+func _row_selected(it: TreeItem) -> bool:
+	for c in range(_list.columns):
+		if it.is_selected(c):
+			return true
+	return false
+
+
+## Select just the tracks at `paths` (for tests / later features).
+func select_paths(paths: Array) -> void:
+	_list.deselect_all()
+	for path in paths:
+		var it: TreeItem = _items.get(path)
+		if it != null:
+			_select_row(it, true)
+
+
+## The selected tracks' paths, in list order.
+func selected_paths() -> Array:
+	var out: Array = []
+	var it := _list.get_next_selected(null)
+	while it != null:
+		out.append(String(it.get_metadata(0)))
+		it = _list.get_next_selected(it)
+	return out
+
+
+## Those of `paths` whose files are there.
+func _regenerable(paths: Array) -> Array:
+	return paths.filter(func(p): return not _row_for(p).get("missing", true))
+
+
+## Regenerate the lighting timelines of the tracks at `paths` (those whose
+## files are there), a few at a time (TimelineBatch), each row's
+## background its progress bar. Returns how many were queued.
+func regenerate(paths: Array) -> int:
+	if _timeline.timeline_store == null:
+		return 0
+	var todo := _regenerable(paths)
+	_batch.add(todo)
+	return todo.size()
+
+
+func batch() -> TimelineBatch:
+	return _batch
+
+
+func _on_regenerated(path: String, error: String) -> void:
+	_progress.erase(path)
+	_list.queue_redraw()
+	if error == "":
+		_has_timelines[path] = true
+		_to_check.erase(path)
+		_show_mark(path)
+		return
+	push_warning("Couldn't regenerate the timelines for %s: %s" % [path.get_file(), error])
+	var it: TreeItem = _items.get(path)
+	if it != null and is_instance_valid(it):
+		it.set_tooltip_text(Col.TITLE, "Couldn't regenerate its lighting timelines: " + error)
+
+
+## The songs being regenerated: each row's background a bar filling as it
+## goes (faint while it waits its turn).
+func _draw_progress() -> void:
+	for path in _progress:
+		var it: TreeItem = _items.get(path)
+		if it == null or not is_instance_valid(it):
+			continue
+		var r := _list.get_item_area_rect(it)
+		if r.end.y < 0.0 or r.position.y > _list.size.y:
+			continue
+		_list.draw_rect(r, QUEUED_COLOR)
+		var f: float = _progress[path]
+		if f > 0.0:
+			_list.draw_rect(Rect2(r.position, Vector2(r.size.x * f, r.size.y)), PROGRESS_COLOR)
 
 
 func track_menu() -> PopupMenu:
@@ -384,6 +524,8 @@ func track_menu_action(action: int, path := "") -> void:
 			DisplayServer.clipboard_set(path)
 		TM_REMOVE_TIMELINES:
 			confirm_remove_timelines(path)
+		TM_REGENERATE:
+			regenerate(_menu_tracks if path in _menu_tracks else [path])
 
 
 ## Ask, then delete a track's lighting timelines from the current show.

@@ -212,6 +212,18 @@ that already have a light show in the current show are marked with a
 small blue node-line icon before the title. M4A / AAC songs open on
 Windows and macOS.
 
+**Regenerate a batch of songs.** Select songs with Ctrl / Shift-click,
+right-click one of them and choose **Regenerate Lighting Timelines**.
+Each song gets a new light show, just as if you'd opened it and clicked
+**Generate**: its structure (with any edits you made to it), its beat
+grid, your fixtures and your named positions. Each song's row fills
+like a progress bar as it goes. A few songs are worked on at once, and
+the rest wait their turn with a faint tint. Each show is saved as soon
+as it's done. Open the song and **Ctrl+Z** takes it back to what it
+had. A song that can't be analysed is left as it was; hover over its
+title to see why. Save the show first (the timelines are kept with
+it). Opening another show stops any songs still waiting.
+
 ![DJ Edit Mode listing an album, with a light show already on its first track](img/11-dj-edit-library.png)
 
 **Open its timeline.** Double-click a song. The list is replaced by its
