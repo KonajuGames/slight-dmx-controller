@@ -20,7 +20,8 @@ extends RefCounted
 ## by the song and a variation number: the same song and variation always
 ## give the same show; another variation, another show.
 ##   master dimmer  the section at 25-100 % by energy (a breakdown darker),
-##                  riding the music's loudness bar by bar; a beat's fade
+##                  riding the music's loudness bar by bar (an outro
+##                  following it all the way down); a beat's fade
 ##                  between sections; faded in at the start, out at the end
 ##   fixture dimmer per phrase a pattern (DIM_PATTERNS): quiet — follow the
 ##                  master, breathe, one fixture at a time; louder — bar
@@ -1124,7 +1125,8 @@ static func _master_dimmer(secs: Array, beat_len: float, duration: float, bar_st
 
 
 ## Section `s`'s master `level` at `t`, ridden by its bar's loudness
-## against the section's (`whole`; <= 0: none, the level as it is).
+## against the section's (`whole`; <= 0: none, the level as it is) — an
+## outro's following its loudness down, against its opening bars'.
 static func _ride(level: float, whole: float, t: float, s: Dictionary, bar_starts: PackedFloat32Array,
 		bar_len: float, en: Dictionary) -> float:
 	if whole <= 0.0:
@@ -1132,6 +1134,11 @@ static func _ride(level: float, whole: float, t: float, s: Dictionary, bar_start
 	var k := bar_starts.bsearch(t + 0.0001) - 1
 	var bar_t := bar_starts[k] if k >= 0 else t
 	var here := _env_mean(en, "peak", maxf(bar_t, s["start"]), minf(bar_t + bar_len, s["end"]))
+	if s["label"] == "outro":
+		# Tailing off with the music: in proportion to the loudness of
+		# its opening bars, all the way down.
+		var opening := _env_mean(en, "peak", s["start"], minf(s["start"] + bar_len * 2.0, s["end"]))
+		return clampf(level * here / maxf(opening, 0.01), 0.0, level)
 	var d := clampf(RIDE * (here - whole) / maxf(whole, 0.05), -RIDE_MAX, RIDE_MAX)
 	return clampf(level * (1.0 + d), 0.05, 1.0)
 

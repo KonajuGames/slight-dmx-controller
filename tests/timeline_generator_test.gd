@@ -347,6 +347,16 @@ func _test_envelope() -> void:
 	ok(TimelineTrack.speed_at(m["strobe"], 52.2) == TimelineTrack.Strobe.FAST and TimelineTrack.speed_at(m["strobe"], 53.0) < 0,
 		"a strobe hit on the beat it comes back")
 	ok(TimelineTrack.level_at(md, 50.0) < TimelineTrack.level_at(md, 44.0), "the master dips with it")
+	# The outro (104-120 s) tailing off: the master follows it down.
+	var fading := _env()
+	for c in range(1040, 1200):
+		fading["peak"][c] = 0.2 * (1.0 - (c - 1040) / 160.0)
+	var fd: PackedVector2Array = TimelineGenerator.generate(_sections(), _beats(), 4, 120.0, _tracks(), ["posA", "posB"],
+		"song.mp3", 0, 0, fading)["master"]["dimmer"]
+	var o0 := TimelineTrack.level_at(fd, 105.0)
+	var o1 := TimelineTrack.level_at(fd, 112.0)
+	var o2 := TimelineTrack.level_at(fd, 117.0)
+	ok(o1 < o0 * 0.7 and o2 < o0 * 0.35, "the master tails off with the outro (%.2f, %.2f, %.2f)" % [o0, o1, o2])
 	# Bass accents: hits follow the bass.
 	var ctx := {"beats": _beats(40), "beat_len": 0.5, "bar_len": 2.0, "per_bar": 4, "bar_phase": 0,
 		"master": PackedVector2Array([Vector2(0, 1), Vector2(20, 1)]), "env": en}
