@@ -50,12 +50,18 @@ func _apply_theme() -> void:
 ## list's font size, padding and icon gap. Every state has the same
 ## padding, so nothing shifts as it's hovered / selected.
 func _style_row(r: Button) -> void:
-	var hs := get_theme_constant("h_separation", "ItemList")
-	var vs := get_theme_constant("v_separation", "ItemList")
+	style_as_item(r, self, 22.0)                    # room for the ✕
+
+
+## Style button `r` as a list item, from `from`'s theme (`right`: extra
+## padding on its right). Shared with the other lists like this one.
+static func style_as_item(r: Button, from: Control, right := 0.0) -> void:
+	var hs := from.get_theme_constant("h_separation", "ItemList")
+	var vs := from.get_theme_constant("v_separation", "ItemList")
 	var pad := func(sb: StyleBox) -> StyleBox:
 		var out: StyleBox = sb.duplicate() if sb != null else StyleBoxEmpty.new()
 		out.content_margin_left = hs
-		out.content_margin_right = hs + 22.0          # room for the ✕
+		out.content_margin_right = hs + right
 		out.content_margin_top = vs * 0.5
 		out.content_margin_bottom = vs * 0.5
 		return out
@@ -63,18 +69,18 @@ func _style_row(r: Button) -> void:
 	r.add_theme_stylebox_override("normal", none)
 	r.add_theme_stylebox_override("disabled", none)
 	r.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-	r.add_theme_stylebox_override("hover", pad.call(get_theme_stylebox("hovered", "ItemList")))
-	r.add_theme_stylebox_override("pressed", pad.call(get_theme_stylebox("selected", "ItemList")))
-	r.add_theme_stylebox_override("hover_pressed", pad.call(get_theme_stylebox("hovered_selected", "ItemList")))
-	var normal := get_theme_color("font_color", "ItemList")
+	r.add_theme_stylebox_override("hover", pad.call(from.get_theme_stylebox("hovered", "ItemList")))
+	r.add_theme_stylebox_override("pressed", pad.call(from.get_theme_stylebox("selected", "ItemList")))
+	r.add_theme_stylebox_override("hover_pressed", pad.call(from.get_theme_stylebox("hovered_selected", "ItemList")))
+	var normal := from.get_theme_color("font_color", "ItemList")
 	r.add_theme_color_override("font_color", normal)
 	r.add_theme_color_override("font_focus_color", normal)
-	r.add_theme_color_override("font_hover_color", get_theme_color("font_hovered_color", "ItemList"))
-	r.add_theme_color_override("font_pressed_color", get_theme_color("font_selected_color", "ItemList"))
-	r.add_theme_color_override("font_hover_pressed_color", get_theme_color("font_hovered_selected_color", "ItemList"))
-	r.add_theme_font_size_override("font_size", get_theme_font_size("font_size", "ItemList"))
-	r.add_theme_font_override("font", get_theme_font("font", "ItemList"))
-	r.add_theme_constant_override("h_separation", get_theme_constant("icon_margin", "ItemList"))
+	r.add_theme_color_override("font_hover_color", from.get_theme_color("font_hovered_color", "ItemList"))
+	r.add_theme_color_override("font_pressed_color", from.get_theme_color("font_selected_color", "ItemList"))
+	r.add_theme_color_override("font_hover_pressed_color", from.get_theme_color("font_hovered_selected_color", "ItemList"))
+	r.add_theme_font_size_override("font_size", from.get_theme_font_size("font_size", "ItemList"))
+	r.add_theme_font_override("font", from.get_theme_font("font", "ItemList"))
+	r.add_theme_constant_override("h_separation", from.get_theme_constant("icon_margin", "ItemList"))
 
 
 ## Show `library`'s positions, `selected_id` selected ("" for none).

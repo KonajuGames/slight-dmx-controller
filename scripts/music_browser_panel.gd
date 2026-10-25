@@ -47,6 +47,10 @@ var _tree: Tree                 # left: drives / folders / Virtual Folders
 var _list: Tree                 # right: the tracks
 var _heading: Label             # the folder / list (and its tracks), or the open song
 var _list_heading := ""         # ...the folder / list's, while a song's open
+var _song_panel: PanelContainer # the Timeline section: the open song...
+var _song_row: Button           # ...its row (selected while its timeline shows)
+var _open_row := {}             # ...and its list row (title, artist, BPM, ...)
+var _styling_song := false
 var _list_view: Control         # the heading + track list
 var _timeline: MusicTimeline    # replaces _list_view while a track is open
 var _editor: PositionEditor     # replaces it while a position is open
@@ -109,6 +113,21 @@ func _ready() -> void:
 	# should still leave a track's timeline for the list.
 	_tree.item_mouse_selected.connect(func(_pos: Vector2, _button: int): _on_folder_clicked())
 	left.add_child(_tree)
+	# The song open in the timeline: click to go back to it.
+	left.add_child(_section_header("Timeline"))
+	_song_panel = PanelContainer.new()
+	left.add_child(_song_panel)
+	_song_row = Button.new()
+	_song_row.toggle_mode = true
+	_song_row.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_song_row.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_song_row.focus_mode = Control.FOCUS_NONE
+	_song_row.icon = timeline_icon()
+	_song_row.pressed.connect(show_timeline)
+	_song_row.theme_changed.connect(_style_song_row)
+	_song_panel.add_child(_song_row)
+	_style_song_row()
+	_update_song_row()
 	var head := _section_header("Positions")
 	_add_position = Button.new()
 	_add_position.text = "+"
@@ -569,12 +588,56 @@ func _row_for(path: String) -> Dictionary:
 
 ## Replace the track list with `row`'s timeline.
 func open_track(row: Dictionary) -> void:
+	_open_row = row
+	_show_timeline_view()
+	_timeline.open(row["path"], _db.find_song(row["path"]) if _db != null else null)
+
+
+## Back to the open song's timeline (the Timeline section's row), from the
+## list or a position. Returns whether there's one open.
+func show_timeline() -> bool:
+	if _open_row.is_empty() or _timeline.current_path() == "":
+		_update_song_row()
+		return false
+	_show_timeline_view()
+	return true
+
+
+func _show_timeline_view() -> void:
 	_list_view.visible = false
 	_editor.visible = false
+	_positions.select("")
 	_timeline.visible = true
 	_heading.visible = true
-	_show_heading(song_heading(row))
-	_timeline.open(row["path"], _db.find_song(row["path"]) if _db != null else null)
+	_show_heading(song_heading(_open_row))
+	_update_song_row()
+
+
+## The Timeline section's row: the open song's title — artist over its
+## BPM · key · length, selected while its timeline's showing.
+func _update_song_row() -> void:
+	if _song_row == null:
+		return
+	var open := not _open_row.is_empty()
+	var details := song_details(_open_row) if open else ""
+	_song_row.text = (song_title(_open_row) + ("\n" + details if details != "" else "")) if open else "No song open"
+	_song_row.tooltip_text = song_heading(_open_row) if open else "Double-click a song in the list to open its timeline"
+	_song_row.disabled = not open
+	_song_row.set_pressed_no_signal(open and _timeline.visible)
+
+
+func song_row() -> Button:
+	return _song_row
+
+
+## The Timeline section styled as the lists either side of it.
+func _style_song_row() -> void:
+	if _styling_song:
+		return
+	_styling_song = true
+	_song_panel.add_theme_stylebox_override("panel", get_theme_stylebox("panel", "ItemList"))
+	PositionList.style_as_item(_song_row, self)
+	_styling_song = false
 
 
 ## Back from a track's timeline (or a position) to the track list.
@@ -582,6 +645,7 @@ func show_track_list() -> void:
 	_timeline.visible = false
 	_editor.visible = false
 	_heading.visible = true
+	_update_song_row()
 	_show_heading(_list_heading if _list_heading != "" else "Select a folder or a VirtualDJ list.")
 	_positions.select("")
 	_list_view.visible = true
@@ -693,6 +757,7 @@ func open_position(id: String) -> void:
 	_timeline.visible = false
 	_heading.visible = false            # the editor has the position's name
 	_editor.visible = true
+	_update_song_row()
 	_editor.open(id)
 	_positions.select(id)
 
@@ -787,16 +852,28 @@ func _show_heading(text: String) -> void:
 ## The heading over a track's timeline: its title — artist, then its BPM,
 ## key and length where they're known.
 static func song_heading(row: Dictionary) -> String:
+	var details := song_details(row)
+	return song_title(row) + (" · " + details if details != "" else "")
+
+
+## A song's title — artist.
+static func song_title(row: Dictionary) -> String:
 	var text := String(row["title"])
 	if String(row["artist"]) != "":
 		text += " — " + String(row["artist"])
-	if float(row["bpm"]) > 0.0:
-		text += " · %.1f BPM" % float(row["bpm"])
-	if String(row["key"]) != "":
-		text += " · " + String(row["key"])
-	if float(row["length"]) > 0.0:
-		text += " · " + _fmt_time(float(row["length"]))
 	return text
+
+
+## A song's BPM · key · length, those that are known.
+static func song_details(row: Dictionary) -> String:
+	var parts: Array = []
+	if float(row["bpm"]) > 0.0:
+		parts.append("%.1f BPM" % float(row["bpm"]))
+	if String(row["key"]) != "":
+		parts.append(String(row["key"]))
+	if float(row["length"]) > 0.0:
+		parts.append(_fmt_time(float(row["length"])))
+	return " · ".join(parts)
 
 
 func _fill_list() -> void:

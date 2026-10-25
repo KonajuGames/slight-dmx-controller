@@ -110,6 +110,15 @@ func _test_panel() -> void:
 	ok(panel._heading.text.begins_with(fixture) and "3 tracks" in panel._heading.text,
 		"heading: %s" % panel._heading.text)
 	var list_heading: String = panel._heading.text
+	# The Timeline section, between Folders and Positions: nothing open yet.
+	var left: Control = panel._song_panel.get_parent()
+	var titles: Array = []
+	for c in left.get_children():
+		if c is HBoxContainer:
+			titles.append((c.get_child(0) as Label).text)
+	ok(titles == ["Folders", "Timeline", "Positions"], "the left side's sections: %s" % str(titles))
+	var song_row := panel.song_row()
+	ok(song_row.text == "No song open" and song_row.disabled and not panel.show_timeline(), "...no song open: nothing to go back to")
 	# A track opened: the heading's its song, over the timeline.
 	panel.open_track(rows[1])
 	ok(panel._heading.visible and panel.timeline().visible and panel._heading.get_parent() == panel.timeline().get_parent()
@@ -118,10 +127,26 @@ func _test_panel() -> void:
 		== "Go — Band · 128.0 BPM · Am · 3:45", "...with its artist, BPM, key and length where known")
 	if panel.positions == null:
 		panel.positions = PositionLibrary.new()
+	ok(song_row.text.begins_with("Track 2") and not song_row.disabled and song_row.button_pressed,
+		"the Timeline section: the open song, selected while its timeline shows (%s)" % song_row.text.replace("\n", " / "))
+	var one_line := song_row.get_combined_minimum_size().y
+	var go: Dictionary = rows[1].duplicate()
+	go.merge({"title": "Go", "artist": "Band", "bpm": 128.0, "key": "Am", "length": 225.0}, true)
+	panel.open_track(go)
+	ok(song_row.text == "Go — Band\n128.0 BPM · Am · 3:45" and song_row.get_combined_minimum_size().y > one_line + 6,
+		"...its details on a second line (%.0f px high, %.0f with one)" % [song_row.get_combined_minimum_size().y, one_line])
+	panel.open_track(rows[1])
 	panel.open_position(panel.positions.add()["id"])
 	ok(not panel._heading.visible, "a position open: no heading (the editor has its name)")
+	ok(not song_row.button_pressed and song_row.text.begins_with("Track 2"), "...the Timeline section unselected, still the song")
+	song_row.pressed.emit()
+	ok(panel.timeline().visible and not panel.is_position_shown() and panel._heading.text == "Track 2" and song_row.button_pressed
+		and panel.positions_list().selected_id() == "", "clicking it: back to the song's timeline")
 	panel.show_track_list()
-	ok(panel._heading.visible and panel._heading.text == list_heading, "back to the list: its heading again")
+	ok(panel._heading.visible and panel._heading.text == list_heading and not song_row.button_pressed, "back to the list: its heading again")
+	ok(panel.show_timeline() and panel.timeline().visible and panel.timeline().current_path() == rows[1]["path"],
+		"...and from the list back to the timeline, the song still open")
+	panel.show_track_list()
 
 	panel.sort_by(MusicBrowserPanel.Col.TITLE, false)
 	ok(panel.rows().map(func(r): return r["title"]) == ["Track 10", "Track 2", "song"], "sort by title, descending")

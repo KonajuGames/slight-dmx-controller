@@ -227,7 +227,11 @@ it). Opening another show stops any songs still waiting.
 ![DJ Edit Mode listing an album, with a light show already on its first track](img/11-dj-edit-library.png)
 
 **Open its timeline.** Double-click a song. The list is replaced by its
-timeline (select a folder to go back). It opens fully zoomed out:
+timeline, with the song's title, artist, BPM, key and length in the
+heading above it (select a folder to go back). The **Timeline** section
+on the left, between the folders and the positions, shows the song
+that's open: click it to get back to its timeline from the list or a
+position. The timeline opens fully zoomed out:
 
 - Along the bottom is a colour waveform of the song, with VirtualDJ's
   beat grid drawn behind it and the bars numbered along the top. The
@@ -383,8 +387,8 @@ that's been moved or renamed keeps its light show.
 ### Named positions
 
 Moving heads point at **named positions** rather than raw pan/tilt
-values. In DJ Edit Mode's left-hand tree, below the folders, the
-**Positions** header lists them; click its **+** to add one. It opens in
+values. On DJ Edit Mode's left side, below the folders and the
+timeline, the **Positions** header lists them; click its **+** to add one. It opens in
 the **position editor**: a large pan/tilt pad beside a list of every
 moving fixture. Select fixtures in the list (**Ctrl** / **Shift** for
 several) and their points light up on the pad in the position's colour —
