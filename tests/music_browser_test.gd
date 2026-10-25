@@ -109,6 +109,19 @@ func _test_panel() -> void:
 	ok(panel._list.get_root().get_child_count() == 3, "list shows 3 rows")
 	ok(panel._heading.text.begins_with(fixture) and "3 tracks" in panel._heading.text,
 		"heading: %s" % panel._heading.text)
+	var list_heading: String = panel._heading.text
+	# A track opened: the heading's its song, over the timeline.
+	panel.open_track(rows[1])
+	ok(panel._heading.visible and panel.timeline().visible and panel._heading.get_parent() == panel.timeline().get_parent()
+		and panel._heading.text == "Track 2", "a track's timeline: its song's name above it (%s)" % panel._heading.text)
+	ok(MusicBrowserPanel.song_heading({"title": "Go", "artist": "Band", "bpm": 128.0, "key": "Am", "length": 225.0})
+		== "Go — Band · 128.0 BPM · Am · 3:45", "...with its artist, BPM, key and length where known")
+	if panel.positions == null:
+		panel.positions = PositionLibrary.new()
+	panel.open_position(panel.positions.add()["id"])
+	ok(not panel._heading.visible, "a position open: no heading (the editor has its name)")
+	panel.show_track_list()
+	ok(panel._heading.visible and panel._heading.text == list_heading, "back to the list: its heading again")
 
 	panel.sort_by(MusicBrowserPanel.Col.TITLE, false)
 	ok(panel.rows().map(func(r): return r["title"]) == ["Track 10", "Track 2", "song"], "sort by title, descending")

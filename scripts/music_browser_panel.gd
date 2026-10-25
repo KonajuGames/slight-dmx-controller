@@ -45,7 +45,8 @@ static var _blank: Texture2D
 
 var _tree: Tree                 # left: drives / folders / Virtual Folders
 var _list: Tree                 # right: the tracks
-var _heading: Label
+var _heading: Label             # the folder / list (and its tracks), or the open song
+var _list_heading := ""         # ...the folder / list's, while a song's open
 var _list_view: Control         # the heading + track list
 var _timeline: MusicTimeline    # replaces _list_view while a track is open
 var _editor: PositionEditor     # replaces it while a position is open
@@ -164,7 +165,9 @@ func _ready() -> void:
 	_heading = Label.new()
 	_heading.text = "Select a folder or a VirtualDJ list."
 	_heading.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	right.add_child(_heading)
+	# Over the list and a track's timeline alike (the timeline: its song).
+	right_holder.add_child(_heading)
+	right_holder.move_child(_heading, 0)
 
 	_list = Tree.new()
 	_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -569,6 +572,8 @@ func open_track(row: Dictionary) -> void:
 	_list_view.visible = false
 	_editor.visible = false
 	_timeline.visible = true
+	_heading.visible = true
+	_show_heading(song_heading(row))
 	_timeline.open(row["path"], _db.find_song(row["path"]) if _db != null else null)
 
 
@@ -576,6 +581,8 @@ func open_track(row: Dictionary) -> void:
 func show_track_list() -> void:
 	_timeline.visible = false
 	_editor.visible = false
+	_heading.visible = true
+	_show_heading(_list_heading if _list_heading != "" else "Select a folder or a VirtualDJ list.")
 	_positions.select("")
 	_list_view.visible = true
 
@@ -684,6 +691,7 @@ func confirm_delete_position(id: String) -> ConfirmationDialog:
 func open_position(id: String) -> void:
 	_list_view.visible = false
 	_timeline.visible = false
+	_heading.visible = false            # the editor has the position's name
 	_editor.visible = true
 	_editor.open(id)
 	_positions.select(id)
@@ -767,8 +775,28 @@ func _set_heading(what: String, rows_: Array) -> void:
 		text += " · " + _fmt_duration(total)
 	if missing > 0:
 		text += " · %d missing" % missing
+	_list_heading = text
+	_show_heading(text)
+
+
+func _show_heading(text: String) -> void:
 	_heading.text = text
 	_heading.tooltip_text = text
+
+
+## The heading over a track's timeline: its title — artist, then its BPM,
+## key and length where they're known.
+static func song_heading(row: Dictionary) -> String:
+	var text := String(row["title"])
+	if String(row["artist"]) != "":
+		text += " — " + String(row["artist"])
+	if float(row["bpm"]) > 0.0:
+		text += " · %.1f BPM" % float(row["bpm"])
+	if String(row["key"]) != "":
+		text += " · " + String(row["key"])
+	if float(row["length"]) > 0.0:
+		text += " · " + _fmt_time(float(row["length"]))
+	return text
 
 
 func _fill_list() -> void:
