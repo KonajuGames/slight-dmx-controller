@@ -527,6 +527,21 @@ func _test_structure_snapping() -> void:
 	sb._split_segment(1, 13.4)
 	ok(a.sections.size() == 3 and is_equal_approx(a.sections[1]["end"], 13.25), "split snaps to the beat (%.2f)" % a.sections[1]["end"])
 
+	# A border dragged right up to the far one: the segment it closed up
+	# goes, either side.
+	sb.snap = StructureBar.Snap.NONE
+	a.sections[1]["label"] = "Build"
+	_drag_border(sb, 9.1, 15.0)
+	ok(a.sections.size() == 2 and a.sections.map(func(s): return s["label"]) == ["Verse", "Chorus"]
+		and is_equal_approx(a.sections[0]["end"], 13.25) and a.sections[1]["start"] == a.sections[0]["end"],
+		"dragged to nothing on its right: that segment deleted")
+	_drag_border(sb, 13.25, 4.0)
+	ok(a.sections.size() == 2 and is_equal_approx(a.sections[1]["start"], 4.0), "a drag that leaves both: both kept")
+	_drag_border(sb, 4.0, -1.0)
+	ok(a.sections.size() == 1 and a.sections[0]["label"] == "Chorus" and a.sections[0]["start"] == 0.0 and a.sections[0]["end"] == 20.0,
+		"dragged to nothing on its left: that one deleted")
+	sb.snap = StructureBar.Snap.BEAT
+
 	# The menu: a Snapping submenu with the three choices, current one ticked.
 	sb._open_context_menu(0, Vector2(100, 9))
 	var p: PopupMenu = sb._popup

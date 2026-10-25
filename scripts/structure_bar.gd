@@ -10,7 +10,7 @@ extends Control
 ##   button to move it, snapped to the nearest bar (or beat, or not at all:
 ##   right-click > Snapping, which also covers Split Here). A border can't be
 ##   dragged past the start of its left segment or the end of its right
-##   segment.
+##   segment; dropped there, the segment it closed up is deleted.
 ## - Right-click a segment for a menu to change its type, split it at the
 ##   click point (snapped to the nearest bar), or delete it — an adjacent
 ##   segment expands to fill the gap.
@@ -201,6 +201,7 @@ func _gui_input(event: InputEvent) -> void:
 				_open_context_menu(idx, event.position)
 	elif event is InputEventMouseButton and not event.pressed:
 		if event.button_index == MOUSE_BUTTON_LEFT and _drag_border != -1:
+			_drop_empty(_drag_border)
 			_drag_border = -1
 			queue_redraw()
 			structure_edited.emit()
@@ -230,6 +231,16 @@ func _update_drag(mouse_x: float) -> void:
 	secs[i]["end"] = t
 	secs[i + 1]["start"] = t
 	queue_redraw()
+
+
+## A border dropped (between sections `i` and `i + 1`): either side left
+## with no length is deleted — its neighbour already covers its span.
+func _drop_empty(i: int) -> void:
+	var secs := analysis.sections
+	for k in [i + 1, i]:
+		if secs.size() > 1 and float(secs[k]["end"]) - float(secs[k]["start"]) < 0.02:
+			secs.remove_at(k)
+			return
 
 
 ## Where a dragged border or a split lands, per `snap`: the nearest bar

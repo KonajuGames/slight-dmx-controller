@@ -229,7 +229,8 @@ timeline (select a folder to go back). It opens fully zoomed out:
   and so on — worked out in the background when the song opens. It's
   locked by default (and locks again whenever you open another song);
   click the padlock to fix a section border the
-  analyser put slightly wrong (drag it), or right-click a section to
+  analyser put slightly wrong (drag it — all the way to the next border
+  deletes the section in between), or right-click a section to
   relabel, split or delete it. Right-click > **Snapping** chooses
   whether borders and selections snap to bars, beats or nothing.
 - Above the structure is the **master** timeline, which drives every
