@@ -26,8 +26,8 @@ technical reference.
   `ArtNet`, `Sound`, `Tempo` and `Fx` autoload singletons.
 - `artnet_universe.gd` — the `ArtNetUniverse` class: one universe's
   512-channel buffer plus its own UDP socket and target. `compute_output()`
-  folds the effect/chase overrides and grand master into `output` (which
-  the 3D view reads); `transmit()` puts that on the wire as an `ArtDMX`
+  folds the effect/chase overrides, virtual dimmers, the live flashes'
+  top layer and grand master into `output` (which the 3D view reads); `transmit()` puts that on the wire as an `ArtDMX`
   packet.
 - `usb_dmx_bridge.gd` — the `UsbDmx` autoload: optional USB-DMX universe
   output via the `addons/native` GDExtension (FTDI D2XX + libusb
@@ -177,8 +177,11 @@ technical reference.
   `mix()`: HTP, pan / tilt averaged) into an `ArtNet.layer_providers`
   layer.
 - `dj_perform_panel.gd` — the `DjPerformPanel` class: DJ Perform Mode's
-  view — the OS2L connection and, per deck, song, state, position and
-  timelines.
+  view — the live flash buttons, the OS2L connection and, per deck,
+  song, state, position and timelines.
+- `live_flash.gd` — the `LiveFlash` class: the live flashes (Blackout,
+  Strobe, White, Colour), held or latched, as an `ArtNet.top_providers`
+  layer over everything else in the frame.
 - `music_timeline.gd` — the `MusicTimeline` class: a track's timeline —
   the zoomable colour waveform along the bottom (a song opens fully
   zoomed out, showing the whole track; mouse wheel zooms,
@@ -514,7 +517,8 @@ Global controls live in the top bar:
   stands. Only what a song's timelines cover is driven; everything else
   stays as the console has it. The timelines go into the frame under
   chases and effects. Leaving DJ Perform Mode stops
-  the OS2L listener and the timeline playback. Where a fixture's strobe
+  the OS2L listener and the timeline playback (the live flashes, below,
+  keep working from MIDI / OSC pads in any view). Where a fixture's strobe
   row, or the master's, is on, its STROBE channel goes to a strobing
   value for the speed (the faster of the two) — a fifth of the way up a
   range labelled strobe / pulse for slow, just over half way for
@@ -596,6 +600,39 @@ The mode is saved in the show file. (Shows saved in the old Auto Show
 run mode open in Cue Mode — songs' light shows are now built and played
 in DJ Edit Mode / DJ Perform Mode.)
 
+### Live flashes
+
+Across the top of DJ Perform Mode, **Live:** has four flash buttons for
+reacting to the music over whatever's playing — the console, the songs'
+timelines, chases and effects all sit underneath them. Each works while
+it's held down: its button, its key (**B**, **S**, **W**, **C**, in DJ
+Perform Mode), or a MIDI / OSC pad bound to its *Flash* trigger action
+(in any view). Tick **Latch** to make them stay on when clicked, until
+clicked again; unticking Latch lets go of them all.
+
+- **Blackout** — every patched fixture's intensity to 0: its DIMMER
+  channel and its colour / white channels. Pan, tilt, gobos and the rest
+  are left alone, so movers stay where they're pointing.
+- **Strobe** — every fixture at full, strobing: a STROBE channel goes to
+  the fast end of its strobe range (as a timeline's fast strobe does),
+  and a fixture without one is flashed in software (10 Hz, a third of
+  each cycle lit). On its own it strobes the colours already playing.
+- **White** — full white: DIMMER, red, green, blue and white full, amber
+  and UV off; a fixture with a colour wheel and no RGB turns it to its
+  nearest (whitest) slot.
+- **Colour** — full in the colour picked in the swatch beside it: DIMMER
+  full, red / green / blue from the colour, white / amber / UV off; a
+  colour wheel to its nearest slot.
+
+Strobe combines with White or Colour (a white or coloured strobe); White
+beats Colour; Blackout beats everything. Under White or Colour without
+Strobe, a STROBE channel is set to its *Open* value so a timeline's
+strobing doesn't carry into the flash. The flashes go into the frame
+after the fixtures' virtual dimmers — so a fixture its virtual dimmer
+has taken down still flashes — and under the grand master. The colour
+and Latch are saved with the show; the flashes themselves always start
+off.
+
 ### Tempo clock
 
 Beside the run mode, **Tap** and the read-out after it (`128.0 BPM · Tap`,
@@ -661,7 +698,11 @@ maps one incoming message to one console action:
 - **Learn** — click it, then play the pad / move the fader / send the OSC
   message, and the match fields fill in from what arrived.
 - **Action** — *Cue GO / Back / Halt / Go to #*, *Chase toggle*,
-  *Effect toggle*, *Blackout all* or *Tap tempo*. Go-to takes a cue number; the
+  *Effect toggle*, *Blackout all*, *Tap tempo*, or one of the live
+  flashes — *Flash — Blackout / Strobe / White / Colour* — held while
+  the pad is: a note until its note-off, a CC until it drops below 64,
+  OSC until a message whose first argument is `0`. A Program Change,
+  which has no release, turns its flash on and the next one off. Go-to takes a cue number; the
   chase / effect toggles take a name (or a 1-based index), with a picker
   populated from what's programmed.
 
@@ -676,7 +717,8 @@ binding tick **light this pad** and pick what it **follows** with an
 **on** / **off** value (a velocity, or a pad colour code for RGB grids):
 
 - *this binding's action* — the pad lights while its cue is live / its
-  chase or effect is running (needs a Go-to-# / toggle action).
+  chase or effect is running / its flash is on (needs a Go-to-# /
+  toggle / flash action).
 - *Beat pulse* — a flash on every beat: the tempo clock's while it's
   running, else the audio's (Sound Reactive).
 - *Sending is on*, *Any chase / effect running*,

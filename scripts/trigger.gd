@@ -16,16 +16,25 @@ enum {
 	ACT_CHASE_TOGGLE, ACT_EFFECT_TOGGLE, ACT_BLACKOUT, ACT_NONE,
 	# Added later: after ACT_NONE, so saved shows' numbers don't shift.
 	ACT_TAP_TEMPO,
+	ACT_FLASH_BLACKOUT, ACT_FLASH_STROBE, ACT_FLASH_WHITE, ACT_FLASH_COLOUR,
 }
 const ACTIONS := [
 	"Cue — GO", "Cue — Back", "Cue — Halt", "Cue — Go to #",
 	"Chase — toggle", "Effect — toggle", "Blackout all",
 	"(nothing — feedback only)", "Tap tempo",
+	"Flash — Blackout", "Flash — Strobe", "Flash — White", "Flash — Colour",
 ]
 ## Which actions read `target` (a cue number, or a chase / effect name).
 const ACTION_NEEDS_TARGET := {
 	ACT_CUE_GOTO: true, ACT_CHASE_TOGGLE: true, ACT_EFFECT_TOGGLE: true,
 }
+## The live flashes (LiveFlash.BLACKOUT ... COLOUR, in order): held while
+## the pad's down — a note until its note-off, a CC until it drops below
+## 64, OSC until a 0 — and a Program Change, which has no release, on until
+## the next one.
+const FLASH_ACTIONS := [ACT_FLASH_BLACKOUT, ACT_FLASH_STROBE, ACT_FLASH_WHITE, ACT_FLASH_COLOUR]
+## The target a flash fires with when it should toggle (Program Change).
+const FLASH_TOGGLE := "toggle"
 
 ## What a feedback LED follows. FB_ACTION mirrors this binding's own
 ## action; the rest are standalone console-state indicators.
@@ -79,7 +88,17 @@ func fires_action() -> bool:
 func can_feedback() -> bool:
 	if fb_watch != FB_ACTION:
 		return true
-	return action in [ACT_CUE_GOTO, ACT_CHASE_TOGGLE, ACT_EFFECT_TOGGLE]
+	return action in [ACT_CUE_GOTO, ACT_CHASE_TOGGLE, ACT_EFFECT_TOGGLE] or is_flash()
+
+
+## Whether the action is a live flash (held, not just fired).
+func is_flash() -> bool:
+	return action in FLASH_ACTIONS
+
+
+## Which LiveFlash a flash action works (-1 for any other action).
+func flash_kind() -> int:
+	return FLASH_ACTIONS.find(action)
 
 
 ## The (kind, target) the feedback engine queries the shell with. A pulse
@@ -96,6 +115,8 @@ func feedback_query() -> Array:
 		ACT_CUE_GOTO: return ["cue", target]
 		ACT_CHASE_TOGGLE: return ["chase", target]
 		ACT_EFFECT_TOGGLE: return ["effect", target]
+	if is_flash():
+		return ["flash", str(flash_kind())]
 	return ["", ""]
 
 
@@ -125,6 +146,37 @@ func matches_midi(ev: InputEventMIDI) -> bool:
 				and ev.controller_number == midi_number and ev.controller_value >= 64
 		MIDI_PROGRAM:
 			return ev.message == MIDI_MESSAGE_PROGRAM_CHANGE and ev.pitch == midi_number
+	return false
+
+
+## Is this incoming MIDI event this trigger's pad coming back up — a
+## note-off (or a note-on at velocity 0) for its note, its CC below 64?
+## (A Program Change has no release.)
+func matches_midi_release(ev: InputEventMIDI) -> bool:
+	if source != SRC_MIDI:
+		return false
+	if midi_channel >= 0 and ev.channel != midi_channel:
+		return false
+	match midi_kind:
+		MIDI_NOTE:
+			return ev.pitch == midi_number and (ev.message == MIDI_MESSAGE_NOTE_OFF
+				or (ev.message == MIDI_MESSAGE_NOTE_ON and ev.velocity == 0))
+		MIDI_CC:
+			return ev.message == MIDI_MESSAGE_CONTROL_CHANGE \
+				and ev.controller_number == midi_number and ev.controller_value < 64
+	return false
+
+
+## Does this incoming OSC message release the trigger — its address with
+## a first argument of 0 / false?
+func matches_osc_release(msg: OscMessage) -> bool:
+	if source != SRC_OSC or msg.address != osc_address or msg.args.is_empty():
+		return false
+	var a = msg.args[0]
+	if a is bool:
+		return not a
+	if a is float or a is int:
+		return absf(float(a)) <= 0.0001
 	return false
 
 

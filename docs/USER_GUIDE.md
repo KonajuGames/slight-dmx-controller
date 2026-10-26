@@ -469,6 +469,15 @@ Only what a song's timelines cover is driven; everything else stays as
 the console has it, and chases and effects still layer on top. Leaving
 DJ Perform Mode stops the listener and the playback.
 
+**Live flashes.** For a drop the light show didn't see coming, the
+**Live:** buttons at the top of DJ Perform Mode override everything
+while you hold them: **Blackout**, **Strobe**, **White** and **Colour**
+(in the colour in the swatch beside them). Hold the keys **B**, **S**,
+**W** or **C** for the same thing, or bind them to pads on a MIDI
+controller (Triggers…, a *Flash* action). Hold Strobe with White or
+Colour for a white or coloured strobe. Tick **Latch** if you'd rather
+click a flash on and click it off again.
+
 ## Optional: MIDI and OSC control surfaces
 
 **Triggers…** in the top bar (works from any tab) opens the binding
@@ -518,6 +527,7 @@ ago" without touching your cue list.
 | --- | --- |
 | **Space** | GO the next cue (Console, Cue Mode) / play or pause the song (DJ Edit Mode) |
 | **T** | Tap Tempo |
+| **B / S / W / C** (held) | Blackout / Strobe / White / Colour flash (DJ Perform Mode) |
 | **Ctrl+N / Ctrl+O** | New show / load a show |
 | **Ctrl+S / Shift+Ctrl+S** | Save show / save show as |
 | **Ctrl+Shift+N / Ctrl+Shift+R** | Add a universe / remove the current one |

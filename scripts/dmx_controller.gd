@@ -46,6 +46,9 @@ var performer: DjPerformer
 ## The show's named positions for moving fixtures (edited in DJ Edit Mode).
 var positions := PositionLibrary.new()
 var perform_panel: DjPerformPanel
+## The live flashes (Blackout / Strobe / White / Colour), over everything
+## in the DMX frame; their buttons are in DJ Perform Mode.
+var flash := LiveFlash.new()
 ## The right-hand tabs (Patch + 3D Visualizer) and, while the visualizer
 ## is popped out, its own window.
 var _right_tabs: TabContainer
@@ -125,8 +128,12 @@ func _ready() -> void:
 			performer.reload_all())
 	# DJ Edit Mode: the open song's timelines go live while it plays.
 	ArtNet.layer_providers.append(_edit_playback_layer)
+	# The live flashes: on top of everything.
+	flash.fixtures_provider = _perform_fixtures
+	ArtNet.top_providers.append(flash.layer)
 	perform_panel = DjPerformPanel.new()
 	perform_panel.performer = performer
+	perform_panel.flash = flash
 	perform_panel.visible = false
 	main_vbox.add_child(perform_panel)
 
@@ -217,6 +224,7 @@ func _ready() -> void:
 	_triggers_dialog.visible = false
 	add_child(_triggers_dialog)
 	Triggers.fired.connect(_on_trigger_fired)
+	Triggers.released.connect(_on_trigger_released)
 	Triggers.feedback_state_cb = _feedback_state
 
 	_refresh_timer = Timer.new()
@@ -1002,6 +1010,19 @@ func _on_trigger_fired(action: int, target: String) -> void:
 		Trigger.ACT_EFFECT_TOGGLE: fx_panel.toggle_by_name(target)
 		Trigger.ACT_BLACKOUT: _on_blackout_all()
 		Trigger.ACT_TAP_TEMPO: Tempo.tap()
+		_ when Trigger.FLASH_ACTIONS.has(action):
+			var kind := Trigger.FLASH_ACTIONS.find(action)
+			if target == Trigger.FLASH_TOGGLE:
+				flash.toggle(kind)
+			else:
+				flash.press(kind)
+
+
+## A flash binding's pad came back up.
+func _on_trigger_released(action: int, _target: String) -> void:
+	var kind := Trigger.FLASH_ACTIONS.find(action)
+	if kind >= 0:
+		flash.release(kind)
 
 
 ## Whether a feedback binding's watched state is currently active — its
@@ -1025,6 +1046,8 @@ func _feedback_state(kind: String, target: String) -> bool:
 			return sending_toggle.button_pressed
 		"fx_any":
 			return Fx.any_running()
+		"flash":
+			return target.is_valid_int() and flash.is_on(int(target))
 	return false
 
 
@@ -1037,6 +1060,18 @@ func _on_refresh_timeout() -> void:
 ## Space fires the next cue, like a real console — but only when no text
 ## field or button ate the keypress first, and only in the Console view.
 func _unhandled_key_input(event: InputEvent) -> void:
+	# DJ Perform Mode: B / S / W / C hold the live flashes (Latch: toggle).
+	# (A release counts in any view, so one held across a view change lets go.)
+	if event is InputEventKey and (perform_panel.visible or not event.pressed) and not event.echo \
+			and LiveFlash.KEYS.has(event.keycode) and not event.is_command_or_control_pressed() \
+			and not event.shift_pressed and not event.alt_pressed:
+		var kind := LiveFlash.KEYS.find(event.keycode)
+		if event.pressed:
+			flash.press(kind)
+		else:
+			flash.release(kind)
+		get_viewport().set_input_as_handled()
+		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_SPACE and run_mode == 0 and _console_view.visible:
 			cue_panel.go()
@@ -1892,6 +1927,7 @@ func show_dict() -> Dictionary:
 		"triggers": Triggers.to_dict(),
 		"groups": _groups_to_dict(),
 		"positions": positions.to_dict(),
+		"live_flash": flash.to_dict(),
 		"viz": viz_panel.to_dict(),
 		"sacn_cid": Marshalls.raw_to_base64(ArtNet.sacn_cid),
 	}
@@ -1991,6 +2027,9 @@ func apply_show_dict(parsed) -> void:
 	sound_panel.from_dict(doc.get("sound", {}))
 	sound_panel.refresh_group_options()
 	Triggers.from_dict(doc.get("triggers", {}))
+	var flash_doc = doc.get("live_flash", {})
+	flash.from_dict(flash_doc if flash_doc is Dictionary else {})
+	perform_panel.sync_flash()
 	_set_run_mode(int(doc.get("run_mode", 0)))
 	_on_patch_changed()                       # groups, visualizer, DJ Edit Mode timelines
 	viz_panel.from_dict(doc.get("viz", {}))

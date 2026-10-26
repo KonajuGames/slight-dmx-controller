@@ -575,9 +575,11 @@ func _sync_editor() -> void:
 	_fb_watch.selected = t.fb_watch
 	_fb_on.value = t.fb_on
 	_fb_off.value = t.fb_off
-	# the "follows action" option only does something for goto / toggles
+	# the "follows action" option only does something for goto / toggles /
+	# flashes
 	_fb_watch.set_item_disabled(Trigger.FB_ACTION,
-		t.action not in [Trigger.ACT_CUE_GOTO, Trigger.ACT_CHASE_TOGGLE, Trigger.ACT_EFFECT_TOGGLE])
+		t.action not in [Trigger.ACT_CUE_GOTO, Trigger.ACT_CHASE_TOGGLE, Trigger.ACT_EFFECT_TOGGLE]
+		and not t.is_flash())
 	_syncing = false
 
 

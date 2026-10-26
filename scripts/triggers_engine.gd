@@ -15,6 +15,10 @@ extends Node
 ## way.
 
 signal fired(action: int, target: String)     ## a binding matched
+## A flash binding's pad came back up (Trigger.FLASH_ACTIONS: note-off,
+## CC below 64, OSC 0). A Program Change flash, which has none, fires with
+## the target Trigger.FLASH_TOGGLE instead.
+signal released(action: int, target: String)
 signal activity(text: String)                 ## last message seen (dialog display)
 signal learned(descriptor: Dictionary)        ## a Learn capture completed
 signal osc_state_changed(listening: bool, detail: String)
@@ -124,8 +128,14 @@ func _input(event: InputEvent) -> void:
 
 	_report_midi(ev)
 	for t in triggers:
-		if t.enabled and t.fires_action() and t.matches_midi(ev):
-			fired.emit(t.action, t.target)
+		if not (t.enabled and t.fires_action()):
+			continue
+		if t.matches_midi(ev):
+			# A Program Change has no release: its flash toggles instead.
+			var toggles := t.is_flash() and t.midi_kind == Trigger.MIDI_PROGRAM
+			fired.emit(t.action, Trigger.FLASH_TOGGLE if toggles else t.target)
+		elif t.is_flash() and t.matches_midi_release(ev):
+			released.emit(t.action, t.target)
 
 
 func _process(delta: float) -> void:
@@ -259,6 +269,8 @@ func _dispatch_osc(msg: OscMessage) -> void:
 	for t in triggers:
 		if t.enabled and t.fires_action() and t.matches_osc(msg):
 			fired.emit(t.action, t.target)
+		elif t.enabled and t.is_flash() and t.matches_osc_release(msg):
+			released.emit(t.action, t.target)
 
 
 func _report_midi(ev: InputEventMIDI) -> void:
