@@ -2893,6 +2893,9 @@ class BarRuler:
 	const LABEL_GAP := 34.0
 	const BG := Color(0.13, 0.13, 0.15)
 	const TICK := Color(1, 1, 1, 0.35)
+	## Every PHRASE_BARS-th bar's tick gets a brighter top.
+	const PHRASE_BARS := 4
+	const PHRASE_TICK := Color(1, 1, 1, 0.8)
 	const BEAT_TICK := Color(1, 1, 1, 0.22)
 	const TEXT := Color(0.78, 0.78, 0.82)
 	const FONT_SIZE := 11
@@ -2913,8 +2916,38 @@ class BarRuler:
 			return []
 		return wave.grid_lines(wave.view_start, wave.view_start + wave.visible_length())
 
-	## The bar numbers drawn for the current view: [[x, number], ...].
+	## The bar numbers drawn for the current view: [[x, number], ...]. Bars
+	## before bar 1 count in as -1, -2, ... (there's no bar 0).
 	func bar_labels() -> Array:
+		var out: Array = []
+		var bars := _bars()
+		if bars.is_empty():
+			return out
+		# Thin to every 2nd / 4th / ... bar so numbers don't collide.
+		var bar_px: float = bars[1][0] - bars[0][0] if bars.size() > 1 else size.x
+		var every := 1
+		while bar_px * every < LABEL_GAP and every < 1 << 20:
+			every *= 2
+		for bar in bars:
+			var k: int = bar[1]
+			if posmod(k, every) == 0:
+				out.append([bar[0], k + 1 if k >= 0 else k])
+		return out
+
+	## Where every 4th bar (1, 5, 9, ... and -4, -8, ...) starts in the
+	## current view, while bar ticks are drawn at all.
+	func phrase_ticks() -> Array:
+		var out: Array = []
+		if not ticks().any(func(t): return t[1]):
+			return out
+		for bar in _bars():
+			if posmod(bar[1], PHRASE_BARS) == 0:
+				out.append(bar[0])
+		return out
+
+	## Every bar start in the current view as [[x, k], ...], k counting
+	## bars from 0 at bar 1 (negative before it).
+	func _bars() -> Array:
 		var out: Array = []
 		if wave == null or wave.analysis == null:
 			return out
@@ -2926,20 +2959,10 @@ class BarRuler:
 		var t1 := t0 + wave.visible_length()
 		var i0 := beats.bsearch(t0)
 		var i1 := beats.bsearch(t1, false)
-		if i1 <= i0:
-			return out
-		# Thin to every 2nd / 4th / ... bar so numbers don't collide.
-		var j := clampi(i0, 0, beats.size() - 2)
-		var bar_px := (beats[j + 1] - beats[j]) * per / wave.visible_length() * size.x
-		var every := 1
-		while bar_px * every < LABEL_GAP and every < 1 << 20:
-			every *= 2
 		# First bar start at or after i0.
 		var i := i0 + posmod(wave.bar_phase - i0, per)
 		while i < i1:
-			var n := floori(float(i - wave.bar_phase) / per) + 1
-			if n >= 1 and (n - 1) % every == 0:
-				out.append([wave.time_to_x(beats[i]), n])
+			out.append([wave.time_to_x(beats[i]), floori(float(i - wave.bar_phase) / per)])
 			i += per
 		return out
 
@@ -2963,6 +2986,9 @@ class BarRuler:
 			draw_line(Vector2(x, size.y * 0.45), Vector2(x, size.y), TICK, 1.0)
 			draw_string(font, Vector2(x + 3.0, size.y - 5.0), str(lab[1]),
 				HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE, TEXT)
+		# 1, 5, 9, ...: the top of the tick brighter, so phrases stand out.
+		for px in phrase_ticks():
+			draw_line(Vector2(px, size.y * 0.45), Vector2(px, size.y * 0.75), PHRASE_TICK, 1.0)
 		if wave.show_cursor:
 			var t := wave.song_pos
 			if t >= wave.view_start and t <= wave.view_start + wave.visible_length():

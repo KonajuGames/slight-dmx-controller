@@ -368,13 +368,19 @@ func _test_ruler() -> void:
 	ok(not far_ticks.is_empty() and far_ticks.all(func(t): return t[1]), "...beats too close to read: bar ticks only")
 	tl._set_analysis(_analysis(40.0, 4000))
 
-	# Bars before VirtualDJ's first beat aren't numbered.
+	# Every 4th bar's tick is brightened: 1 and 5 in the first 10 s.
+	w.set_view(0.0, 10.0)
+	var phrases := r.phrase_ticks()
+	ok(phrases.size() == 2 and absf(phrases[0] - w.time_to_x(0.25)) < 0.5
+		and absf(phrases[1] - w.time_to_x(8.25)) < 0.5, "bars 1 and 5 marked brighter %s" % str(phrases))
+
+	# Bars before VirtualDJ's first beat count in: -2, -1, then 1.
 	song.phase = 4.25               # first beat later: beats from 0.25 s, bar 1 at 4.25 s
 	tl._song = song
 	tl._apply_beat_grid(40.0)
 	w.set_view(0.0, 10.0)
 	nums = r.bar_labels().map(func(l): return l[1])
-	ok(nums == [1, 2, 3], "nothing before the first beat %s" % str(nums))
+	ok(nums == [-2, -1, 1, 2, 3], "counting in before the first beat %s" % str(nums))
 
 	# Click sets the playhead; drag moves it; the audio follows on release.
 	w.set_view(0.0, 10.0)
