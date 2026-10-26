@@ -624,14 +624,17 @@ func _row_list() -> Array:
 
 
 ## The index in `rows` of the row at global y (the nearest, if between or
-## beyond them).
+## beyond them). Only the part of a row on screen counts: a fixture's
+## scrolled out of its panel can lie right over the master below it.
 func _row_index_at(rows: Array, gy: float) -> int:
 	var best := 0
 	var best_d := INF
 	for i in range(rows.size()):
 		var tr: TimelineTrack = rows[i]["track"]
-		var r := tr.row_rect(rows[i]["row"])
-		var top := tr.get_global_transform() * r.position
+		var r := tr.visible_global_rect(tr.row_rect(rows[i]["row"]))
+		if not r.has_area():
+			continue
+		var top := r.position
 		var d := 0.0 if gy >= top.y and gy < top.y + r.size.y else minf(absf(gy - top.y), absf(gy - top.y - r.size.y))
 		if d < best_d:
 			best = i

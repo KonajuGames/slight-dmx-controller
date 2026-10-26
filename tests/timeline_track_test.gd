@@ -34,6 +34,7 @@ func _run() -> void:
 	_test_fixture_specs()
 	await _test_fixture_tracks()
 	await _test_area_selection()
+	await _test_select_under_scrolled_fixtures()
 	_test_clear_dimmer()
 	await _test_delete_selection()
 	await _test_generate_into_selection()
@@ -484,6 +485,39 @@ func _test_area_selection() -> void:
 	# Opening another song clears it.
 	tl.open("user://_another_song.wav")
 	ok(sel.is_empty(), "another song: selection cleared")
+	tl.queue_free()
+	await process_frame
+
+
+func _test_select_under_scrolled_fixtures() -> void:
+	print("- selecting on the master below a scrolling fixture list")
+	var R := TimelineTrack.Row
+	var fixtures: Array = []
+	for i in range(12):
+		fixtures.append({"key": "par%d" % i, "name": "Par %d" % i, "profile": _par(), "mode": 0})
+	var tl := MusicTimeline.new()
+	tl.fixtures_provider = func(): return fixtures
+	root.add_child(tl)
+	tl.position = Vector2.ZERO
+	tl.size = Vector2(1100, 700)
+	var a := SongAnalysis.new()
+	a.duration = 60.0
+	for arr in [a.wave_lo, a.wave_mid, a.wave_hi, a.wave_peak]:
+		arr.resize(6000)
+	tl._set_analysis(a)
+	tl.refresh_fixtures()
+	await process_frame
+	await process_frame
+	tl.wave().set_view(0.0, 20.0)
+	var m := tl.master_track()
+	var hidden_over := tl.fixture_tracks().filter(func(f: TimelineTrack):
+		return not f.is_on_screen() and f.get_global_rect().intersects(m.get_global_rect()))
+	ok(not hidden_over.is_empty(), "fixtures scrolled out of view lie over the master (%d)" % hidden_over.size())
+	var sel := tl.selection()
+	for row in [R.DIMMER, R.COLOUR, R.MOVEMENT]:
+		_sel_drag(tl, _at(tl, m, row, 3.1), _at(tl, m, row, 6.9))
+		ok(sel.blocks.size() == 1 and sel.blocks[0]["rows"] == PackedStringArray(["master|%d" % row]),
+			"a drag on the master's row %d selects it, not a hidden fixture's (%s)" % [row, str(sel.blocks[0]["rows"]) if sel.blocks.size() > 0 else "none"])
 	tl.queue_free()
 	await process_frame
 

@@ -313,6 +313,13 @@ func is_on_screen() -> bool:
 	return get_global_rect().intersects(_clip.get_global_rect())
 
 
+## `r` (a rectangle in the track) in global coordinates, cut to the panel
+## the track scrolls in: empty where it's scrolled out of view.
+func visible_global_rect(r: Rect2) -> Rect2:
+	var g := get_global_transform() * r
+	return g if _clip == null else g.intersection(_clip.get_global_rect())
+
+
 ## Draw what was skipped while out of view, if it's back in view.
 func _catch_up() -> void:
 	if _stale and is_on_screen():
