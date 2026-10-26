@@ -5,12 +5,13 @@ extends RefCounted
 ## JSON file per song, named by the song's fingerprint, plus an index:
 ##
 ##   MyShow.timelines/
-##       index.json        { fingerprint: {path, title, size}, ... }
+##       index.json        { fingerprint: {path, title, size, temporary?}, ... }
 ##       <fingerprint>.json
 ##
 ## A song's file:
 ##   { format, version, track: {path, fingerprint},
 ##     structure: {sections: [...]}            (only once edited)
+##     temporary: true      (generated in DJ Perform Mode, not by the user)
 ##     tracks: { "master": {dimmer: [[t, level], ...]},
 ##               "<fixture uid>": {...}, "<fixture uid>/h<n>": {...} } }
 ##
@@ -105,22 +106,37 @@ func load_song(path: String) -> Dictionary:
 ## Save `data` ({structure?, tracks}) as the song at `path`'s timelines.
 ## Returns "" or what went wrong.
 func save_song(path: String, data: Dictionary) -> String:
+	var job := save_job(path, data)
+	return job["error"] if job.has("error") else write_job(job)
+
+
+## save_song() in two halves, so the slow one — writing the song's file,
+## write_job() — can go on a worker thread. Here: the index, updated and
+## written, and the file's contents (a copy of `data`: it can change
+## meanwhile) as {file, out, dir} — or {error}.
+func save_job(path: String, data: Dictionary) -> Dictionary:
 	if dir == "":
-		return "no timelines folder"
+		return {"error": "no timelines folder"}
 	var fp := fingerprint(path)
 	if fp == "":
-		return "can't read %s" % path.get_file()
+		return {"error": "can't read %s" % path.get_file()}
 	DirAccess.make_dir_recursive_absolute(dir)
 	var out := data.duplicate(true)
 	out["format"] = FORMAT
 	out["version"] = VERSION
 	out["track"] = {"path": path, "fingerprint": fp}
-	if not _write_json(_song_file(fp), out):
-		return "can't write to %s" % dir
 	var idx := index()
 	idx[fp] = {"path": path, "title": path.get_file().get_basename(), "size": _size_of(path)}
+	if out.get("temporary", false):
+		idx[fp]["temporary"] = true
 	_write_json(_index_file(), idx)
-	return ""
+	return {"file": _song_file(fp), "out": out, "dir": dir}
+
+
+## Write a save_job()'s song file (on any thread). Returns "" or what went
+## wrong.
+static func write_job(job: Dictionary) -> String:
+	return "" if _write_json(job["file"], job["out"]) else "can't write to %s" % job["dir"]
 
 
 ## Delete the song at `path`'s timelines (its file and index entry).
@@ -176,6 +192,22 @@ func has_song_quick(path: String) -> Has:
 		if not e.has("size") or int(e["size"]) == size:
 			maybe = true
 	return Has.MAYBE if maybe and size >= 0 else Has.NO
+
+
+## Whether the song at `path`'s saved timelines here are temporary ones
+## (generated in DJ Perform Mode, not by the user), as the index has it —
+## found by its indexed path, or by its fingerprint once has_song() or
+## load_song() has worked that out.
+func is_temporary(path: String) -> bool:
+	var idx := index()
+	var fp: String = _fingerprints.get(path, "")
+	if fp != "" and idx.get(fp) is Dictionary:
+		return bool(idx[fp].get("temporary", false))
+	for k in idx:
+		var e = idx[k]
+		if e is Dictionary and String(e.get("path", "")) == path:
+			return bool(e.get("temporary", false))
+	return false
 
 
 ## Whether the song at `path` has saved timelines here (reads part of the

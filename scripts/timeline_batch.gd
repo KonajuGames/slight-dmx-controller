@@ -21,6 +21,10 @@ const ANALYSIS_SHARE := 0.9
 var timeline: MusicTimeline
 ## path -> its VirtualDjDatabase.Song (its beat grid), or null.
 var song_lookup := Callable()
+## What's done with each song once its structure's known: (path, song) ->
+## "" or what went wrong. Unset, a show is generated into its saved
+## timelines (MusicTimeline.generate_into()).
+var generator := Callable()
 ## Songs analysed at once: one per worker thread — a few, leaving cores
 ## for the app; one where only the playback analysis works (it plays the
 ## song through a shared, muted bus).
@@ -101,7 +105,7 @@ func _generate(path: String, song) -> void:
 	if not _running.has(path):
 		return                              # cancelled
 	progress.emit(path, ANALYSIS_SHARE)
-	_finish(path, timeline.generate_into(path, song))
+	_finish(path, generator.call(path, song) if generator.is_valid() else timeline.generate_into(path, song))
 
 
 func _finish(path: String, error: String) -> void:

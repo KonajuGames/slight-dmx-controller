@@ -126,6 +126,7 @@ var _lock_btn: TransportButton
 var _gen_btn: TransportButton
 var _structure_locked := true
 var _struct_cache: Dictionary = {}   # path -> SongAnalysis (with any edits)
+var _save_tasks: Array[int] = []     # songs' files being written on worker threads (_save_in_background())
 var _generated: Dictionary = {}      # path -> times Generate has run on it (the next variation)
 var _regenerate: Dictionary = {}     # path -> true: generate once its fresh structure is in (Shift+Generate)
 var _button_col: Control
@@ -326,6 +327,9 @@ func _exit_tree() -> void:
 	flush()
 	_stop_loading()
 	_stop_stream_load()
+	for id in _save_tasks:
+		WorkerThreadPool.wait_for_task_completion(id)
+	_save_tasks.clear()
 
 
 ## Show `path`'s timeline. `song` is VirtualDJ's database entry for it,
@@ -2027,12 +2031,15 @@ func has_unsaved_timelines() -> bool:
 	return _dirty
 
 
-## Save the open song's timelines to the store, if they've changed.
-## Returns "" or what went wrong.
-func flush() -> String:
+## Save the open song's timelines to the store, if they've changed —
+## as the user's own (no longer temporary), unless `temporary` (a show
+## put_generated() there for DJ Perform Mode). Returns "" or what went
+## wrong.
+func flush(temporary := false) -> String:
 	if not _dirty or _path == "" or timeline_store == null:
 		return ""
 	_collect()
+	_set_temporary(song_data(), temporary)
 	var err := timeline_store.save_song(_path, song_data())
 	if err == "":
 		_dirty = false
@@ -2557,6 +2564,38 @@ static func _first_bar(a: SongAnalysis, beats: PackedFloat32Array) -> int:
 ## variation for it, around the named positions.
 func _generate(path: String, a: SongAnalysis, beats: PackedFloat32Array, bar_phase: int, per_bar: int,
 		duration: float, tracks: Array) -> Dictionary:
+	return run_job(_job(path, a, beats, bar_phase, per_bar, duration, {"tracks": tracks, "keys": []}))["show"]
+
+
+## What TimelineGenerator.generate() takes for song `path`'s show, as
+## run_job() runs it (`gen`: _all_gen_tracks()'s, and the job's added to
+## it) — the next variation for it, around the named positions. Nothing in
+## it is shared: it can be run on another thread.
+func _job(path: String, a: SongAnalysis, beats: PackedFloat32Array, bar_phase: int, per_bar: int,
+		duration: float, gen: Dictionary) -> Dictionary:
+	var variation: int = _generated.get(path, 0)
+	_generated[path] = variation + 1
+	gen.merge({"sections": a.sections.duplicate(true), "beats": beats, "per_bar": per_bar, "duration": duration,
+		"positions": _position_ids(), "seed": path.get_file(), "variation": variation, "bar_phase": bar_phase,
+		"env": {"peak": a.wave_peak, "lo": a.wave_lo, "hi": a.wave_hi}})
+	return gen
+
+
+## Generate the show of a job (generate_job(), placeholder_job()) — on any
+## thread: {keys: every track's key, show: key -> content
+## (TimelineGenerator's form), rows: key -> its rows as saved (_rows_of(),
+## for put_generated())}.
+static func run_job(job: Dictionary) -> Dictionary:
+	var show := TimelineGenerator.generate(job["sections"], job["beats"], job["per_bar"], job["duration"],
+		job["tracks"], job["positions"], job["seed"], job["variation"], job["bar_phase"], job["env"])
+	var rows := {}
+	for key in job["keys"]:
+		rows[key] = _rows_of(show.get(key, {}))
+	return {"keys": job["keys"], "show": show, "rows": rows}
+
+
+## The named positions as TimelineGenerator.generate() takes them.
+func _position_ids() -> Array:
 	var ids: Array = []
 	if positions != null:
 		# Movement needs a position to move around: with none named yet, a
@@ -2566,10 +2605,7 @@ func _generate(path: String, a: SongAnalysis, beats: PackedFloat32Array, bar_pha
 		# Each with how widely it spreads the beams (narrow -> wide by energy).
 		for pos in positions.positions:
 			ids.append({"id": String(pos["id"]), "spread": _spread(pos["points"])})
-	var variation: int = _generated.get(path, 0)
-	_generated[path] = variation + 1
-	return TimelineGenerator.generate(a.sections, beats, per_bar, duration, tracks, ids, path.get_file(),
-		variation, bar_phase, {"peak": a.wave_peak, "lo": a.wave_lo, "hi": a.wave_hi})
+	return ids
 
 
 ## Song `path`'s analysed structure this session (its edits on it), or
@@ -2601,10 +2637,28 @@ func add_structure(path: String, a: SongAnalysis, song: VirtualDjDatabase.Song =
 func generate_into(path: String, song: VirtualDjDatabase.Song = null) -> String:
 	if timeline_store == null:
 		return "save the show first"
+	var gen := generate_for(path, song)
+	if gen.is_empty():
+		return "its structure hasn't been analysed"
+	return put_generated(path, gen)
+
+
+## Song `path`'s show as generate_into() makes it, without saving it:
+## {keys: every track's key, show: key -> content (TimelineGenerator's
+## form)}, or {} if its structure hasn't been analysed. A new variation
+## each time.
+func generate_for(path: String, song: VirtualDjDatabase.Song = null) -> Dictionary:
+	var job := generate_job(path, song)
+	return run_job(job) if not job.is_empty() else {}
+
+
+## generate_for()'s show as a job for run_job() — which, the slow part,
+## can be run on another thread. {} if its structure hasn't been analysed.
+func generate_job(path: String, song: VirtualDjDatabase.Song = null) -> Dictionary:
 	var a: SongAnalysis = _struct_cache.get(path)
 	if a == null:
-		return "its structure hasn't been analysed"
-	var d := _data_for(path)
+		return {}
+	_data_for(path)
 	if path == _path:
 		_collect()
 	_apply_saved_structure(path, a)
@@ -2613,6 +2667,39 @@ func generate_into(path: String, song: VirtualDjDatabase.Song = null) -> String:
 	if beats.size() < 2:
 		beats = a.beat_times if not a.beat_times.is_empty() else TimelineGenerator._even_beats(a.bpm, a.duration)
 		bar_phase = _first_bar(a, beats)
+	return _job(path, a, beats, bar_phase, BEATS_PER_BAR, a.duration, _all_gen_tracks())
+
+
+## A stand-in show for song `path` before its structure's known (DJ
+## Perform Mode, while it's analysed): one even section on its beat grid —
+## VirtualDJ's (with `song`), else `bpm` from `first_beat` seconds — so it
+## keeps time but doesn't follow the song's shape. Its length is the
+## song's if VirtualDJ knows it (else 10 minutes, to be sure). As
+## generate_for() returns it.
+func placeholder_for(path: String, song: VirtualDjDatabase.Song = null, bpm := 0.0, first_beat := 0.0) -> Dictionary:
+	return run_job(placeholder_job(path, song, bpm, first_beat))
+
+
+## placeholder_for()'s show as a job for run_job() (on another thread).
+func placeholder_job(path: String, song: VirtualDjDatabase.Song = null, bpm := 0.0, first_beat := 0.0) -> Dictionary:
+	var duration := song.length if song != null and song.length > 0.0 else 600.0
+	var beats := song.beat_times(duration) if song != null else PackedFloat32Array()
+	var bar_phase := song.first_beat_index(beats) if beats.size() >= 2 else 0
+	if beats.size() < 2:
+		beats = TimelineGenerator._even_beats(bpm if bpm > 0.0 else 120.0, duration - maxf(first_beat, 0.0))
+		for i in range(beats.size()):
+			beats[i] += maxf(first_beat, 0.0)
+		bar_phase = 0
+	var gen := _all_gen_tracks()
+	gen.merge({"sections": [], "beats": beats, "per_bar": BEATS_PER_BAR, "duration": duration,
+		"positions": _position_ids(), "seed": path.get_file(), "variation": 0, "bar_phase": bar_phase, "env": {}})
+	return gen
+
+
+## Every track of the patch as generation takes them: {keys: every
+## track's key (the master's, each fixture's and head's), tracks: those
+## not left out, as TimelineGenerator.generate() takes them}.
+func _all_gen_tracks() -> Dictionary:
 	var parts := _patch_parts()
 	var keys: Array = ["master"]
 	var tracks: Array = [_gen_track(parts, "master", TimelineTrack.Target.MASTER, _master.rows)]
@@ -2621,12 +2708,31 @@ func generate_into(path: String, song: VirtualDjDatabase.Song = null) -> String:
 			keys.append(spec["key"])
 			if not _left_out(parts, spec["key"]):
 				tracks.append(_gen_track(parts, spec["key"], spec["target"], spec["rows"]))
-	var show := _generate(path, a, beats, bar_phase, BEATS_PER_BAR, a.duration, tracks)
-	var before := _snapshot_of(d)
+	return {"keys": keys, "tracks": tracks}
+
+
+## Save a show from generate_for() as song `path`'s timelines, replacing
+## what its tracks had — `temporary`: as temporary ones (made in DJ
+## Perform Mode, not by the user; refused if it has timelines of its own
+## already; written in the background, and no undo step unless it's the
+## open song). Otherwise an undo step for the song, as generate_into().
+## Returns "" or what went wrong.
+func put_generated(path: String, gen: Dictionary, temporary := false) -> String:
+	if timeline_store == null:
+		return "save the show first"
+	var d := _data_for(path)
+	if path == _path:
+		_collect()
+	if temporary and not d.get("temporary", false) and has_rows(d["tracks"]):
+		return "it has timelines of its own"
+	var keys: Array = gen["keys"]
+	var show: Dictionary = gen["show"]
+	var rows: Dictionary = gen.get("rows", {})
+	var before := {} if temporary else _snapshot_of(d)
 	var saved: Dictionary = d["tracks"]
 	for key in keys:
 		var entry: Dictionary = saved.get(key, {})
-		_put_rows(entry, show.get(key, {}))
+		_set_rows(entry, rows[key] if rows.has(key) else _rows_of(show.get(key, {})))
 		if entry.is_empty():
 			saved.erase(key)
 		else:
@@ -2634,24 +2740,95 @@ func generate_into(path: String, song: VirtualDjDatabase.Song = null) -> String:
 	if path == _path:
 		_show_tracks(saved)
 		_mark_dirty()
-		return flush()
-	if not _history.has(path):
-		_history[path] = {"undo": [], "redo": [], "state": null}
-	if _history[path]["state"] == null:
-		_history[path]["state"] = before
-	_record(path, _snapshot_of(d))
+		return flush(temporary)
+	if not temporary:
+		if not _history.has(path):
+			_history[path] = {"undo": [], "redo": [], "state": null}
+		if _history[path]["state"] == null:
+			_history[path]["state"] = before
+		_record(path, _snapshot_of(d))
+	_set_temporary(d, temporary)
+	if temporary:
+		return _save_in_background(path, d)
 	var err := timeline_store.save_song(path, d)
 	if err == "":
 		timelines_saved.emit(path)
 	return err
 
 
+## Save song `path`'s timelines `d` with its file written on a worker
+## thread (temporary ones: DJ Perform Mode mustn't stall the lights while
+## a big show's written); timelines_saved once it is. Returns "" or what
+## went wrong before then.
+func _save_in_background(path: String, d: Dictionary) -> String:
+	var job := timeline_store.save_job(path, d)
+	if job.has("error"):
+		return job["error"]
+	var store := timeline_store
+	_save_tasks.append(WorkerThreadPool.add_task(func():
+		var err := TimelineStore.write_job(job)
+		_saved_in_background.call_deferred(path, store, err)))
+	return ""
+
+
+func _saved_in_background(path: String, store: TimelineStore, err: String) -> void:
+	_reap_save_tasks()
+	if err != "":
+		push_warning("Couldn't save the timelines for %s: %s" % [path.get_file(), err])
+	elif store == timeline_store:
+		timelines_saved.emit(path)
+
+
+## Whether a song's timelines are still being written (_save_in_background()).
+func is_saving() -> bool:
+	_reap_save_tasks()
+	return not _save_tasks.is_empty()
+
+
+## Release the background saves that have finished. Each must be waited
+## on, finished or not (see DjPerformer._tasks).
+func _reap_save_tasks() -> void:
+	for id in _save_tasks.duplicate():
+		if WorkerThreadPool.is_task_completed(id):
+			WorkerThreadPool.wait_for_task_completion(id)
+			_save_tasks.erase(id)
+
+
+## Whether saved `tracks` (a song's) have anything on their rows.
+static func has_rows(tracks: Dictionary) -> bool:
+	for key in tracks:
+		var entry = tracks[key]
+		if entry is Dictionary:
+			for row in ["dimmer", "colour", "strobe", "position", "movement"]:
+				if not (entry.get(row, []) as Array).is_empty():
+					return true
+	return false
+
+
+static func _set_temporary(d: Dictionary, temporary: bool) -> void:
+	if temporary:
+		d["temporary"] = true
+	else:
+		d.erase("temporary")
+
+
 ## A generated track's rows (TimelineGenerator's form) into its saved
 ## entry, replacing what it had (a row it has none of: dropped).
 static func _put_rows(entry: Dictionary, c: Dictionary) -> void:
-	var rows := {"dimmer": _nodes_to(c.get("dimmer", PackedVector2Array())), "colour": _segs_to(c.get("colour", [])),
+	_set_rows(entry, _rows_of(c))
+
+
+## A generated track's rows (TimelineGenerator's form) in their saved
+## form: {dimmer: [...], colour: [...], ...}, each row there (empty or not).
+static func _rows_of(c: Dictionary) -> Dictionary:
+	return {"dimmer": _nodes_to(c.get("dimmer", PackedVector2Array())), "colour": _segs_to(c.get("colour", [])),
 		"strobe": _spans_to(c.get("strobe", [])), "position": _pos_to(c.get("position", [])),
 		"movement": _moves_to(c.get("movement", []))}
+
+
+## _rows_of()'s rows into a saved entry, replacing what it had (an empty
+## row: dropped).
+static func _set_rows(entry: Dictionary, rows: Dictionary) -> void:
 	for row in rows:
 		if (rows[row] as Array).is_empty():
 			entry.erase(row)

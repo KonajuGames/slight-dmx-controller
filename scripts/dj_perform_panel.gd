@@ -61,7 +61,7 @@ func _ready() -> void:
 	hint.modulate = _DIM
 	hint.text = "VirtualDJ finds sLight over the network (OS2L, advertised as \"sLight\"), or point its os2lDirectIp option at this machine. " \
 		+ "A deck's lighting timelines (from DJ Edit Mode, saved with the show) play into the lights while it's playing with its volume up; " \
-		+ "decks playing together are mixed — colour, dimmer and strobe highest-takes-precedence, pan / tilt averaged."
+		+ "decks playing together are mixed — colour, dimmer and strobe highest-takes-precedence, pan / tilt averaged. " 		+ "A song without timelines gets temporary ones: on the beat at once, then a show generated from the song once it's analysed " 		+ "(saved with the show, marked orange in DJ Edit Mode's song list until you edit them)."
 	add_child(hint)
 	refresh()
 
@@ -113,12 +113,16 @@ func refresh() -> void:
 static func timelines_text(d: DjPerformer.Deck) -> String:
 	match d.load_state:
 		DjPerformer.Load.LOADING:
-			return "loading…"
+			return "generating…" if d.temporary else "loading…"
 		DjPerformer.Load.LOADED:
 			var n := d.tracks.size()
-			return ("playing" if d.live() else "ready") + " (%d track%s)" % [n, "" if n == 1 else "s"]
+			var text := ("playing" if d.live() else "ready") + " (%d track%s" % [n, "" if n == 1 else "s"]
+			if d.analysing:
+				return text + ", temporary: on the beat only while the song's analysed — %d%%)" % roundi(d.progress * 100.0)
+			text += ", temporary)" if d.temporary else ")"
+			return text + (" — " + d.note if d.note != "" else "")
 		DjPerformer.Load.NO_TIMELINES:
-			return "none for this song"
+			return "none for this song" + (" (couldn't generate: %s)" % d.note if d.note != "" else "")
 		DjPerformer.Load.NO_FOLDER:
 			return "show not saved (no timelines folder)"
 	return ""

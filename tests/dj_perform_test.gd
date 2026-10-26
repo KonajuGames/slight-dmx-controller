@@ -39,6 +39,7 @@ func _run() -> void:
 	_test_mix()
 	_test_report_time()
 	await _test_performer()
+	await _test_temporary()
 	await _test_edit_playback()
 	_clean()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
@@ -46,7 +47,7 @@ func _run() -> void:
 
 
 func _clean() -> void:
-	for d in [DIR + "/show.timelines", DIR]:
+	for d in [DIR + "/show.timelines", DIR + "/temp/show.timelines", DIR + "/temp", DIR]:
 		if DirAccess.dir_exists_absolute(d):
 			for f in DirAccess.get_files_at(d):
 				DirAccess.remove_absolute(d.path_join(f))
@@ -454,6 +455,144 @@ func _test_performer() -> void:
 	panel.queue_free()
 	perf.queue_free()
 	u0.dmx_data = keep
+	await process_frame
+
+
+## A ready-made structure for a 60 s song at 120 BPM (so no decoding).
+func _analysis() -> SongAnalysis:
+	var a := SongAnalysis.new()
+	a.duration = 60.0
+	a.bpm = 120.0
+	for i in range(120):
+		a.beat_times.append(i * 0.5)
+		if i % 4 == 0:
+			a.downbeats.append(i * 0.5)
+	a.sections = [{"start": 0.0, "end": 16.0, "label": "Intro", "energy": 0.2},
+		{"start": 16.0, "end": 44.0, "label": "Chorus", "energy": 0.9},
+		{"start": 44.0, "end": 60.0, "label": "Outro", "energy": 0.3}]
+	return a
+
+
+## Until every deck's temporary timelines are as made as they'll get.
+func _wait_generated(perf) -> bool:
+	var t := Time.get_ticks_msec()
+	while Time.get_ticks_msec() - t < 30000:
+		if perf.loads_done() and not perf.is_generating():
+			return true
+		await process_frame
+	return false
+
+
+func _test_temporary() -> void:
+	print("- temporary timelines for songs without any")
+	_clean()
+	var dir := ProjectSettings.globalize_path(DIR + "/temp")
+	var cached := dir.path_join("cached.mp3")        # analysed already this session
+	var junk := dir.path_join("junk.mp3")            # can't be analysed
+	var own := dir.path_join("own.mp3")              # has timelines of its own
+	var unsaved := dir.path_join("unsaved.mp3")
+	_song_file(cached, 3)
+	_song_file(junk, 5)
+	_song_file(own, 7)
+	_song_file(unsaved, 11)
+	var store := TimelineStore.new(dir.path_join("show.timelines"))
+	store.save_song(own, {"tracks": {"master": {"dimmer": [[0.0, 0.5], [60.0, 0.5]]}}})
+	var fx := _fixtures()
+	var browser := MusicBrowserPanel.new()
+	root.add_child(browser)
+	await process_frame
+	var tl := browser.timeline()
+	tl.positions = PositionLibrary.new()
+	tl.fixtures_provider = func():
+		return fx.map(func(f): return {"key": f["uid"], "name": f["uid"], "profile": f["profile"], "mode": 0})
+	tl.refresh_fixtures()
+	tl.set_timeline_store(store)
+	tl.add_structure(cached, _analysis())
+	tl.add_structure(unsaved, _analysis())
+
+	var perf = P.new()
+	perf.port = 19963
+	perf.advertise = false
+	perf.fixtures_provider = func(): return fx
+	perf.store_provider = func(): return tl.timeline_store
+	perf.timeline = tl
+	root.add_child(perf)
+	perf.start()
+
+	# Analysed already: its show at once, saved flagged temporary.
+	_vdj(perf, "deck 1 get_filepath", cached)
+	ok(await _wait_generated(perf), "a song without timelines: generated")
+	var d1 = perf.deck(1)
+	ok(d1.load_state == P.Load.LOADED and d1.temporary and not d1.analysing and d1.tracks.has("master") and d1.tracks.size() > 1,
+		"analysed this session: its generated show on the deck (%d tracks)" % d1.tracks.size())
+	ok(store.load_song(cached).get("temporary") == true and store.is_temporary(cached)
+		and TimelineStore.new(store.dir).is_temporary(cached), "saved with the show, flagged temporary (in the index too)")
+	ok(PanelScript.timelines_text(d1).ends_with(", temporary)"), "panel: temporary (%s)" % PanelScript.timelines_text(d1))
+	_vdj(perf, "deck 1 level", 1.0)
+	_vdj(perf, "deck 1 play", "on")
+	_vdj(perf, "deck 1 get_time elapsed absolute", 30000.0)
+	ok(not perf.layer(1)[0].is_empty(), "and it plays into the lights")
+
+	# Not analysed, and it can't be: a stand-in on the beat, kept.
+	perf.os2l.handle_message({"evt": "subscribed", "trigger": "deck 2 get_bpm", "value": 128.0})
+	_vdj(perf, "deck 2 get_filepath", junk)
+	var d2 = perf.deck(2)
+	await _wait_generated(perf)
+	ok(d2.load_state == P.Load.LOADED and d2.temporary and not d2.tracks.is_empty() and d2.tracks.size() > 1,
+		"a stand-in on the beat (made on a worker thread), while it's analysed")
+	var was_analysing: bool = d2.analysing
+	d2.analysing = true
+	ok("on the beat only" in PanelScript.timelines_text(d2), "panel: says so (%s)" % PanelScript.timelines_text(d2))
+	d2.analysing = was_analysing
+	ok(not d2.analysing and d2.note != "" and not d2.tracks.is_empty() and not store.has_song(junk),
+		"it can't be analysed: the stand-in stays, not saved (%s)" % d2.note)
+
+	# A song with its own timelines: those, not temporary.
+	_vdj(perf, "deck 1 get_filepath", own)
+	await _wait_generated(perf)
+	ok(d1.load_state == P.Load.LOADED and not d1.temporary and d1.tracks.size() == 1, "a song with its own timelines: those")
+	tl.add_structure(own, _analysis())
+	ok(tl.put_generated(own, tl.generate_for(own), true) != "" and not store.is_temporary(own),
+		"temporary timelines never replace a song's own")
+	# The temporary ones again, from the show.
+	_vdj(perf, "deck 1 get_filepath", cached)
+	await _wait_generated(perf)
+	ok(d1.load_state == P.Load.LOADED and d1.temporary and not d1.analysing, "loaded again: its temporary timelines, from the show")
+
+	# The song list: an orange icon; edited in DJ Edit Mode, they're the user's.
+	browser.show_folder(dir)
+	var it: TreeItem = browser._items[cached]
+	ok(browser.is_temporary_mark(cached) and it.get_icon(MusicBrowserPanel.Col.TITLE) == MusicBrowserPanel.temporary_icon()
+		and it.get_tooltip_text(MusicBrowserPanel.Col.TITLE) == MusicBrowserPanel.TEMPORARY_TIP, "song list: temporary ones in orange")
+	ok(browser._items[own].get_icon(MusicBrowserPanel.Col.TITLE) == MusicBrowserPanel.timeline_icon(), "...the user's own in blue")
+	tl.open(cached)
+	tl.master_track().dimmer_nodes = PackedVector2Array([Vector2(0, 0.4), Vector2(60, 0.4)])
+	tl._mark_dirty()
+	ok(tl.flush() == "" and not store.is_temporary(cached) and not store.load_song(cached).has("temporary")
+		and it.get_icon(MusicBrowserPanel.Col.TITLE) == MusicBrowserPanel.timeline_icon(), "edited and saved: the user's own (blue)")
+
+	# No timelines folder: generated all the same, just not saved.
+	tl.set_timeline_store(null)
+	_vdj(perf, "deck 3 get_filepath", unsaved)
+	await _wait_generated(perf)
+	var d3 = perf.deck(3)
+	ok(d3.load_state == P.Load.LOADED and d3.temporary and d3.tracks.size() > 1 and "not saved" in d3.note
+		and not store.has_song(unsaved), "show not saved: generated and played, not saved (%s)" % d3.note)
+
+	# A song really analysed (needs the native extension: no playback).
+	if SongAnalyzer.fast_available():
+		tl.set_timeline_store(store)
+		var wav := _silent_wav(DIR + "/temp/real.wav")
+		var d4 = perf.deck(4)
+		_vdj(perf, "deck 4 get_filepath", wav)
+		ok(await _wait_generated(perf) and not d4.analysing and d4.tracks.size() > 1 and d4.note == "" and store.is_temporary(wav)
+			and tl.cached_structure(wav) != null, "analysed: its show generated, saved temporary (%s)" % d4.note)
+	else:
+		_s += 1
+		print("  skip analysing a song needs the native extension")
+	perf.stop()
+	perf.queue_free()
+	browser.queue_free()
 	await process_frame
 
 

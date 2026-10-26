@@ -17,6 +17,15 @@ extends Node
 ## strobe and everything else, an average for movement (pan / tilt). That
 ## goes into the DMX frame as an ArtNet layer (layer()) — under chases and
 ## effects.
+##
+## A song without timelines gets temporary ones (with `timeline`, DJ Edit
+## Mode's MusicTimeline): straight away a stand-in on its beat grid
+## (MusicTimeline.placeholder_for() — VirtualDJ's grid, or the tempo and
+## first beat it reports), while its structure's analysed in the
+## background (a TimelineBatch); then a show generated from it as Generate
+## would, saved with the show flagged temporary (put_generated()) — or
+## only kept here, with no timelines folder. A song analysed this session
+## goes straight to its show.
 
 ## Something the panel shows changed (connection, a deck's song, state or
 ## timelines).
@@ -44,6 +53,10 @@ class Deck:
 	var load_state := Load.NONE
 	var tracks := {}                # track key -> {dimmer: PackedVector2Array, colour: [segments], strobe: [spans], position: [spans]}
 	var load_id := 0
+	var temporary := false          # the tracks are generated ones (not the user's)
+	var analysing := false          # ...a stand-in, while the song's analysed
+	var progress := 0.0             # ...how far that's got, 0..1
+	var note := ""                  # why they're only a stand-in, or not saved
 
 	## Seconds into the song now.
 	func position() -> float:
@@ -66,11 +79,18 @@ var fixtures_provider := Callable()
 var store_provider := Callable()
 ## The show's named positions (what the position rows refer to).
 var positions: PositionLibrary
+## DJ Edit Mode's timeline, which generates temporary timelines for a
+## song without any (null: none are).
+var timeline: MusicTimeline
+## path -> its VirtualDjDatabase.Song (its beat grid), or null.
+var song_lookup := Callable()
 
 var os2l: Os2lServer
 var decks: Array = []
 var _status := "off"
-## The background timeline loads' WorkerThreadPool task ids. Each must be
+var _batch: TimelineBatch           # songs being analysed for their temporary timelines
+var _pending := 0                   # shows being generated on worker threads
+## The background timeline loads' (and generating's) WorkerThreadPool task ids. Each must be
 ## waited on (wait_for_task_completion), finished or not: the pool keeps an
 ## unwaited task — and its lambda — until engine shutdown, where freeing
 ## the lambda after GDScript has gone crashes the app on quit.
@@ -141,6 +161,8 @@ func stop() -> void:
 		os2l.queue_free()
 		os2l = null
 	_status = "off"
+	if _batch != null:
+		_batch.cancel()
 	for d in decks:
 		var n: int = d.num
 		var fresh := Deck.new()
@@ -222,9 +244,16 @@ static func report_time(d: Deck, t: float, now: int) -> void:
 func _load(d: Deck) -> void:
 	d.load_id += 1
 	d.tracks = {}
+	d.temporary = false
+	d.analysing = false
+	d.note = ""
 	var store: TimelineStore = store_provider.call() if store_provider.is_valid() else null
 	if d.path == "":
 		d.load_state = Load.NONE
+	elif store == null and timeline != null:
+		d.load_state = Load.LOADING         # nothing to read: temporary ones, made next frame
+		d.temporary = true
+		_generate.call_deferred(d.num, d.load_id)
 	elif store == null:
 		d.load_state = Load.NO_FOLDER
 	else:
@@ -263,11 +292,136 @@ func _loaded(num: int, id: int, data: Dictionary) -> void:
 				tracks[String(key)] = {"dimmer": nodes, "colour": segs, "strobe": strobes, "position": places,
 					"movement": moves, "mute": muted, "solo": soloed}
 	d.tracks = tracks
+	d.temporary = bool(data.get("temporary", false)) and not tracks.is_empty()
 	d.load_state = Load.LOADED if not tracks.is_empty() else Load.NO_TIMELINES
+	if tracks.is_empty() and timeline != null:
+		_generate(num, id)
+		return
 	state_changed.emit()
 
 
-## Whether every deck's timelines have finished loading.
+# ------------------------------------------------- TEMPORARY TIMELINES --
+
+## Give deck `num`'s song (still load `id`) temporary timelines: a
+## stand-in at once and its structure analysed for the real thing — or,
+## analysed already this session, the real thing (_generated()).
+func _generate(num: int, id: int) -> void:
+	var d: Deck = decks[num - 1]
+	if id != d.load_id or d.path == "":
+		return                              # superseded
+	var song = song_lookup.call(d.path) if song_lookup.is_valid() else null
+	d.temporary = true
+	d.load_state = Load.LOADING
+	if timeline.cached_structure(d.path) == null:
+		var bpm := float(os2l.deck_value(num, "get_bpm", 0.0)) if os2l != null else 0.0
+		var first := float(os2l.deck_value(num, "get_firstbeat", 0.0)) / 1000.0 if os2l != null else 0.0
+		d.analysing = true
+		d.progress = 0.0
+		_run_job(timeline.placeholder_job(d.path, song, bpm, first), func(gen: Dictionary):
+			if id == d.load_id and d.tracks.is_empty():    # not superseded, nor the real thing there first
+				d.tracks = tracks_from_show(gen["show"])
+				d.load_state = Load.LOADED
+				state_changed.emit())
+	if _batch == null:
+		_batch = TimelineBatch.new()
+		_batch.timeline = timeline
+		_batch.song_lookup = song_lookup
+		_batch.generator = _generated
+		_batch.progress.connect(func(path: String, f: float):
+			for other in decks:
+				if other.path == path and other.analysing:
+					other.progress = f)
+		_batch.done.connect(_analysis_done)
+		add_child(_batch)
+	_batch.add([d.path])
+	state_changed.emit()
+
+
+## Song `path`'s structure is known: a show generated from it for the
+## decks waiting on it (if any still are), saved as its temporary
+## timelines where the show has a folder — generated on a worker thread.
+## Returns "" or what went wrong.
+func _generated(path: String, song) -> String:
+	if _waiting(path).is_empty():
+		return ""
+	var job := timeline.generate_job(path, song)
+	if job.is_empty():
+		return "its structure hasn't been analysed"
+	_run_job(job, func(gen: Dictionary):
+		var waiting := _waiting(path)
+		if waiting.is_empty():
+			return                          # every deck's moved on
+		var tracks := tracks_from_show(gen["show"])
+		var store: TimelineStore = store_provider.call() if store_provider.is_valid() else null
+		var note := "not saved: the show hasn't been saved"
+		if store != null and store == timeline.timeline_store:
+			var err := timeline.put_generated(path, gen, true)
+			note = "" if err == "" else "not saved: " + err
+		for d in waiting:
+			d.tracks = tracks
+			d.analysing = false
+			d.load_state = Load.LOADED
+			d.note = note
+		state_changed.emit())
+	return ""
+
+
+## The decks with song `path` still waiting for its generated show.
+func _waiting(path: String) -> Array:
+	return decks.filter(func(d): return d.path == path and d.temporary and (d.analysing or d.load_state == Load.LOADING))
+
+
+## Run `job` (MusicTimeline.generate_job() / placeholder_job()) on a
+## worker thread, then done(its show) back on the main thread.
+func _run_job(job: Dictionary, done: Callable) -> void:
+	_pending += 1
+	_tasks.append(WorkerThreadPool.add_task(func():
+		var gen := MusicTimeline.run_job(job)
+		_job_done.call_deferred(done, gen)))
+
+
+func _job_done(done: Callable, gen: Dictionary) -> void:
+	_reap_tasks()
+	_pending -= 1
+	done.call(gen)
+
+
+## Whether temporary timelines are still being made (analysed or
+## generated).
+func is_generating() -> bool:
+	return _pending > 0 or (_batch != null and _batch.is_busy()) or (timeline != null and timeline.is_saving())
+
+
+## The analysis (or generating) of song `path` finished — with `error`, the
+## decks waiting on it keep their stand-in.
+func _analysis_done(path: String, error: String) -> void:
+	if error == "":
+		return
+	for d in decks:
+		if d.path == path and d.temporary and (d.analysing or d.load_state == Load.LOADING):
+			if d.load_state == Load.LOADING and not d.analysing:
+				d.load_state = Load.NO_TIMELINES    # (a stand-in still on its way: LOADED when it's here)
+			d.analysing = false
+			d.note = error
+	state_changed.emit()
+
+
+## A generated show (key -> content, TimelineGenerator's form) as a deck's
+## tracks: only the tracks with something on them.
+static func tracks_from_show(show: Dictionary) -> Dictionary:
+	var tracks := {}
+	for key in show:
+		var c: Dictionary = show[key]
+		var entry := {"dimmer": c.get("dimmer", PackedVector2Array()), "colour": c.get("colour", []),
+			"strobe": c.get("strobe", []), "position": c.get("position", []), "movement": c.get("movement", []),
+			"mute": false, "solo": false}
+		if not entry["dimmer"].is_empty() or not entry["colour"].is_empty() or not entry["strobe"].is_empty() 				or not entry["position"].is_empty() or not entry["movement"].is_empty():
+			tracks[String(key)] = entry
+	return tracks
+
+
+## Whether every deck's timelines have finished loading (temporary ones
+## are made, the stand-ins at least).
 func loads_done() -> bool:
 	for d in decks:
 		if d.load_state == Load.LOADING:

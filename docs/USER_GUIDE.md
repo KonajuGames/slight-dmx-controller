@@ -209,8 +209,10 @@ Folders). Select one and its music is listed on the right — title,
 artist, BPM, key, length, album, genre — with details from VirtualDJ's
 database where it knows the track. Click a column title to sort. Songs
 that already have a light show in the current show are marked with a
-small blue node-line icon before the title. M4A / AAC songs open on
-Windows and macOS.
+small blue node-line icon before the title. An orange icon means the
+show is a temporary one, generated automatically in DJ Perform Mode
+(see Step 11). Edit it in DJ Edit Mode and it becomes your own (blue).
+M4A / AAC songs open on Windows and macOS.
 
 **Regenerate a batch of songs.** Select songs with Ctrl / Shift-click,
 right-click one of them and choose **Regenerate Lighting Timelines**.
@@ -440,6 +442,19 @@ volume fader up** — a track you're cueing in your headphones with the
 fader down stays dark — following VirtualDJ's position and pitch. When
 two decks play together during a mix, their shows blend: brightest
 wins for colour, dimmer and strobe, and pan/tilt are averaged.
+
+**Songs without a light show** get a temporary one. Within moments of
+the song being loaded, the deck has a simple show that keeps time with
+the beat, using VirtualDJ's beat grid (or the tempo VirtualDJ reports).
+Meanwhile the song is analysed in the background, as DJ Edit Mode does.
+When that's done (a few seconds with the native extension built), a
+full show generated from the song's structure takes over, just as
+**Generate** would make it. It's saved with the show and flagged as
+temporary: the song list in DJ Edit Mode marks it with an orange icon
+instead of blue. Open it and edit it, and it becomes your own. A song is
+only analysed once per session. If the show hasn't been saved yet, the
+temporary show still plays but isn't kept. The deck's Timelines column
+says which of these is happening.
 
 Only what a song's timelines cover is driven; everything else stays as
 the console has it, and chases and effects still layer on top. Leaving

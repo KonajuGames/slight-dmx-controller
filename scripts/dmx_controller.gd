@@ -114,6 +114,9 @@ func _ready() -> void:
 	performer.fixtures_provider = _perform_fixtures
 	performer.store_provider = func(): return music_panel.timeline().timeline_store
 	performer.positions = positions
+	# A song without timelines: temporary ones, generated as DJ Edit Mode does.
+	performer.timeline = music_panel.timeline()
+	performer.song_lookup = music_panel.find_song
 	add_child(performer)
 	music_panel.timeline().timeline_store_changed.connect(func():
 		if performer.is_active():
@@ -599,6 +602,7 @@ func set_view(idx: int) -> void:
 	music_panel.visible = idx == 1           # leaving it saves the open song's timelines
 	perform_panel.visible = idx == 2
 	if idx == 2 and not performer.is_active():
+		music_panel.vdj_database()          # now, not mid-set when a song needs its grid
 		var err := performer.start()
 		status_label.text = "DJ Perform Mode: " + ("listening for VirtualDJ (OS2L)." if err == OK else performer.status())
 	elif idx != 2 and performer.is_active():

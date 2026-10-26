@@ -16,7 +16,9 @@ extends HSplitContainer
 ## a position replaces the right side with its PositionEditor.
 ##
 ## A track with saved lighting timelines in the current show gets a small
-## node-line icon (timeline_icon()) before its title. Most are told from
+## node-line icon (timeline_icon()) before its title — orange
+## (temporary_icon()) for temporary ones, generated in DJ Perform Mode and
+## not edited since. Most are told from
 ## the show's timelines index alone; a song that might have been moved
 ## there (same size as an indexed one) is fingerprinted in the background,
 ## a few per frame.
@@ -35,12 +37,16 @@ const COL_KEYS := ["num", "title", "artist", "bpm", "key", "length", "album", "g
 const _PLACEHOLDER := "_placeholder"
 const _MISSING_COLOR := Color(1.0, 0.5, 0.5)
 const HAS_TIMELINES_TIP := "Has lighting timelines in this show"
+const TEMPORARY_TIP := "Has temporary lighting timelines in this show (generated in DJ Perform Mode; edit them to keep them as your own)"
 ## The timeline icon's colour: a muted blue, readable on the list.
 const ICON_COLOR := Color(0.45, 0.72, 0.95)
+## ...and for temporary timelines: orange.
+const TEMPORARY_COLOR := Color(0.98, 0.62, 0.25)
 ## Time per frame spent fingerprinting songs for their icons, ms.
 const _CHECK_BUDGET_MS := 6
 
 static var _icon: Texture2D
+static var _temp_icon: Texture2D
 static var _blank: Texture2D
 
 var _tree: Tree                 # left: drives / folders / Virtual Folders
@@ -177,7 +183,8 @@ func _ready() -> void:
 	refresh_positions()
 	_timeline.timelines_saved.connect(func(path: String):
 		_has_timelines[path] = true
-		_show_mark(path))
+		_show_mark(path)
+		_update_song_row())
 	_timeline.timeline_store_changed.connect(refresh_timeline_marks)
 	set_process(false)
 
@@ -259,10 +266,23 @@ func ensure_loaded() -> void:
 	if _loaded:
 		return
 	_loaded = true
-	_db = VirtualDjDatabase.new()
-	_db.load_all()
+	vdj_database()
 	_lists = VirtualDjList.load_all()
 	_build_tree()
+
+
+## VirtualDJ's database, loaded the first time it's wanted (by the view,
+## or DJ Perform Mode).
+func vdj_database() -> VirtualDjDatabase:
+	if _db == null:
+		_db = VirtualDjDatabase.new()
+		_db.load_all()
+	return _db
+
+
+## VirtualDJ's entry for the song at `path` (its beat grid), or null.
+func find_song(path: String) -> VirtualDjDatabase.Song:
+	return vdj_database().find_song(path)
 
 
 # ------------------------------------------------------------------ TREE --
@@ -576,6 +596,7 @@ func remove_timelines(path: String) -> void:
 	_to_check.erase(path)
 	_has_timelines[path] = false
 	_show_mark(path)
+	_update_song_row()
 
 
 ## The listed row for the track at `path` ({} if it isn't listed).
@@ -614,11 +635,15 @@ func _show_timeline_view() -> void:
 
 
 ## The Timeline section's row: the open song's title — artist over its
-## BPM · key · length, selected while its timeline's showing.
+## BPM · key · length, selected while its timeline's showing; its icon
+## orange while its timelines are temporary ones.
 func _update_song_row() -> void:
 	if _song_row == null:
 		return
 	var open := not _open_row.is_empty()
+	var store := _timeline.timeline_store if _timeline != null else null
+	var temp := open and store != null and store.is_temporary(_timeline.current_path())
+	_song_row.icon = temporary_icon() if temp else timeline_icon()
 	var details := song_details(_open_row) if open else ""
 	_song_row.text = (song_title(_open_row) + ("\n" + details if details != "" else "")) if open else "No song open"
 	_song_row.tooltip_text = song_heading(_open_row) if open else "Double-click a song in the list to open its timeline"
@@ -952,13 +977,21 @@ func _show_mark(path: String) -> void:
 	if it == null or not is_instance_valid(it):
 		return
 	var has := has_timelines_mark(path)
+	var temp := has and is_temporary_mark(path)
 	# A blank of the same size keeps every title lined up.
-	it.set_icon(Col.TITLE, timeline_icon() if has else _blank_icon())
+	it.set_icon(Col.TITLE, (temporary_icon() if temp else timeline_icon()) if has else _blank_icon())
 	# (A missing file keeps its "File not found" tooltip: it's never marked.)
 	if has:
-		it.set_tooltip_text(Col.TITLE, HAS_TIMELINES_TIP)
-	elif it.get_tooltip_text(Col.TITLE) == HAS_TIMELINES_TIP:
+		it.set_tooltip_text(Col.TITLE, TEMPORARY_TIP if temp else HAS_TIMELINES_TIP)
+	elif it.get_tooltip_text(Col.TITLE) in [HAS_TIMELINES_TIP, TEMPORARY_TIP]:
 		it.set_tooltip_text(Col.TITLE, "")
+
+
+## Whether the listed track at `path`'s timelines are temporary ones (the
+## index says so).
+func is_temporary_mark(path: String) -> bool:
+	var store := _timeline.timeline_store
+	return has_timelines_mark(path) and store != null and store.is_temporary(path)
 
 
 ## The "has lighting timelines" icon: a little dimmer node line — three
@@ -967,6 +1000,13 @@ static func timeline_icon() -> Texture2D:
 	if _icon == null:
 		_icon = _draw_node_line(ICON_COLOR)
 	return _icon
+
+
+## timeline_icon() in orange: temporary timelines.
+static func temporary_icon() -> Texture2D:
+	if _temp_icon == null:
+		_temp_icon = _draw_node_line(TEMPORARY_COLOR)
+	return _temp_icon
 
 
 static func _blank_icon() -> Texture2D:
