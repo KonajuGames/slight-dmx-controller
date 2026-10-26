@@ -517,7 +517,11 @@ when you copy a show to another computer.
 | **New Show** | **Ctrl+N** | After asking, start an empty show (your output settings are kept) |
 
 The show you last saved or loaded reopens automatically the next time
-you start sLight. **Save/Load Preset** is a lighter-weight snapshot of
+you start sLight. While you work, sLight also autosaves a copy of the
+show every minute it has unsaved changes (your show file is only written
+when you save). If it ever crashes or the power goes, the next start
+asks whether to restore the show as it was at the last autosave; restore
+it, then **Save Show** to keep it. **Save/Load Preset** is a lighter-weight snapshot of
 just the live DMX output, for a quick "go back to how it looked a minute
 ago" without touching your cue list.
 

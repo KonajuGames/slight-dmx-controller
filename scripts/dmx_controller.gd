@@ -239,6 +239,7 @@ func _ready() -> void:
 		if get_tree().current_scene == self:
 			restore_last_show()
 			_restore_ui_state()
+			_start_autosave()
 	).call_deferred()
 
 
@@ -473,6 +474,9 @@ func _notification(what: int) -> void:
 	# quitting: keep where the floating visualizer was last moved / sized to
 	if what == NOTIFICATION_WM_CLOSE_REQUEST and get_tree().current_scene == self:
 		_save_ui_state()
+		if music_panel:
+			music_panel.timeline().flush()    # the open song's edits
+		autosave.end()                        # a clean quit: nothing to recover
 
 
 ## Wrap a playback panel so it gets a vertical scrollbar when the window
@@ -1883,6 +1887,10 @@ var show_path := SHOW_PATH
 ## Where the current show file's path is remembered between runs, so it's
 ## reopened at the next start (restore_last_show()).
 var last_show_store := "user://last_show.json"
+## Autosave and crash recovery (its files can be pointed elsewhere before
+## this is added to the tree, as tests do).
+var autosave := Autosave.new()
+var _autosave_timer: Timer
 
 
 ## The show file remembered from last time ("" if none).
@@ -1955,10 +1963,12 @@ func save_show_to(path: String) -> String:
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:
 		return "Couldn't write %s (%s)." % [path.get_file(), error_string(FileAccess.get_open_error())]
-	f.store_string(JSON.stringify(show_dict(), "\t"))
+	var data := show_dict()
+	f.store_string(JSON.stringify(data, "\t"))
 	f.close()
 	show_path = path
 	_remember_show(path)
+	autosave.mark_saved(data)
 	return ""
 
 
@@ -1979,15 +1989,27 @@ func load_show_from(path: String) -> String:
 	if music_panel:
 		music_panel.timeline().flush()        # the outgoing show's open song
 	apply_show_dict(parsed)
-	if music_panel:
-		var folder := TimelineStore.folder_for_show(path)
-		var named = parsed.get("timelines") if parsed is Dictionary else null
-		if named is String and named != "":
-			folder = path.get_base_dir().path_join(named)
-		music_panel.timeline().set_timeline_store(TimelineStore.new(folder))
+	_open_timelines_for(path, parsed)
 	show_path = path
 	_remember_show(path)
+	autosave.mark_saved(show_dict())
 	return ""
+
+
+## Point DJ Edit Mode at the timelines folder of the show file `path`
+## (the one its `parsed` contents name, else the default beside it); none
+## for "" (a show never saved).
+func _open_timelines_for(path: String, parsed) -> void:
+	if not music_panel:
+		return
+	if path == "":
+		music_panel.timeline().set_timeline_store(null)
+		return
+	var folder := TimelineStore.folder_for_show(path)
+	var named = parsed.get("timelines") if parsed is Dictionary else null
+	if named is String and named != "":
+		folder = path.get_base_dir().path_join(named)
+	music_panel.timeline().set_timeline_store(TimelineStore.new(folder))
 
 
 ## Replace the current show with a parsed show file (a Dictionary, or a
@@ -2035,6 +2057,84 @@ func apply_show_dict(parsed) -> void:
 	viz_panel.from_dict(doc.get("viz", {}))
 
 
+# --------------------------------------------------------------- AUTOSAVE --
+
+## At startup (as the app): offer the autosaved show if the last run
+## didn't close properly, then autosave every Autosave.INTERVAL seconds.
+func _start_autosave() -> void:
+	var snap := autosave.begin()
+	if not snap.is_empty() and _worth_recovering(snap):
+		_offer_recovery(snap)
+	_autosave_timer = Timer.new()
+	_autosave_timer.wait_time = Autosave.INTERVAL
+	_autosave_timer.timeout.connect(autosave_now)
+	add_child(_autosave_timer)
+	_autosave_timer.start()
+
+
+## Autosave now: the open song's timeline edits to its show's timelines
+## (as leaving DJ Edit Mode would), and a snapshot of the show if it's
+## changed since it was last saved. Returns whether a snapshot was taken.
+func autosave_now() -> bool:
+	if music_panel:
+		music_panel.timeline().flush()
+	return autosave.tick(show_dict(), show_path)
+
+
+## The snapshot a run that didn't close properly left ({} if it was clean,
+## left none, or the snapshot is just the show as it now stands) — what
+## the startup offers to restore.
+func recovery_offer() -> Dictionary:
+	var snap := autosave.read()
+	return snap if not snap.is_empty() and _worth_recovering(snap) else {}
+
+
+## Whether a snapshot holds anything the show as it now stands doesn't.
+## Both are compared as they'd read back from JSON (numbers as floats).
+func _worth_recovering(snap: Dictionary) -> bool:
+	var now = JSON.parse_string(JSON.stringify(show_dict()))
+	return JSON.stringify(snap["show"]) != JSON.stringify(now)
+
+
+func _offer_recovery(snap: Dictionary) -> void:
+	var path := String(snap.get("show_path", ""))
+	var dlg := ConfirmationDialog.new()
+	dlg.title = "Restore Autosaved Show"
+	dlg.dialog_text = "sLight didn't close properly last time.\n\nRestore %s as it was autosaved at %s? Its changes since it was last saved would otherwise be lost." % [
+		path.get_file() if path != "" else "the unsaved show", Autosave.when(snap)]
+	dlg.ok_button_text = "Restore"
+	dlg.cancel_button_text = "Discard"
+	add_child(dlg)
+	dlg.confirmed.connect(func():
+		dlg.queue_free()
+		restore_autosave(snap))
+	dlg.canceled.connect(func():
+		dlg.queue_free()
+		autosave.discard()
+		status_label.text = "Autosaved show discarded.")
+	dlg.popup_centered()
+
+
+## Replace the current show with an autosave snapshot, for the show file it
+## belongs to (Save Show saves it there). Left unsaved. Returns "" or what
+## went wrong.
+func restore_autosave(snap: Dictionary) -> String:
+	var doc = snap.get("show")
+	if not (doc is Dictionary and doc.has("universes")):
+		return "The autosave isn't a show."
+	var path := String(snap.get("show_path", ""))
+	if music_panel:
+		music_panel.timeline().flush()        # the outgoing show's open song
+	apply_show_dict(doc)
+	_open_timelines_for(path, doc)
+	show_path = path
+	if path != "":
+		_remember_show(path)
+	status_label.text = "Restored %s as it was autosaved at %s — not saved yet." % [
+		path.get_file() if path != "" else "the unsaved show", Autosave.when(snap)]
+	return ""
+
+
 ## New Show (Ctrl+N): after a confirmation, start an empty show.
 func _on_new_show() -> void:
 	var dlg := ConfirmationDialog.new()
@@ -2064,6 +2164,7 @@ func new_show() -> void:
 	if music_panel:
 		music_panel.timeline().set_timeline_store(null)
 	show_path = ""
+	autosave.mark_saved(show_dict())          # nothing in it worth an autosave yet
 	status_label.text = "New show (not saved yet)."
 
 

@@ -452,6 +452,10 @@ technical reference.
   is built, so VirtualDJ finds it on its own; otherwise VirtualDJ's
   `os2lDirectIp` option has to point at it. Not yet wired into the UI;
   `tools/os2l_monitor.gd` runs one headless and prints what arrives.
+- `autosave.gd` — the `Autosave` class: a snapshot of the show every
+  minute while it has unsaved changes, and the session marker that tells
+  the next start the app didn't close properly, so it can offer the
+  snapshot back.
 - `recent_dirs.gd` — the `RecentDirs` class: every file dialog (Load Song,
   Import fixture, Load glTF model, Import/Export MVR) reopens in the
   folder it was last used in, remembered per dialog rather than as one
@@ -570,6 +574,17 @@ Global controls live in the top bar:
   they belong to this machine rather than the show. The new show is
   untitled: **Save Show** asks where to save it, and until it's saved the
   last saved show is still the one reopened at start.
+- **Autosave** — every minute, if the show has changed since it was last
+  saved, loaded or autosaved, a snapshot of it goes to
+  `user://autosave.slight` (never over the show file itself), and the
+  open song's unsaved timeline edits are saved to its show's timelines
+  folder, as leaving DJ Edit Mode does. `user://session.json` marks the
+  app as running from start to a clean quit, when the snapshot is
+  removed. If sLight crashes, is killed or loses power, the next start
+  finds the session still marked and — when the snapshot holds anything
+  the reopened show doesn't — asks whether to **Restore** it (as it was
+  autosaved, for the same show file, not saved yet: **Save Show** keeps
+  it) or **Discard** it.
 - **Save/Load Preset** — one `user://dmx_preset.json` with every
   universe's live DMX buffer (non-zero channels only). A legacy flat
   `{channel: value}` preset still loads, into universe 1. A preset wider
