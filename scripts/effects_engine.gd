@@ -8,7 +8,13 @@ extends Node
 ## grand master.
 ##
 ## `sound_reactive` (set by the run-mode selector) gates the sound layer:
-## when false, reactors don't run and beat-synced chases fall back to BPM.
+## when false, reactors don't run.
+##
+## Beat-sync chases step on the tempo clock's beats (`Tempo`: tapped, MIDI
+## clock or VirtualDJ) whenever it's running, in any run mode; with it off,
+## on the beats detected in the audio in Sound Reactive; otherwise they
+## fall back to their own BPM. Tempo-synced effects (WaveEffect.tempo_beats)
+## run at the clock's tempo while it's running.
 
 var chases: Array[Chase] = []
 var effects: Array[WaveEffect] = []
@@ -19,11 +25,12 @@ var sound_reactive := false
 
 
 func _beat_driven() -> bool:
-	return sound_reactive
+	return Tempo.running or sound_reactive
 
 
 func _ready() -> void:
-	Sound.beat.connect(_on_beat)
+	Sound.beat.connect(_on_sound_beat)
+	Tempo.beat.connect(_on_tempo_beat)
 	reactors = SoundReactor.defaults()
 
 
@@ -31,26 +38,40 @@ func _process(delta: float) -> void:
 	for c in chases:
 		if c.running and not (_beat_driven() and c.beat_sync):
 			c.advance(delta)
+	var tempo := Tempo.bpm if Tempo.running else 0.0
 	for e in effects:
 		if e.running:
-			e.advance(delta)
+			e.advance(delta, tempo)
 	if sound_reactive:
 		for r in reactors:
 			if r.running:
 				r.advance(delta, false)
 
 
-## A beat (from live audio in Sound Reactive, or the beat grid in Auto
-## Show): kick pulse reactors and step every running beat-sync chase.
-func _on_beat() -> void:
+## A beat detected in the live audio (Sound Reactive): kick pulse
+## reactors, and step beat-sync chases unless the tempo clock is doing it.
+func _on_sound_beat() -> void:
 	if sound_reactive:
 		for r in reactors:
 			if r.running and r.mode == SoundReactor.MODE_PULSE:
 				r.advance(0.0, true)
-	if _beat_driven():
-		for c in chases:
-			if c.running and c.beat_sync:
-				c.beat_step()
+	if sound_reactive and not Tempo.running:
+		_step_beat_chases()
+
+
+## A beat of the tempo clock: step beat-sync chases and pull tempo-synced
+## effects into phase with it.
+func _on_tempo_beat() -> void:
+	_step_beat_chases()
+	for e in effects:
+		if e.running:
+			e.on_beat()
+
+
+func _step_beat_chases() -> void:
+	for c in chases:
+		if c.running and c.beat_sync:
+			c.beat_step()
 
 
 ## One override map { channel -> value } per universe slot, HTP-merged

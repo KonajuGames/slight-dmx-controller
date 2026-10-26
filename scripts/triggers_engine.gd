@@ -47,7 +47,10 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	set_process(true)
 	_open_midi()
-	Sound.beat.connect(_on_ext_beat)
+	Sound.beat.connect(func():
+		if not Tempo.running:            # the tempo clock's beats win
+			_on_ext_beat())
+	Tempo.beat.connect(_on_ext_beat)
 
 
 func _open_midi() -> void:
@@ -171,8 +174,8 @@ func refresh_feedback() -> void:
 	_fb_refresh = 0.0
 
 
-## A beat (live audio in Sound Reactive): flash
-## every Beat-watch feedback pad.
+## A beat (the tempo clock's, or else the live audio's in Sound Reactive):
+## flash every Beat-watch feedback pad.
 func _on_ext_beat() -> void:
 	if not feedback_enabled:
 		return

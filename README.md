@@ -22,8 +22,8 @@ technical reference.
 
 - `project.godot` — project config (Forward+ renderer, for volumetric
   beams; audio input enabled), registers `artnet_sender.gd`,
-  `sound_engine.gd` and `effects_engine.gd` as the `ArtNet`, `Sound` and
-  `Fx` autoload singletons.
+  `sound_engine.gd`, `tempo_clock.gd` and `effects_engine.gd` as the
+  `ArtNet`, `Sound`, `Tempo` and `Fx` autoload singletons.
 - `artnet_universe.gd` — the `ArtNetUniverse` class: one universe's
   512-channel buffer plus its own UDP socket and target. `compute_output()`
   folds the effect/chase overrides and grand master into `output` (which
@@ -44,6 +44,9 @@ technical reference.
   their combined output into a per-universe override layer.
 - `sound_engine.gd` — the `Sound` autoload: captures an audio input,
   exposes smoothed bass / mid / treble / level energy and a beat signal.
+- `tempo_clock.gd` — the `Tempo` autoload: the console's tempo clock, set
+  by Tap Tempo, an incoming MIDI clock or VirtualDJ's OS2L beats, which
+  beat-sync chases step on and tempo-synced effects run at.
 - `sound_reactor.gd` / `sound_panel.gd` — the `SoundReactor` class and
   the Sound tab: maps a band or the beat onto a channel role, with a
   live band meter.
@@ -365,11 +368,12 @@ technical reference.
   with GO / Back / Halt, record / update / delete.
 - `chase.gd` / `chase_list_panel.gd` — the `Chase` class and its tab: a
   tempo-cycled list of captured steps with crossfade and direction, and
-  an optional beat-sync (steps on each detected beat in Sound Reactive
-  mode).
+  an optional beat-sync (steps on each beat of the tempo clock, or of
+  the audio in Sound Reactive mode).
 - `wave_effect.gd` / `effects_panel.gd` — the `WaveEffect` class and its
   tab: a waveform on one channel role, fanned across the fixtures, in
-  Absolute or Pickup (base-value) mode.
+  Absolute or Pickup (base-value) mode, at its own rate or following the
+  tempo clock.
 - `groups_panel.gd` — the Groups tab: named sets of patched fixtures
   (by fixture uid) an effect can target instead of a whole universe.
 - `fixture_import.gd` — the `FixtureImport` class: reads GDTF (`.gdtf`
@@ -592,6 +596,31 @@ The mode is saved in the show file. (Shows saved in the old Auto Show
 run mode open in Cue Mode — songs' light shows are now built and played
 in DJ Edit Mode / DJ Perform Mode.)
 
+### Tempo clock
+
+Beside the run mode, **Tap** and the read-out after it (`128.0 BPM · Tap`,
+or `— BPM` while it's off) are the console's **tempo clock**, which runs
+in any run mode and view. Beat-synced chases step on its beats and
+effects set to **Follow tempo** run at its tempo. Its tempo comes from:
+
+- **Tap Tempo** — click **Tap**, press **T**, or bind a pad to the *Tap
+  tempo* trigger action, on the beat. Each tap lands a beat; two or more
+  less than 2 seconds apart set the tempo from their average spacing
+  (the last 8 taps). Pause longer to start a new count.
+- **MIDI clock** — any MIDI input sending a timing clock (24 pulses per
+  beat: DJ software, a drum machine, a DAW). It takes the clock over
+  after a beat's worth of pulses, its tempo averaged over the last four
+  beats; a MIDI Start makes the next pulse beat 1.
+- **VirtualDJ** — in DJ Perform Mode, the beats VirtualDJ sends over
+  OS2L, with its deck's tempo.
+
+While MIDI clock or VirtualDJ is arriving it owns the clock and taps are
+ignored. When it stops, the clock runs on at the last tempo until it's
+tapped again, or stopped with the **✕** after the read-out. The
+read-out flashes on each beat, and a feedback pad set to *Beat pulse*
+follows the clock's beats while it's running. The tempo isn't saved with
+the show.
+
 ### Sound tab
 
 Pick an **Input** device (system default, or any capture device — hit
@@ -616,7 +645,9 @@ list by **Fan**. Two modes:
 
 Arm reactors with **Run**; they only drive output while the run mode is
 Sound Reactive. In the **Chases** tab, **Beat sync** makes a chase step
-once per beat instead of on its BPM (again, only in Sound Reactive mode).
+once per beat instead of on its BPM: the tempo clock's beats while it's
+running (in any run mode), otherwise the beats detected here in Sound
+Reactive mode.
 
 ### MIDI / OSC triggers & feedback
 
@@ -630,7 +661,7 @@ maps one incoming message to one console action:
 - **Learn** — click it, then play the pad / move the fader / send the OSC
   message, and the match fields fill in from what arrived.
 - **Action** — *Cue GO / Back / Halt / Go to #*, *Chase toggle*,
-  *Effect toggle*, or *Blackout all*. Go-to takes a cue number; the
+  *Effect toggle*, *Blackout all* or *Tap tempo*. Go-to takes a cue number; the
   chase / effect toggles take a name (or a 1-based index), with a picker
   populated from what's programmed.
 
@@ -646,7 +677,8 @@ binding tick **light this pad** and pick what it **follows** with an
 
 - *this binding's action* — the pad lights while its cue is live / its
   chase or effect is running (needs a Go-to-# / toggle action).
-- *Beat pulse* — a flash on every beat (Sound Reactive).
+- *Beat pulse* — a flash on every beat: the tempo clock's while it's
+  running, else the audio's (Sound Reactive).
 - *Sending is on*, *Any chase / effect running*,
   *Run mode: Cue / Sound Reactive* — standalone console-state
   indicators. Set the **Action** to *(nothing — feedback only)* for a pad
@@ -745,6 +777,11 @@ of patched fixtures that carry it.
   for a circle. A **Pan / Tilt / Zoom** effect's rate is capped at 60 BPM
   — the motors can't chase a faster waveform — so switching an effect to
   one of those roles pulls its rate down if needed.
+- **Follow tempo**: *Own rate* (the default) runs at the Rate; *½ beat*
+  to *8 beats* runs one cycle every that many beats of the tempo clock
+  while it's running — and keeps it in phase with them, so a dimmer pulse
+  peaks on the beat — falling back to the Rate when it's off. A Pan /
+  Tilt / Zoom effect is still capped at 60 cycles a minute.
 - **Run** starts it.
 
 ### Groups
@@ -1107,8 +1144,10 @@ on a machine without the extension falls back to Art-Net.
 - **Run modes**: **Cue Mode** (cue list drives playback), **Sound
   Reactive** (an audio input drives band → role reactors and beat-synced
   chases over the standing base look). Songs' light shows live in DJ
-  Edit Mode's timelines and play in DJ Perform Mode. Room to grow:
-  MIDI-clock or Ableton-Link sync.
+  Edit Mode's timelines and play in DJ Perform Mode. A tempo clock (Tap
+  Tempo, MIDI clock, VirtualDJ's OS2L beats) drives beat-sync chases and
+  tempo-synced effects. Room to grow: Ableton Link sync (its SDK is
+  GPL-licensed, so not bundled), sending MIDI clock out.
 - **3D visualizer**: already implemented — a Forward+ SubViewport with
   volumetric beams + real gobo projectors + bloom, GDTF geometry / glTF
   fixture models, glTF set-piece props, spot shadows, saved camera views,

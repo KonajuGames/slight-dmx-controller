@@ -35,6 +35,10 @@ var size: float = 128.0       # peak-to-peak swing
 var center: float = 128.0     # midpoint level (Absolute mode)
 var fan_deg: float = 0.0      # phase spread across the target list
 var phase_deg: float = 0.0    # global phase offset
+## Beats per cycle when following the tempo clock (Tempo): while it's
+## running the effect runs at its tempo instead of `bpm` — one cycle every
+## this many beats — kept in phase with its beats. 0 = always `bpm`.
+var tempo_beats: float = 0.0
 var running: bool = false
 
 var _phase := 0.0             # elapsed cycles
@@ -42,6 +46,11 @@ var _targets: Array = []      # [{ "u": int, "ch": int }]
 var _rng := RandomNumberGenerator.new()
 var _rand_vals: Array = []
 var _rand_step := -1
+
+
+## The tempo_beats choices (Effects tab) and their labels.
+const TEMPO_BEATS := [0.0, 0.5, 1.0, 2.0, 4.0, 8.0]
+const TEMPO_BEAT_NAMES := ["Own rate", "½ beat", "1 beat", "2 beats", "4 beats", "8 beats"]
 
 
 ## The rate a pan/tilt/zoom effect can actually be run at.
@@ -68,8 +77,29 @@ func target_count() -> int:
 	return _targets.size()
 
 
-func advance(delta: float) -> void:
-	_phase += delta * (bpm / 60.0)
+## The cycles per minute it runs at: `bpm`, or with `tempo` (the tempo
+## clock's BPM, 0 when it's off) and tempo_beats set, one cycle per
+## tempo_beats beats — capped like `bpm` for motor roles.
+func rate(tempo: float = 0.0) -> float:
+	if tempo_beats > 0.0 and tempo > 0.0:
+		return minf(tempo / tempo_beats, max_bpm())
+	return bpm
+
+
+func advance(delta: float, tempo: float = 0.0) -> void:
+	_phase += delta * (rate(tempo) / 60.0)
+
+
+## A beat of the tempo clock: a tempo-synced effect running at its tempo
+## snaps to the nearest beat's point in its cycle, so it stays in phase
+## with the music rather than drifting from when it was started.
+func on_beat() -> void:
+	if tempo_beats <= 0.0 or not Tempo.running:
+		return
+	if rate(Tempo.bpm) < Tempo.bpm / tempo_beats:
+		return                      # capped (a motor role): it can't keep up
+	# A beat every 1 / tempo_beats of a cycle.
+	_phase = roundf(_phase * tempo_beats) / tempo_beats
 
 
 func _wave(x: float) -> float:
@@ -126,7 +156,7 @@ func to_dict() -> Dictionary:
 		"name": name, "role": role, "universe": universe, "group": group,
 		"waveform": waveform, "base_mode": base_mode,
 		"bpm": bpm, "size": size, "center": center,
-		"fan_deg": fan_deg, "phase_deg": phase_deg,
+		"fan_deg": fan_deg, "phase_deg": phase_deg, "tempo_beats": tempo_beats,
 	}
 
 
@@ -143,4 +173,5 @@ static func from_dict(d: Dictionary) -> WaveEffect:
 	e.center = clampf(float(d.get("center", 128.0)), 0.0, 255.0)
 	e.fan_deg = float(d.get("fan_deg", 0.0))
 	e.phase_deg = float(d.get("phase_deg", 0.0))
+	e.tempo_beats = maxf(float(d.get("tempo_beats", 0.0)), 0.0)
 	return e

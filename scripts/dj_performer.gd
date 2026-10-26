@@ -145,6 +145,9 @@ func start() -> Error:
 	os2l.client_disconnected.connect(func(_p): state_changed.emit())
 	os2l.advertising_changed.connect(func(_a, _d): state_changed.emit())
 	os2l.value_changed.connect(_on_value)
+	# VirtualDJ's beats drive the tempo clock (beat-sync chases, effects).
+	os2l.beat.connect(func(_change: bool, _pos: int, bpm: float, _strength: float):
+		Tempo.external_beat(bpm, Tempo.Source.OS2L))
 	add_child(os2l)
 	var err := os2l.start(port)
 	if not ArtNet.layer_providers.has(layer):

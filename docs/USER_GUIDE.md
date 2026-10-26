@@ -163,6 +163,15 @@ four reactors is already here to try — **Bass Pulse**, **Mid Glow**,
 more intense than the others) — edit or delete them, or add your own with
 **New Reactor**. Tick **Run** on the ones you want active.
 
+To lock chases to the music's tempo rather than to what the microphone
+hears, use the top bar's **Tap** button (or press **T**) on the beat: a
+few taps set the tempo clock, shown beside it as `128.0 BPM · Tap`.
+Chases with **Beat sync** ticked then step on its beats in any run mode,
+and an effect's **Follow tempo** runs it once every so many beats. A MIDI
+clock from DJ software or a drum machine sets the clock by itself, and so
+do VirtualDJ's beats in DJ Perform Mode. The **✕** beside the read-out
+stops it.
+
 ## Step 8 — Organize fixtures into groups
 
 The **Groups** tab holds named sets of patched fixtures, so an effect or
@@ -508,6 +517,7 @@ ago" without touching your cue list.
 | Keys | Does |
 | --- | --- |
 | **Space** | GO the next cue (Console, Cue Mode) / play or pause the song (DJ Edit Mode) |
+| **T** | Tap Tempo |
 | **Ctrl+N / Ctrl+O** | New show / load a show |
 | **Ctrl+S / Shift+Ctrl+S** | Save show / save show as |
 | **Ctrl+Shift+N / Ctrl+Shift+R** | Add a universe / remove the current one |

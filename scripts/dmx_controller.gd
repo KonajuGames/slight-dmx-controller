@@ -54,6 +54,8 @@ const _VIZ_TAB := 1
 var master_slider: HSlider
 var sending_toggle: CheckButton
 var run_mode_option: OptionButton
+var tempo_label: Label
+var tempo_stop_btn: Button
 var _triggers_dialog: TriggersDialog
 
 ## Console run mode: 0 = Cue Mode (default), 1 = Sound Reactive. (Shows
@@ -521,6 +523,27 @@ func _build_top_bar() -> Control:
 	run_mode_option.item_selected.connect(_on_run_mode_changed)
 	row.add_child(run_mode_option)
 
+	# The tempo clock: tapped here, or taken from MIDI clock / VirtualDJ.
+	var tap_btn := Button.new()
+	tap_btn.text = "Tap"
+	tap_btn.tooltip_text = "Tap Tempo (T): tap on the beat to set the tempo clock that beat-sync chases and tempo-synced effects follow. MIDI clock or VirtualDJ's beats take it over while they arrive."
+	tap_btn.focus_mode = Control.FOCUS_NONE     # Space stays the cue GO
+	tap_btn.button_down.connect(func(): Tempo.tap())     # on the press, not the release
+	row.add_child(tap_btn)
+	tempo_label = _label(Tempo.describe())
+	tempo_label.custom_minimum_size = Vector2(150, 0)
+	tempo_label.tooltip_text = "The tempo clock: its BPM and what's setting it."
+	row.add_child(tempo_label)
+	tempo_stop_btn = Button.new()
+	tempo_stop_btn.text = "✕"
+	tempo_stop_btn.flat = true
+	tempo_stop_btn.tooltip_text = "Stop the tempo clock (chases go back to their own BPM)"
+	tempo_stop_btn.pressed.connect(Tempo.stop)
+	tempo_stop_btn.visible = Tempo.running
+	row.add_child(tempo_stop_btn)
+	Tempo.changed.connect(_on_tempo_changed)
+	Tempo.beat.connect(_on_tempo_beat)
+
 	sending_toggle = CheckButton.new()
 	sending_toggle.text = "Sending"
 	sending_toggle.button_pressed = true
@@ -931,6 +954,19 @@ func _set_run_mode(idx: int) -> void:
 	Sound.active = run_mode == 1
 
 
+func _on_tempo_changed() -> void:
+	tempo_label.text = Tempo.describe()
+	tempo_stop_btn.visible = Tempo.running
+
+
+## Each beat of the tempo clock: the read-out flashes, and its BPM (which
+## MIDI clock and VirtualDJ keep refining) is brought up to date.
+func _on_tempo_beat() -> void:
+	tempo_label.text = Tempo.describe()
+	tempo_label.modulate = ACCENT.lightened(0.4)
+	create_tween().tween_property(tempo_label, "modulate", Color.WHITE, 0.25)
+
+
 # ------------------------------------------------------ MIDI / OSC TRIGGERS --
 
 func _chase_names() -> Array:
@@ -965,6 +1001,7 @@ func _on_trigger_fired(action: int, target: String) -> void:
 		Trigger.ACT_CHASE_TOGGLE: chase_panel.toggle_by_name(target)
 		Trigger.ACT_EFFECT_TOGGLE: fx_panel.toggle_by_name(target)
 		Trigger.ACT_BLACKOUT: _on_blackout_all()
+		Trigger.ACT_TAP_TEMPO: Tempo.tap()
 
 
 ## Whether a feedback binding's watched state is currently active — its
@@ -1003,6 +1040,11 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_SPACE and run_mode == 0 and _console_view.visible:
 			cue_panel.go()
+			get_viewport().set_input_as_handled()
+		elif event.keycode == KEY_T and not event.is_command_or_control_pressed() \
+				and not event.shift_pressed and not event.alt_pressed:
+			# T: Tap Tempo, from any view.
+			Tempo.tap()
 			get_viewport().set_input_as_handled()
 		elif event.keycode == KEY_S and event.is_command_or_control_pressed():
 			# Ctrl+S: Save Show; Shift+Ctrl+S: Save Show As… — from either view.

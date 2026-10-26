@@ -15,8 +15,9 @@ var bpm: float = 120.0
 ## step. 0 = hard snap.
 var crossfade: float = 0.0
 var direction: int = DIR_FORWARD
-## When true, the chase advances one step per detected beat instead of by
-## `bpm` — but only while the console is in Sound Reactive run mode.
+## When true, the chase advances one step per beat instead of by `bpm`: the
+## tempo clock's (Tempo) while it's running, else the beats detected in the
+## audio in Sound Reactive run mode (see Fx).
 var beat_sync: bool = false
 var running: bool = false
 ## steps[i] is an Array (per universe) of { "<channel>": value }.

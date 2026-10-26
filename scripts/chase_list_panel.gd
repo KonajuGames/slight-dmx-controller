@@ -84,7 +84,8 @@ func _ready() -> void:
 
 	grid.add_child(_lbl("Beat sync"))
 	beat_check = CheckBox.new()
-	beat_check.text = "step on each beat (Sound Reactive mode)"
+	beat_check.text = "step on each beat"
+	beat_check.tooltip_text = "Step on the tempo clock's beats while it's running (Tap, MIDI clock or VirtualDJ); with it off, on the beats heard in Sound Reactive mode; otherwise at the BPM."
 	beat_check.toggled.connect(func(on: bool): _set_field("beat_sync", on))
 	grid.add_child(beat_check)
 	add_child(grid)

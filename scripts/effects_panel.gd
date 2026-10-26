@@ -25,6 +25,7 @@ var group_option: OptionButton
 var base_option: OptionButton
 var wave_option: OptionButton
 var bpm_spin: SpinBox
+var tempo_option: OptionButton
 var size_spin: SpinBox
 var center_spin: SpinBox
 var fan_spin: SpinBox
@@ -113,6 +114,14 @@ func _ready() -> void:
 	bpm_spin = _num(1, 1200, 1, 60)
 	bpm_spin.value_changed.connect(func(v: float): _set_field("bpm", v))
 	grid.add_child(bpm_spin)
+
+	grid.add_child(_lbl("Follow tempo"))
+	tempo_option = OptionButton.new()
+	for n in WaveEffect.TEMPO_BEAT_NAMES:
+		tempo_option.add_item(n)
+	tempo_option.tooltip_text = "While the tempo clock is running (Tap, MIDI clock or VirtualDJ), one cycle every this many beats, in phase with them, instead of the Rate."
+	tempo_option.item_selected.connect(func(i: int): _set_field("tempo_beats", WaveEffect.TEMPO_BEATS[i]))
+	grid.add_child(tempo_option)
 
 	grid.add_child(_lbl("Size"))
 	size_spin = _num(0, 255, 1, 128)
@@ -366,6 +375,7 @@ func _on_effect_selected(idx: int) -> void:
 	wave_option.selected = e.waveform
 	bpm_spin.max_value = e.max_bpm()
 	bpm_spin.value = e.bpm
+	tempo_option.selected = maxi(WaveEffect.TEMPO_BEATS.find(e.tempo_beats), 0)
 	size_spin.value = e.size
 	center_spin.value = e.center
 	fan_spin.value = e.fan_deg
@@ -380,9 +390,13 @@ func _on_effect_selected(idx: int) -> void:
 func _row_text(e: WaveEffect) -> String:
 	var scope := e.group if e.group != "" else ("all" if e.universe < 0 else "U%d" % (e.universe + 1))
 	var pk := "  pickup" if e.base_mode == WaveEffect.BASE_PICKUP else ""
-	return "%s%s  %s %s  %.0f BPM  (%s)%s" % [
+	var rate := "%.0f BPM" % e.bpm
+	var tb := WaveEffect.TEMPO_BEATS.find(e.tempo_beats)
+	if tb > 0:
+		rate += " / tempo " + WaveEffect.TEMPO_BEAT_NAMES[tb]
+	return "%s%s  %s %s  %s  (%s)%s" % [
 		"> " if e.running else "  ", e.name,
-		WaveEffect.WAVEFORMS[e.waveform], e.role, e.bpm, scope, pk]
+		WaveEffect.WAVEFORMS[e.waveform], e.role, rate, scope, pk]
 
 
 func _refresh_list_row(i: int) -> void:

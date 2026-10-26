@@ -14,11 +14,13 @@ const MIDI_KINDS := ["Note", "Control Change", "Program Change"]
 enum {
 	ACT_CUE_GO, ACT_CUE_BACK, ACT_CUE_HALT, ACT_CUE_GOTO,
 	ACT_CHASE_TOGGLE, ACT_EFFECT_TOGGLE, ACT_BLACKOUT, ACT_NONE,
+	# Added later: after ACT_NONE, so saved shows' numbers don't shift.
+	ACT_TAP_TEMPO,
 }
 const ACTIONS := [
 	"Cue — GO", "Cue — Back", "Cue — Halt", "Cue — Go to #",
 	"Chase — toggle", "Effect — toggle", "Blackout all",
-	"(nothing — feedback only)",
+	"(nothing — feedback only)", "Tap tempo",
 ]
 ## Which actions read `target` (a cue number, or a chase / effect name).
 const ACTION_NEEDS_TARGET := {
