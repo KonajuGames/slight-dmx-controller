@@ -190,7 +190,8 @@ group's name in an effect's or reactor's **Group** field instead of a
 universe filter. **Sync to patch** refreshes the checklist after you add
 or remove fixtures.
 
-Groups and cues can also go on **faders**: in the **Faders** tab, **Add
+Groups and cues can also go on **faders**: in the **Faders** tab (on the
+right, beside **Patch**), **Add
 Fader** and pick **Cue**, **Chase** or **Group** and which one. A cue
 fader brings that cue's look up as you raise it, mixed with whatever else
 is on stage. A chase fader runs the chase at the fader's brightness, and

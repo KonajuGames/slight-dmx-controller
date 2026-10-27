@@ -176,14 +176,12 @@ func _ready() -> void:
 	faders_panel.bank = faders
 	faders_panel.cue_count_provider = func(): return cue_panel.cues.size()
 	faders_panel.group_names_provider = _group_names
-	playback_tabs.add_child(_scrollable(faders_panel))
 
 	playback_tabs.set_tab_title(0, "Cues")
 	playback_tabs.set_tab_title(1, "Chases")
 	playback_tabs.set_tab_title(2, "Effects")
 	playback_tabs.set_tab_title(3, "Sound")
 	playback_tabs.set_tab_title(4, "Groups")
-	playback_tabs.set_tab_title(5, "Faders")
 
 	groups_panel.groups_changed.connect(fx_panel.refresh_group_options)
 	groups_panel.groups_changed.connect(sound_panel.refresh_group_options)
@@ -192,16 +190,15 @@ func _ready() -> void:
 	chase_panel.chases_changed.connect(faders_panel.refresh_targets)
 	faders.chases_changed.connect(chase_panel.sync_ui)
 	playback_tabs.tab_changed.connect(func(i: int):
-		if i == 5:
-			faders_panel.refresh_targets()
-		elif i == 4:
+		if i == 4:
 			groups_panel.sync_to_patch()
 		elif i == 2:
 			fx_panel.refresh_group_options()
 		elif i == 3:
 			sound_panel.refresh_group_options())
 
-	# Right side: "Patch" (the universe tabs) and the "3D Visualizer".
+	# Right side: "Patch" (the universe tabs), the "3D Visualizer", "DMX
+	# Output" and the playback "Faders" (here for the room to spread out).
 	_right_tabs = TabContainer.new()
 	_right_tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	split.add_child(_right_tabs)
@@ -219,9 +216,18 @@ func _ready() -> void:
 	dmx_output_panel = DmxOutputPanel.new()
 	_right_tabs.add_child(dmx_output_panel)
 
+	var faders_scroll := _scrollable(faders_panel)
+	_right_tabs.add_child(faders_scroll)
+
 	_right_tabs.set_tab_title(0, "Patch")
 	_right_tabs.set_tab_title(_VIZ_TAB, "3D Visualizer")
 	_right_tabs.set_tab_title(2, "DMX Output")
+	_right_tabs.set_tab_title(3, "Faders")
+	# By its control, not its index: that shifts while the visualizer's
+	# popped out.
+	_right_tabs.tab_changed.connect(func(_i: int):
+		if _right_tabs.get_current_tab_control() == faders_scroll:
+			faders_panel.refresh_targets())
 	_right_tabs.get_tab_bar().gui_input.connect(_on_right_tabbar_input)
 	set_process(false)
 

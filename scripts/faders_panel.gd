@@ -1,11 +1,12 @@
 class_name FadersPanel
 extends VBoxContainer
-## The console's Faders tab: the playback faders (FaderBank), one strip
-## each — its name, the fader and its level, what it's on (a cue, a chase
-## or a group, and which) and its MIDI mapping (Learn) — wrapping across
-## the tab.
+## The console's Faders tab (beside Patch, 3D Visualizer and DMX
+## Output): the playback faders (FaderBank), one strip each — its name, the
+## fader and its level, what it's on (a cue, a chase or a group, and which)
+## and its MIDI mapping (Learn) — in a row like a desk's, wrapping when
+## there are more than fit across.
 
-const _STRIP_W := 86
+const _STRIP_W := 104
 const _DIM := Color(1, 1, 1, 0.55)
 
 var bank: FaderBank

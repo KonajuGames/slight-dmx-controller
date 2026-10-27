@@ -91,7 +91,7 @@ technical reference.
 - `dmx_controller.gd` — the shell: a top bar (view selector, grand
   master, run mode, Sending, add/remove universe, whole-show + preset
   save/load, MIDI/OSC triggers) above either the console — a split view
-  of playback tabs (Cues / Chases / Effects / Sound / Groups / Faders)
+  of playback tabs (Cues / Chases / Effects / Sound / Groups)
   on the left, one universe tab each on the right — or DJ Edit Mode or
   DJ Perform Mode; plus the shared fixture-profile list and the profile
   new/edit/delete flow.
@@ -876,7 +876,9 @@ All**, loading a preset, or loading a show stops every chase and effect.
 
 ### Faders
 
-The **Faders** tab is a bank of playback faders (up to 24). **Add
+The **Faders** tab — on the right, beside Patch, 3D Visualizer and DMX
+Output, where there's room for a row of them — is a bank of playback
+faders (up to 24). **Add
 Fader**, then on its strip pick what it's on — **Cue**, **Chase** or
 **Group** — and which one; name it in the box at the top and remove it
 with **✕**.
