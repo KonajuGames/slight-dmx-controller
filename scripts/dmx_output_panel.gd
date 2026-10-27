@@ -23,9 +23,7 @@ var _built_universe_count := -1
 
 
 func _ready() -> void:
-	for side in ["left", "right", "top", "bottom"]:
-		add_theme_constant_override("margin_" + side, 8)
-
+	# Inset from the tab's edge by the shell (TabPadding.page()).
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 6)
 	add_child(vb)
@@ -37,6 +35,7 @@ func _ready() -> void:
 
 	_uni_tabs = TabContainer.new()
 	_uni_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	TabPadding.pad_tabs(_uni_tabs)
 	vb.add_child(_uni_tabs)
 
 	_rebuild_tabs()

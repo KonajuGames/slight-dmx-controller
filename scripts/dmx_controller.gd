@@ -213,11 +213,13 @@ func _ready() -> void:
 	viz_panel.popout_pressed.connect(_dock_viz)
 	_right_tabs.add_child(viz_panel)
 
+	# The 3D Visualizer is full-bleed, so the right-hand tabs aren't padded
+	# as a whole: each other page is (TabPadding.page()).
 	dmx_output_panel = DmxOutputPanel.new()
-	_right_tabs.add_child(dmx_output_panel)
+	_right_tabs.add_child(TabPadding.page(dmx_output_panel))
 
-	var faders_scroll := _scrollable(faders_panel)
-	_right_tabs.add_child(faders_scroll)
+	var faders_page := TabPadding.page(_scrollable(faders_panel))
+	_right_tabs.add_child(faders_page)
 
 	_right_tabs.set_tab_title(0, "Patch")
 	_right_tabs.set_tab_title(_VIZ_TAB, "3D Visualizer")
@@ -226,7 +228,7 @@ func _ready() -> void:
 	# By its control, not its index: that shifts while the visualizer's
 	# popped out.
 	_right_tabs.tab_changed.connect(func(_i: int):
-		if _right_tabs.get_current_tab_control() == faders_scroll:
+		if _right_tabs.get_current_tab_control() == faders_page:
 			faders_panel.refresh_targets())
 	_right_tabs.get_tab_bar().gui_input.connect(_on_right_tabbar_input)
 	set_process(false)
@@ -241,9 +243,10 @@ func _ready() -> void:
 	viz_panel.rebuild()
 
 	# Keep tab content off the container edges (the 3D visualizer tab is
-	# meant to be full-bleed, so right_tabs is left alone).
-	_pad_tab_content(playback_tabs)
-	_pad_tab_content(universe_tabs)
+	# meant to be full-bleed, so right_tabs' pages are padded one by one,
+	# above). Every tab gets the same TabPadding inset.
+	TabPadding.pad_tabs(playback_tabs)
+	TabPadding.pad_tabs(universe_tabs)
 
 	# MIDI / OSC GO triggers.
 	_triggers_dialog = TriggersDialog.new()
@@ -300,19 +303,6 @@ static func _app_theme() -> Theme:
 		t.set_color("icon_pressed_color", type, Color.WHITE)
 		t.set_color("icon_hover_pressed_color", type, Color.WHITE)
 	return t
-
-
-## Inset every tab's content by a few pixels so controls don't sit flush
-## against the container edge. Keeps the theme's panel look, just adds
-## content margins.
-func _pad_tab_content(tc: TabContainer, pad := 8.0) -> void:
-	var base := tc.get_theme_stylebox("panel")
-	var sb: StyleBox = base.duplicate() if base != null else StyleBoxEmpty.new()
-	sb.content_margin_left = pad
-	sb.content_margin_right = pad
-	sb.content_margin_top = pad
-	sb.content_margin_bottom = pad
-	tc.add_theme_stylebox_override("panel", sb)
 
 
 ## ------------------------------------------------- VISUALIZER POP-OUT --

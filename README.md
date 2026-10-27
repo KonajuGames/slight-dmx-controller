@@ -460,6 +460,11 @@ technical reference.
   minute while it has unsaved changes, and the session marker that tells
   the next start the app didn't close properly, so it can offer the
   snapshot back.
+- `tab_padding.gd` — the `TabPadding` class: the one inset every tab page
+  gets from its tab container's edge — `pad_tabs()` for a container of
+  ordinary panels, `page()` for one page beside a full-bleed one (the 3D
+  Visualizer). Every new tab uses it; `tests/tab_padding_test.gd` fails
+  on one that doesn't.
 - `recent_dirs.gd` — the `RecentDirs` class: every file dialog (Load Song,
   Import fixture, Load glTF model, Import/Export MVR) reopens in the
   folder it was last used in, remembered per dialog rather than as one
