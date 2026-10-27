@@ -240,7 +240,7 @@ func _test_round_trip() -> void:
 		if tc.get_tab_count() > 0 and tc.get_tab_title(0) == "Cues":
 			for i in range(tc.get_tab_count()):
 				titles.append(tc.get_tab_title(i))
-	ok(titles == ["Cues", "Chases", "Effects", "Sound", "Groups"], "no Auto Show tab (%s)" % str(titles))
+	ok(titles == ["Cues", "Chases", "Effects", "Sound", "Groups", "Faders"], "no Auto Show tab (%s)" % str(titles))
 	ok(main.run_mode_option.item_count == 2, "run modes: Cue Mode, Sound Reactive")
 	# Triggers' feedback: saved by name now; the old numbers still read.
 	var tr := Trigger.new()

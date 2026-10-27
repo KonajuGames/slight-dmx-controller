@@ -20,6 +20,9 @@ var direction: int = DIR_FORWARD
 ## audio in Sound Reactive run mode (see Fx).
 var beat_sync: bool = false
 var running: bool = false
+## Its intensity, 0..1: set by a playback fader (FaderBank) that runs it;
+## scales its intensity channels in write_into(). Not saved.
+var level: float = 1.0
 ## steps[i] is an Array (per universe) of { "<channel>": value }.
 var steps: Array = []
 
@@ -131,8 +134,10 @@ static func _level(look: Array, u: int, c: int) -> int:
 	return 0
 
 
-## HTP-merge this chase's current output into the per-universe layers.
-func write_into(layers: Array) -> void:
+## HTP-merge this chase's current output into the per-universe layers —
+## its `intensity` channels (per universe {channel: true}) scaled by
+## `level`.
+func write_into(layers: Array, intensity: Array = []) -> void:
 	if steps.is_empty():
 		return
 	var cur: Array = steps[clampi(_pos, 0, steps.size() - 1)]
@@ -157,6 +162,8 @@ func write_into(layers: Array) -> void:
 			var b := _level(cur, u, c)
 			var a := _level(prev, u, c) if not prev.is_empty() else b
 			var v := clampi(int(round(a + (b - a) * blend)), 0, 255)
+			if level < 1.0 and u < intensity.size() and intensity[u].has(c):
+				v = int(round(v * level))
 			layers[u][c] = maxi(int(layers[u].get(c, 0)), v)
 
 

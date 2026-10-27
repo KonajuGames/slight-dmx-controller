@@ -31,6 +31,10 @@ var chase_panel: ChaseListPanel
 var fx_panel: EffectsPanel
 var sound_panel: SoundPanel
 var groups_panel: GroupsPanel
+## The playback faders (cue submasters, chase faders, group masters) and
+## their tab.
+var faders := FaderBank.new()
+var faders_panel: FadersPanel
 var viz_panel: VisualizerPanel
 var dmx_output_panel: DmxOutputPanel
 ## DJ Edit Mode (the music library and its songs' lighting timelines),
@@ -163,16 +167,34 @@ func _ready() -> void:
 	playback_tabs.add_child(_scrollable(sound_panel))
 
 	playback_tabs.add_child(_scrollable(groups_panel))
+
+	faders.fixtures_provider = _perform_fixtures
+	faders.groups_provider = func(): return groups
+	faders.cue_look_provider = cue_panel.standing_look
+	add_child(faders)
+	faders_panel = FadersPanel.new()
+	faders_panel.bank = faders
+	faders_panel.cue_count_provider = func(): return cue_panel.cues.size()
+	faders_panel.group_names_provider = _group_names
+	playback_tabs.add_child(_scrollable(faders_panel))
+
 	playback_tabs.set_tab_title(0, "Cues")
 	playback_tabs.set_tab_title(1, "Chases")
 	playback_tabs.set_tab_title(2, "Effects")
 	playback_tabs.set_tab_title(3, "Sound")
 	playback_tabs.set_tab_title(4, "Groups")
+	playback_tabs.set_tab_title(5, "Faders")
 
 	groups_panel.groups_changed.connect(fx_panel.refresh_group_options)
 	groups_panel.groups_changed.connect(sound_panel.refresh_group_options)
+	groups_panel.groups_changed.connect(faders_panel.refresh_targets)
+	cue_panel.cues_changed.connect(faders_panel.refresh_targets)
+	chase_panel.chases_changed.connect(faders_panel.refresh_targets)
+	faders.chases_changed.connect(chase_panel.sync_ui)
 	playback_tabs.tab_changed.connect(func(i: int):
-		if i == 4:
+		if i == 5:
+			faders_panel.refresh_targets()
+		elif i == 4:
 			groups_panel.sync_to_patch()
 		elif i == 2:
 			fx_panel.refresh_group_options()
@@ -940,6 +962,7 @@ func _update_universe_buttons() -> void:
 
 func _on_blackout_all() -> void:
 	cue_panel.halt()                      # its fade, and any delay / follow waiting
+	faders.pull_down_playback()           # cue and chase faders to 0
 	Fx.stop_all()
 	chase_panel.sync_ui()
 	fx_panel.sync_ui()
@@ -1936,6 +1959,7 @@ func show_dict() -> Dictionary:
 		"groups": _groups_to_dict(),
 		"positions": positions.to_dict(),
 		"live_flash": flash.to_dict(),
+		"faders": faders.to_dict(),
 		"viz": viz_panel.to_dict(),
 		"sacn_cid": Marshalls.raw_to_base64(ArtNet.sacn_cid),
 	}
@@ -2049,6 +2073,8 @@ func apply_show_dict(parsed) -> void:
 	sound_panel.from_dict(doc.get("sound", {}))
 	sound_panel.refresh_group_options()
 	Triggers.from_dict(doc.get("triggers", {}))
+	var fader_doc = doc.get("faders", {})
+	faders.from_dict(fader_doc if fader_doc is Dictionary else {})   # after the cues, chases and groups
 	var flash_doc = doc.get("live_flash", {})
 	flash.from_dict(flash_doc if flash_doc is Dictionary else {})
 	perform_panel.sync_flash()

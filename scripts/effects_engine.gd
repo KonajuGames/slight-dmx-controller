@@ -23,6 +23,11 @@ var reactors: Array[SoundReactor] = []
 ## True while the console is in Sound Reactive run mode.
 var sound_reactive := false
 
+## func(n: int) -> per universe {channel: true}: the patched fixtures'
+## intensity channels, which a chase's `level` (set by a playback fader)
+## scales. Set by the faders (FaderBank).
+var intensity_provider := Callable()
+
 
 func _beat_driven() -> bool:
 	return Tempo.running or sound_reactive
@@ -82,9 +87,13 @@ func compose(n: int, bases: Array = []) -> Array:
 	var layers: Array = []
 	for i in range(n):
 		layers.append({})
+	var intensity: Array = []
+	for c in chases:
+		if c.running and c.level < 1.0 and intensity.is_empty() and intensity_provider.is_valid():
+			intensity = intensity_provider.call(n)
 	for c in chases:
 		if c.running:
-			c.write_into(layers)
+			c.write_into(layers, intensity)
 	for e in effects:
 		if e.running:
 			e.write_into(layers, bases)

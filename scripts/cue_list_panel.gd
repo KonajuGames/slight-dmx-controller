@@ -267,6 +267,15 @@ func _fold(last: int) -> Array:
 	return out
 
 
+## The complete look cue `number` (1-based) leaves standing, as GO would
+## (per universe {"<channel>": value}); [] if there's no such cue. For
+## cue faders.
+func standing_look(number: int) -> Array:
+	if number < 1 or number > cues.size():
+		return []
+	return _fold(number - 1)
+
+
 ## Turn a folded state (Array of Dictionary) into fade targets (Array of
 ## 512-byte PackedByteArray), one per universe.
 func _targets_from_state(state: Array) -> Array:

@@ -36,6 +36,11 @@ var layer_providers: Array[Callable] = []
 ## the grand master (the first listed wins where they overlap).
 var top_providers: Array[Callable] = []
 
+## Scale layers (group masters): Callables func(n: int) -> Array of n
+## {channel: factor 0..1}, multiplied in after the virtual dimmers and
+## before top_providers (the lowest factor wins where they overlap).
+var scale_providers: Array[Callable] = []
+
 ## Emitted when a running crossfade reaches all its targets.
 signal fade_finished
 
@@ -105,7 +110,8 @@ func set_universe_count(n: int) -> void:
 
 ## Recompute every universe's `output` (operator base -> layer_providers
 ## (DJ Perform Mode, DJ Edit Mode playback) -> effect/chase layer ->
-## virtual dimmers -> top_providers (the live flashes) -> grand master). When `transmit` is true, also put it on the wire. Call
+## virtual dimmers -> scale_providers (group masters) -> top_providers
+## (the live flashes) -> grand master). When `transmit` is true, also put it on the wire. Call
 ## this every refresh tick — computing always keeps the 3D visualizer live
 ## even while "Sending" is off.
 func tick(transmit: bool = true) -> void:
@@ -134,10 +140,20 @@ func tick(transmit: bool = true) -> void:
 			for ch in tl[i]:
 				if not tops[i].has(ch):
 					tops[i][ch] = tl[i][ch]
+	var scales: Array = []
+	for i in range(universes.size()):
+		scales.append({})
+	for provider in scale_providers:
+		if not provider.is_valid():
+			continue
+		var sl: Array = provider.call(universes.size())
+		for i in range(mini(universes.size(), sl.size())):
+			for ch in sl[i]:
+				scales[i][ch] = minf(float(scales[i].get(ch, 1.0)), float(sl[i][ch]))
 	for i in range(universes.size()):
 		var ov: Dictionary = layers[i] if i < layers.size() else {}
 		var u := universes[i]
-		u.compute_output(master, ov, tops[i])
+		u.compute_output(master, ov, tops[i], scales[i])
 		if transmit:
 			match u.output_mode:
 				ArtNetUniverse.OUT_USB:

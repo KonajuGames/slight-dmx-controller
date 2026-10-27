@@ -131,11 +131,13 @@ func virtual_dimmer_level(key: int) -> float:
 
 
 ## Fold the effect/chase `overrides` ({channel: value}), the fixtures'
-## virtual dimmers, the `top` layer ({channel: value}, the live flashes:
-## after the virtual dimmers, so they don't scale it) and the grand master
+## virtual dimmers, the `scales` ({channel: factor 0..1}, group masters),
+## the `top` layer ({channel: value}, the live flashes: after the virtual
+## dimmers and scales, so they don't scale it) and the grand master
 ## `scale` (0..1) into `output`, without touching the stored per-channel
 ## values. Always safe to call; does not send anything.
-func compute_output(scale: float = 1.0, overrides: Dictionary = {}, top: Dictionary = {}) -> void:
+func compute_output(scale: float = 1.0, overrides: Dictionary = {}, top: Dictionary = {},
+		scales: Dictionary = {}) -> void:
 	var data := dmx_data.duplicate()
 	for key in overrides:
 		var c := int(key)
@@ -149,6 +151,10 @@ func compute_output(scale: float = 1.0, overrides: Dictionary = {}, top: Diction
 		for c in vd["channels"]:
 			if c >= 0 and c < data.size():
 				data[c] = int(round(data[c] * level))
+	for key in scales:
+		var c := int(key)
+		if c >= 0 and c < data.size():
+			data[c] = int(round(data[c] * clampf(float(scales[key]), 0.0, 1.0)))
 	for key in top:
 		var c := int(key)
 		if c >= 0 and c < data.size():

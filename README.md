@@ -91,7 +91,7 @@ technical reference.
 - `dmx_controller.gd` — the shell: a top bar (view selector, grand
   master, run mode, Sending, add/remove universe, whole-show + preset
   save/load, MIDI/OSC triggers) above either the console — a split view
-  of playback tabs (Cues / Chases / Effects / Sound / Groups)
+  of playback tabs (Cues / Chases / Effects / Sound / Groups / Faders)
   on the left, one universe tab each on the right — or DJ Edit Mode or
   DJ Perform Mode; plus the shared fixture-profile list and the profile
   new/edit/delete flow.
@@ -380,6 +380,9 @@ technical reference.
   tempo clock.
 - `groups_panel.gd` — the Groups tab: named sets of patched fixtures
   (by fixture uid) an effect can target instead of a whole universe.
+- `fader_bank.gd` / `faders_panel.gd` — the `FaderBank` class and the
+  Faders tab: playback faders putting a cue (a submaster), a chase or a
+  group (a group master) on a fader, with MIDI CC Learn.
 - `fixture_import.gd` — the `FixtureImport` class: reads GDTF (`.gdtf`
   ZIP, including its `<Geometries>` tree + glTF models) and Open Fixture
   Library (`.json`) definitions into `FixtureProfile` — best-effort role
@@ -871,6 +874,39 @@ universe takes its fixtures out of every group.
 Chases, effects and groups are saved inside the show file. **Blackout
 All**, loading a preset, or loading a show stops every chase and effect.
 
+### Faders
+
+The **Faders** tab is a bank of playback faders (up to 24). **Add
+Fader**, then on its strip pick what it's on — **Cue**, **Chase** or
+**Group** — and which one; name it in the box at the top and remove it
+with **✕**.
+
+- **Cue** — a submaster: the cue's standing look (what GO to it would
+  leave, tracking and all) brought up by the fader. Its intensity
+  channels — a fixture's DIMMER, or its colour / white channels on a
+  fixture without one — are scaled by the fader and merged
+  highest-takes-precedence with what's on stage and with other cue
+  faders; its other channels (colour on a dimmed fixture, pan, tilt,
+  gobos, ...) go to the look's values as soon as the fader's off zero
+  (the highest fader's, where two looks share one). Chases and effects
+  still layer over it. A cue fader names a cue by its number, so
+  inserting a cue before it moves it on to the next.
+- **Chase** — raising the fader starts the chase (from its first step)
+  and scales its intensity channels by the fader; taking it to zero
+  stops it and hands it back to the Chases tab. A chase run from the
+  Chases tab isn't stopped by a fader that's down.
+- **Group** — a group master: the group's fixtures' intensity channels
+  are scaled by the fader, whatever is driving them — cues, chases,
+  effects, song timelines. Full does nothing; it only takes light away.
+  The live flashes still go over it, and the grand master under it.
+
+**Learn** on a strip, then move a fader or knob on a MIDI controller, maps
+that CC (on that channel) to the fader; the button then shows the
+mapping (`CC 7 · ch 1`), and right-clicking it forgets it. The faders,
+their levels and mappings are saved with the show; a chase fader saved
+up starts its chase again when the show loads. **Blackout All** pulls the
+cue and chase faders down (not the group masters).
+
 ## Fixture profiles
 
 Instead of only controlling raw DMX channels, you can patch **fixtures**:
@@ -1211,8 +1247,10 @@ on a machine without the extension falls back to Art-Net.
   standalone beat / sending / run-mode indicator (MIDI feedback native via
   the optional `addons/native` GDExtension, or a small UDP bridge script
   without it; OSC feedback direct). Cues have delays and auto-follows,
-  with a progress bar for what's running. Room to grow: per-channel
-  track flags in the cue editor.
+  with a progress bar for what's running. Playback faders put cues
+  (submasters), chases and groups (group masters) on faders, MIDI-learnable.
+  Room to grow: per-channel track flags in the cue editor, motorised
+  fader feedback.
 - **Run modes**: **Cue Mode** (cue list drives playback), **Sound
   Reactive** (an audio input drives band → role reactors and beat-synced
   chases over the standing base look). Songs' light shows live in DJ

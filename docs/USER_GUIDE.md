@@ -190,6 +190,13 @@ group's name in an effect's or reactor's **Group** field instead of a
 universe filter. **Sync to patch** refreshes the checklist after you add
 or remove fixtures.
 
+Groups and cues can also go on **faders**: in the **Faders** tab, **Add
+Fader** and pick **Cue**, **Chase** or **Group** and which one. A cue
+fader brings that cue's look up as you raise it, mixed with whatever else
+is on stage. A chase fader runs the chase at the fader's brightness, and
+a group fader dims that group, whatever is lighting it. Click **Learn**
+and move a fader on a MIDI controller to drive it from there.
+
 ## Step 9 — See it in 3D
 
 The **3D Visualizer** tab (right side, next to Patch) shows your rig lit
