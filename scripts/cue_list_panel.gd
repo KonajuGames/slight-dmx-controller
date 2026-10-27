@@ -15,6 +15,12 @@ extends VBoxContainer
 ## blocks wipe first, tracking cues merge on top — so the fade target is
 ## always the complete standing look for that point in the list.
 ##
+## Cues use **palettes**: recording a cue, a fixture whose colour,
+## position or beam channels exactly match one of the show's palettes for
+## it stores a reference to the palette instead of the values (Cue.refs).
+## Folding resolves it to the palette's values as they are now, so updating
+## a palette changes every cue that uses it.
+##
 ## A cue's **Delay** holds its fade back that long after GO; with
 ## **Follow** ticked, once its fade finishes (and its wait after that) the
 ## next cue GOes by itself, so a run of cues can play as a sequence. GO,
@@ -35,6 +41,11 @@ var tracking_enabled := true   # what Record Cue makes: tracking vs block
 ## Set by the shell: func(buffers: Array of PackedByteArray) — loads a
 ## cue's per-universe look into the fixture controls for editing.
 var to_patch_cb := Callable()
+## The show's palettes, which cues link to when they're recorded, and
+## func() -> the patched fixtures ({uid, u, start, profile, mode}) to
+## resolve them on. Set by the shell; without them cues hold raw values.
+var palettes: PaletteLibrary
+var fixtures_provider := Callable()
 
 # UI
 var cue_list: ItemList
@@ -252,6 +263,7 @@ func _fold(last: int) -> Array:
 	var out: Array = []
 	for _i in range(ucount):
 		out.append({})
+	var by_uid := {}
 	for i in range(mini(last + 1, cues.size())):
 		var c := cues[i]
 		if not c.tracking:
@@ -264,6 +276,117 @@ func _fold(last: int) -> Array:
 			var d: Dictionary = c.levels[u]
 			for k in d.keys():
 				out[u][String(k)] = clampi(int(d[k]), 0, 255)
+		if not c.refs.is_empty():
+			if by_uid.is_empty():
+				by_uid = _fixtures_by_uid()
+			for uid in c.refs:
+				var fx: Dictionary = by_uid.get(uid, {})
+				if fx.is_empty() or int(fx["u"]) >= ucount:
+					continue                    # no longer patched
+				for kind_key in c.refs[uid]:
+					var chans := palettes.channels_for(String(c.refs[uid][kind_key]), fx) if palettes else {}
+					for ch in chans:
+						out[int(fx["u"])][str(ch)] = int(chans[ch])
+	return out
+
+
+func _fixtures_by_uid() -> Dictionary:
+	var out := {}
+	if fixtures_provider.is_valid():
+		for fx in fixtures_provider.call():
+			out[String(fx["uid"])] = fx
+	return out
+
+
+## Link cue `c`, just captured from the live buffers, to the palettes its
+## fixtures match: for each fixture and kind, if the live values of its
+## channels of that kind are exactly a palette's, the cue refers to the
+## palette and drops those values. A tracking cue only links what it
+## changes (a kind with a channel in its levels); a block, any kind with a
+## channel lit.
+func _link_palettes(c: Cue) -> void:
+	c.refs = {}
+	if palettes == null or palettes.palettes.is_empty() or not fixtures_provider.is_valid():
+		return
+	for fx in fixtures_provider.call():
+		var u := int(fx["u"])
+		if u >= c.levels.size() or u >= ArtNet.universe_count():
+			continue
+		var base := ArtNet.get_universe(u).dmx_data
+		var lv: Dictionary = c.levels[u]
+		for kind in range(PaletteLibrary.KINDS.size()):
+			var offs := PaletteLibrary.offsets(fx, kind)
+			var touched := false
+			for o in offs:
+				var ch := int(fx["start"]) + int(o)
+				if lv.has(str(ch)) and (c.tracking or int(lv[str(ch)]) != 0):
+					touched = true
+			if not touched:
+				continue
+			var id := palettes.match_fixture(kind, fx, base)
+			if id == "":
+				continue
+			var uid := String(fx["uid"])
+			if not c.refs.has(uid):
+				c.refs[uid] = {}
+			c.refs[uid][PaletteLibrary.KIND_KEYS[kind]] = id
+			for o in offs:
+				lv.erase(str(int(fx["start"]) + int(o)))
+
+
+## Before palette `id` is deleted: every cue that refers to it gets its
+## values instead, so no cue's look changes. Returns how many cues did.
+func bake_palette(id: String) -> int:
+	var by_uid := _fixtures_by_uid()
+	var n := 0
+	for c in cues:
+		var used := false
+		for uid in c.refs.keys():
+			for kind_key in c.refs[uid].keys():
+				if String(c.refs[uid][kind_key]) != id:
+					continue
+				used = true
+				var fx: Dictionary = by_uid.get(uid, {})
+				if not fx.is_empty():
+					var u := int(fx["u"])
+					while c.levels.size() <= u:
+						c.levels.append({})
+					var chans := palettes.channels_for(id, fx)
+					for ch in chans:
+						if c.tracking or int(chans[ch]) != 0:
+							c.levels[u][str(ch)] = int(chans[ch])
+				c.refs[uid].erase(kind_key)
+			if c.refs[uid].is_empty():
+				c.refs.erase(uid)
+		if used:
+			n += 1
+	if n > 0:
+		_refresh_list()
+		cues_changed.emit()
+	return n
+
+
+## How many cues refer to palette `id`.
+func palette_users(id: String) -> int:
+	var n := 0
+	for c in cues:
+		for uid in c.refs:
+			if id in c.refs[uid].values():
+				n += 1
+				break
+	return n
+
+
+## The names of the palettes cue `c` uses, in the order first used.
+func _palette_names(c: Cue) -> Array:
+	var out: Array = []
+	if palettes == null:
+		return out
+	for uid in c.refs:
+		for kind_key in c.refs[uid]:
+			var p := palettes.find(String(c.refs[uid][kind_key]))
+			if p != null and not out.has(p.name):
+				out.append(p.name)
 	return out
 
 
@@ -435,6 +558,7 @@ func record_cue() -> void:
 		c.capture_tracked(_fold(insert_at - 1))
 	else:
 		c.capture()
+	_link_palettes(c)
 	cues.insert(insert_at, c)
 	if _current >= insert_at:
 		_current += 1
@@ -465,6 +589,7 @@ func update_cue() -> void:
 		cues[at].capture_tracked(_fold(at - 1))
 	else:
 		cues[at].capture()
+	_link_palettes(cues[at])
 	var keep := at
 	_refresh_list()
 	cue_list.select(keep)
@@ -564,6 +689,15 @@ func _set_selected_tracking(on: bool) -> void:
 				if int(t[k]) != 0:
 					d[String(k)] = int(t[k])
 		new_levels.append(d)
+	# Its palette references stand: their channels stay out of its levels.
+	var by_uid := _fixtures_by_uid()
+	for uid in cues[i].refs:
+		var fx: Dictionary = by_uid.get(uid, {})
+		if fx.is_empty() or int(fx["u"]) >= new_levels.size():
+			continue
+		for kind_key in cues[i].refs[uid]:
+			for o in PaletteLibrary.offsets(fx, PaletteLibrary.KIND_KEYS.find(kind_key)):
+				new_levels[int(fx["u"])].erase(str(int(fx["start"]) + int(o)))
 	cues[i].levels = new_levels
 	var keep := i
 	_refresh_list()
@@ -615,6 +749,9 @@ func _refresh_list() -> void:
 			timing += "  d%.1f" % c.delay
 		if c.follow:
 			timing += "  → %.1fs" % c.follow_wait
+		var names := _palette_names(c)
+		if not names.is_empty():
+			timing += "  ◆ " + ", ".join(names)
 		cue_list.add_item("%s%d [%s] %s   %.1f/%.1fs%s" % [
 			marker, i + 1, flag, c.label, c.fade_up, c.fade_down, timing])
 	if sel >= 0 and sel < cue_list.item_count:

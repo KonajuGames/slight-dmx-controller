@@ -35,6 +35,10 @@ var groups_panel: GroupsPanel
 ## their tab.
 var faders := FaderBank.new()
 var faders_panel: FadersPanel
+## The show's colour / position / beam palettes, which cues refer to, and
+## their tab.
+var palettes := PaletteLibrary.new()
+var palettes_panel: PalettesPanel
 var viz_panel: VisualizerPanel
 var dmx_output_panel: DmxOutputPanel
 ## DJ Edit Mode (the music library and its songs' lighting timelines),
@@ -147,6 +151,8 @@ func _ready() -> void:
 
 	cue_panel = CueListPanel.new()
 	cue_panel.to_patch_cb = _load_look_to_patch
+	cue_panel.palettes = palettes
+	cue_panel.fixtures_provider = _perform_fixtures
 	playback_tabs.add_child(_scrollable(cue_panel))
 	chase_panel = ChaseListPanel.new()
 	chase_panel.to_patch_cb = _load_look_to_patch
@@ -221,15 +227,32 @@ func _ready() -> void:
 	var faders_page := TabPadding.page(_scrollable(faders_panel))
 	_right_tabs.add_child(faders_page)
 
+	palettes_panel = PalettesPanel.new()
+	palettes_panel.library = palettes
+	palettes_panel.fixtures_provider = _perform_fixtures
+	palettes_panel.group_names_provider = _group_names
+	palettes_panel.group_members_provider = _group_members
+	palettes_panel.apply_cb = _load_look_to_patch
+	palettes_panel.users_cb = cue_panel.palette_users
+	palettes_panel.bake_cb = cue_panel.bake_palette
+	var palettes_page := TabPadding.page(_scrollable(palettes_panel))
+	_right_tabs.add_child(palettes_page)
+	groups_panel.groups_changed.connect(palettes_panel.refresh_fixture_options)
+	palettes.changed.connect(cue_panel._refresh_list)      # renamed: the cue list's ◆ names
+
 	_right_tabs.set_tab_title(0, "Patch")
 	_right_tabs.set_tab_title(_VIZ_TAB, "3D Visualizer")
 	_right_tabs.set_tab_title(2, "DMX Output")
 	_right_tabs.set_tab_title(3, "Faders")
+	_right_tabs.set_tab_title(4, "Palettes")
 	# By its control, not its index: that shifts while the visualizer's
 	# popped out.
 	_right_tabs.tab_changed.connect(func(_i: int):
 		if _right_tabs.get_current_tab_control() == faders_page:
-			faders_panel.refresh_targets())
+			faders_panel.refresh_targets()
+		elif _right_tabs.get_current_tab_control() == palettes_page:
+			palettes_panel.refresh_fixture_options()
+			palettes_panel.rebuild())
 	_right_tabs.get_tab_bar().gui_input.connect(_on_right_tabbar_input)
 	set_process(false)
 
@@ -801,6 +824,14 @@ func _resolve_fx_targets(role: String, universe: int, group: String = "") -> Arr
 				if String(chans[li]["role"]) == role and not bool(chans[li].get("fine", false)):
 					out.append({"u": ui, "ch": start + li})
 	return out
+
+
+## The fixture uids in the group called `name_` ([] if there's none).
+func _group_members(name_: String) -> Array:
+	for g in groups:
+		if String(g["name"]) == name_:
+			return (g["members"] as Array).duplicate()
+	return []
 
 
 func _group_names() -> Array:
@@ -1954,6 +1985,7 @@ func show_dict() -> Dictionary:
 		"triggers": Triggers.to_dict(),
 		"groups": _groups_to_dict(),
 		"positions": positions.to_dict(),
+		"palettes": palettes.to_dict(),
 		"live_flash": flash.to_dict(),
 		"faders": faders.to_dict(),
 		"viz": viz_panel.to_dict(),
@@ -2058,6 +2090,8 @@ func apply_show_dict(parsed) -> void:
 	for i in range(mini(live.size(), n)):
 		if live[i] is Dictionary:
 			_panels[i].apply_live_dict(live[i])
+	var pal_doc = doc.get("palettes", {})
+	palettes.from_dict(pal_doc if pal_doc is Dictionary else {})   # before the cues that use them
 	cue_panel.from_dict(doc.get("cues", {}))
 	chase_panel.from_dict(doc.get("chases", {}))
 	_groups_from_dict(doc.get("groups", {}))   # fills the shared `groups`

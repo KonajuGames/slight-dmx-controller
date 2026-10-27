@@ -27,6 +27,10 @@ var delay: float = 0.0
 ## GO the next cue by itself.
 var follow: bool = false
 var follow_wait: float = 0.0
+## Palettes it uses instead of storing those values: fixture uid ->
+## {"colour" / "position" / "beam": palette id} (PaletteLibrary). The
+## channels a reference covers aren't in `levels`.
+var refs: Dictionary = {}
 
 
 func _init(p_label: String = "", p_fade_up: float = 3.0, p_fade_down: float = 3.0) -> void:
@@ -105,6 +109,7 @@ func to_dict() -> Dictionary:
 		"delay": delay,
 		"follow": follow,
 		"follow_wait": follow_wait,
+		"refs": refs.duplicate(true),
 		"levels": levels.duplicate(true),
 	}
 
@@ -121,6 +126,14 @@ static func from_dict(d: Dictionary) -> Cue:
 	c.delay = maxf(float(d.get("delay", 0.0)), 0.0)
 	c.follow = bool(d.get("follow", false))
 	c.follow_wait = maxf(float(d.get("follow_wait", 0.0)), 0.0)
+	var r = d.get("refs", {})
+	if r is Dictionary:
+		for uid in r:
+			if r[uid] is Dictionary:
+				var per := {}
+				for k in r[uid]:
+					per[String(k)] = String(r[uid][k])
+				c.refs[String(uid)] = per
 	c.levels = []
 	for entry in d.get("levels", []):
 		var ud := {}

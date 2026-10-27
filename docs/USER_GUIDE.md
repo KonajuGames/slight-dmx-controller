@@ -104,6 +104,14 @@ the next cue's look over its fade time.
 
 ![The Cues tab with three recorded cues](img/03-cues-tab.png)
 
+To build cues from reusable looks, use **palettes** (the **Palettes** tab,
+on the right): set your fixtures to a colour, a position or a beam look
+and click **Record Colour** (or Position, Beam) — then click the palette
+any time to put the fixtures back there. Cues recorded with a palette
+applied remember the palette rather than the values (they're marked ◆ in
+the cue list), so right-clicking it and choosing **Update from Live**
+changes every cue that uses it at once.
+
 Select a cue to edit its **label** and **fade up/down** times inline.
 **Delay** holds its fade back for a few seconds after GO, and ticking
 **Follow** makes it GO the next cue by itself once its fade is done (after

@@ -380,6 +380,10 @@ technical reference.
   tempo clock.
 - `groups_panel.gd` — the Groups tab: named sets of patched fixtures
   (by fixture uid) an effect can target instead of a whole universe.
+- `palette_library.gd` / `palettes_panel.gd` — the `PaletteLibrary`
+  class and the Palettes tab: the show's colour, position and beam
+  palettes (channel values per fixture), which cues refer to instead of
+  holding the values.
 - `fader_bank.gd` / `faders_panel.gd` — the `FaderBank` class and the
   Faders tab: playback faders putting a cue (a submaster), a chase or a
   group (a group master) on a fader, with MIDI CC Learn.
@@ -805,6 +809,8 @@ Stepping through them crossfades the whole rig.
   place the fixture controls follow the buffer rather than just writing
   to it.)
 - Cues (and which one is live) are saved inside the show file.
+- A cue that uses **palettes** (below) is marked `◆` in the list, with
+  the palettes' names.
 
 **Tracking.** With the **Tracking** box (by Record Cue) ticked, a new cue
 stores only the channels it *changes* from the look the earlier cues
@@ -878,6 +884,45 @@ universe takes its fixtures out of every group.
 
 Chases, effects and groups are saved inside the show file. **Blackout
 All**, loading a preset, or loading a show stops every chase and effect.
+
+### Palettes
+
+The **Palettes** tab (on the right) holds the show's palettes, in three
+kinds, each a grid of buttons:
+
+- **Colour** — red, green, blue, white, amber, UV and colour wheel.
+- **Position** — pan and tilt (and their fine channels).
+- **Beam** — zoom, gobo and gobo rotation.
+
+A palette holds those channels' values *per fixture* (by the fixture's
+uid and channel offset, so it follows a fixture re-patched to another
+address). **Fixtures** at the top picks which fixtures the tab works on:
+all of them, or a group.
+
+- **Record Colour / Position / Beam** makes a palette from the picked
+  fixtures' live levels — set the fixtures the way you want first.
+  Fixtures without channels of that kind are left out. Colour palettes
+  show their colour on their button.
+- **Click** a palette to apply it: the picked fixtures it holds are set
+  to it (their controls follow, as Load to Patch does).
+- **Right-click** a palette to **Update from Live** (re-record it from
+  the picked fixtures' live levels), **Rename…** or **Delete…** it.
+
+**Cues use palettes.** When a cue is recorded or updated, a fixture whose
+channels of a kind exactly match a palette's for that fixture gets a
+reference to the palette in the cue instead of the values — so apply a
+palette, then Record Cue. (A tracking cue only links what it changes; a
+block, any kind it has lit.) The cue plays the palette as it is *now*:
+update a palette and every cue that uses it changes, the next time it
+runs, as do cue faders on them. Values that don't quite match a palette
+stay raw values. Deleting a palette that cues use puts its values into
+those cues, so none of them changes. A fixture taken out of the patch is
+skipped. Switching a cue between tracking and block keeps its palettes.
+
+On a fixture without a DIMMER channel, a colour palette's colour channels
+carry its brightness too, so it only matches at that level. Palettes are
+saved with the show. They're separate from the named **Positions** of DJ
+Edit Mode's timelines.
 
 ### Faders
 
