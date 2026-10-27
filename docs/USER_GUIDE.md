@@ -105,6 +105,11 @@ the next cue's look over its fade time.
 ![The Cues tab with three recorded cues](img/03-cues-tab.png)
 
 Select a cue to edit its **label** and **fade up/down** times inline.
+**Delay** holds its fade back for a few seconds after GO, and ticking
+**Follow** makes it GO the next cue by itself once its fade is done (after
+the wait you set beside it) — chain a few to run a sequence from a single
+GO. The bar under GO shows what's happening: the delay counting down, the
+fade's progress and the follow's wait.
 **Load to Patch** pulls a cue's stored look back into the fixture
 controls so you can tweak it and **Update** to re-record. See the
 README's [Cue list](../README.md#cue-list) section for the tracking vs.

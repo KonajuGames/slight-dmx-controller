@@ -43,6 +43,7 @@ var _fade_active := false
 var _fade_elapsed := 0.0
 var _fade_up := 0.0
 var _fade_down := 0.0
+var _fade_total := 0.0      # seconds the running fade takes, all told
 var _fade_from: Array = []  # PackedByteArray per universe
 var _fade_to: Array = []    # PackedByteArray per universe
 
@@ -157,6 +158,18 @@ func is_fading() -> bool:
 	return _fade_active
 
 
+## How far the running crossfade has got, 0..1 (1 when none is running).
+func fade_progress() -> float:
+	if not _fade_active or _fade_total <= 0.0:
+		return 1.0
+	return clampf(_fade_elapsed / _fade_total, 0.0, 1.0)
+
+
+## Seconds left in the running crossfade (0 when none is running).
+func fade_remaining() -> float:
+	return maxf(_fade_total - _fade_elapsed, 0.0) if _fade_active else 0.0
+
+
 ## Crossfade every universe's buffer toward `targets` (targets[i] is a
 ## 512-byte PackedByteArray for universe slot i; slots past the list are
 ## left untouched). Channels rising use `fade_up` seconds, channels
@@ -170,6 +183,20 @@ func start_fade(targets: Array, fade_up: float, fade_down: float) -> void:
 	_fade_down = maxf(fade_down, 0.0)
 	_fade_elapsed = 0.0
 	_fade_active = true
+	# How long it runs: the longer of the times its moves actually use.
+	var rises := false
+	var falls := false
+	for i in range(mini(universes.size(), targets.size())):
+		var from: PackedByteArray = _fade_from[i]
+		var to: PackedByteArray = targets[i]
+		for c in range(mini(from.size(), to.size())):
+			if to[c] > from[c]:
+				rises = true
+			elif to[c] < from[c]:
+				falls = true
+		if rises and falls:
+			break
+	_fade_total = maxf(_fade_up if rises else 0.0, _fade_down if falls else 0.0)
 	# Land instantly for a 0-second fade.
 	if _fade_up == 0.0 and _fade_down == 0.0:
 		_step()

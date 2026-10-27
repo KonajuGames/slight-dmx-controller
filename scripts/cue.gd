@@ -1,7 +1,8 @@
 class_name Cue
 extends RefCounted
 ## One cue: a stored "look" — every universe's DMX levels at capture time
-## plus split fade-in / fade-out times.
+## plus split fade-in / fade-out times, a delay before its fade starts and
+## an optional auto-follow into the next cue.
 ##
 ## `levels[i]` is a Dictionary { "<channel>": value } for universe slot i.
 ##
@@ -20,6 +21,12 @@ var fade_up: float = 3.0
 var fade_down: float = 3.0
 var levels: Array = []
 var tracking: bool = false
+## Seconds from GO until its fade starts.
+var delay: float = 0.0
+## Auto-follow: when its fade finishes, wait `follow_wait` seconds, then
+## GO the next cue by itself.
+var follow: bool = false
+var follow_wait: float = 0.0
 
 
 func _init(p_label: String = "", p_fade_up: float = 3.0, p_fade_down: float = 3.0) -> void:
@@ -95,6 +102,9 @@ func to_dict() -> Dictionary:
 		"fade_up": fade_up,
 		"fade_down": fade_down,
 		"tracking": tracking,
+		"delay": delay,
+		"follow": follow,
+		"follow_wait": follow_wait,
 		"levels": levels.duplicate(true),
 	}
 
@@ -107,6 +117,10 @@ static func from_dict(d: Dictionary) -> Cue:
 	# Older show files predate tracking — load their cues as blocks so they
 	# play back exactly as they did before.
 	c.tracking = bool(d.get("tracking", false))
+	# ...and without delay / follow: GO-only cues, as they were.
+	c.delay = maxf(float(d.get("delay", 0.0)), 0.0)
+	c.follow = bool(d.get("follow", false))
+	c.follow_wait = maxf(float(d.get("follow_wait", 0.0)), 0.0)
 	c.levels = []
 	for entry in d.get("levels", []):
 		var ud := {}

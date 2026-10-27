@@ -14,12 +14,22 @@ extends VBoxContainer
 ## a full look and stops the ripple. Playback folds cues[0..n] together —
 ## blocks wipe first, tracking cues merge on top — so the fade target is
 ## always the complete standing look for that point in the list.
+##
+## A cue's **Delay** holds its fade back that long after GO; with
+## **Follow** ticked, once its fade finishes (and its wait after that) the
+## next cue GOes by itself, so a run of cues can play as a sequence. GO,
+## Back or a Go-to while one's waiting takes over from it; Halt stops the
+## fade and anything waiting. The bar under the transport shows the
+## delay counting down, the fade's progress, then the follow's wait.
 
 signal cues_changed
 
 var cues: Array[Cue] = []
 var _current := -1   # cue currently live (-1 = none)
 var _next := 0       # cue GO will fire
+var _delay_left := -1.0    # seconds until the live cue's fade starts (-1: not waiting)
+var _follow_left := -1.0   # seconds until the follow GOes the next cue (-1: none)
+var _fading := -1          # the cue whose fade is running (-1: none)
 var tracking_enabled := true   # what Record Cue makes: tracking vs block
 
 ## Set by the shell: func(buffers: Array of PackedByteArray) — loads a
@@ -33,6 +43,11 @@ var label_edit: LineEdit
 var fade_up_spin: SpinBox
 var fade_down_spin: SpinBox
 var new_fade_spin: SpinBox
+var delay_spin: SpinBox
+var follow_check: CheckBox
+var follow_spin: SpinBox
+var progress_bar: ProgressBar
+var progress_label: Label
 var track_check: CheckBox        # per-selected-cue: tracking vs block
 var tracking_check: CheckBox     # global: mode for new recordings
 var status_label: Label
@@ -63,6 +78,22 @@ func _ready() -> void:
 	halt_btn.pressed.connect(halt)
 	transport.add_child(halt_btn)
 	add_child(transport)
+
+	# --- what's running: delay, fade, follow ---
+	var prog_row := HBoxContainer.new()
+	prog_row.add_theme_constant_override("separation", 8)
+	progress_bar = ProgressBar.new()
+	progress_bar.max_value = 1.0
+	progress_bar.step = 0.0
+	progress_bar.show_percentage = false
+	progress_bar.custom_minimum_size = Vector2(120, 12)
+	progress_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	progress_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	prog_row.add_child(progress_bar)
+	progress_label = Label.new()
+	progress_label.custom_minimum_size = Vector2(130, 0)
+	prog_row.add_child(progress_label)
+	add_child(prog_row)
 
 	cue_list = ItemList.new()
 	cue_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -98,6 +129,30 @@ func _ready() -> void:
 	fade_down_spin = _fade_spin()
 	fade_down_spin.value_changed.connect(func(v: float): _set_selected_fade(false, v))
 	edit_grid.add_child(fade_down_spin)
+
+	edit_grid.add_child(_lbl("Delay (s)"))
+	delay_spin = _fade_spin()
+	delay_spin.value = 0.0
+	delay_spin.tooltip_text = "How long after GO this cue's fade starts."
+	delay_spin.value_changed.connect(func(v: float): _set_selected_field("delay", v))
+	edit_grid.add_child(delay_spin)
+
+	edit_grid.add_child(_lbl("Follow"))
+	var follow_row := _flow()
+	follow_check = CheckBox.new()
+	follow_check.text = "then GO next after"
+	follow_check.tooltip_text = "When this cue's fade finishes, wait this long, then GO the next cue automatically."
+	follow_check.toggled.connect(func(on: bool):
+		follow_spin.editable = on
+		_set_selected_field("follow", on))
+	follow_row.add_child(follow_check)
+	follow_spin = _fade_spin()
+	follow_spin.value = 0.0
+	follow_spin.suffix = "s"
+	follow_spin.editable = false
+	follow_spin.value_changed.connect(func(v: float): _set_selected_field("follow_wait", v))
+	follow_row.add_child(follow_spin)
+	edit_grid.add_child(follow_row)
 
 	edit_grid.add_child(_lbl("Tracking"))
 	track_check = CheckBox.new()
@@ -255,28 +310,109 @@ func go_to_number(n: int) -> void:
 	_fire(clampi(n - 1, 0, cues.size() - 1))
 
 
+## Stop the fade and anything waiting (a cue's delay, a follow).
 func halt() -> void:
 	ArtNet.stop_fade()
+	_cancel_timers()
 	status_label.text = "Halted."
+
+
+func _cancel_timers() -> void:
+	_delay_left = -1.0
+	_follow_left = -1.0
+	_fading = -1
+	_update_progress()
 
 
 func _fire(idx: int) -> void:
 	if idx < 0 or idx >= cues.size():
 		return
 	var cue := cues[idx]
-	ArtNet.start_fade(_targets_from_state(_fold(idx)), cue.fade_up, cue.fade_down)
-
+	_follow_left = -1.0              # this GO takes over from anything waiting
+	_delay_left = -1.0
 	_current = idx
 	_next = min(idx + 1, cues.size() - 1)
 	_refresh_list()
-	status_label.text = "GO — cue %d (%s) [%s], %.1fs / %.1fs" % [
-		idx + 1, cue.label, ("track" if cue.tracking else "block"),
-		cue.fade_up, cue.fade_down]
+	var times := "%.1fs / %.1fs" % [cue.fade_up, cue.fade_down]
+	if cue.delay > 0.0:
+		times = "delay %.1fs, " % cue.delay + times
+	status_label.text = "GO — cue %d (%s) [%s], %s" % [
+		idx + 1, cue.label, ("track" if cue.tracking else "block"), times]
+	if cue.delay > 0.0:
+		_fading = -1                 # the last cue's fade runs on, but its end follows nothing
+		_delay_left = cue.delay
+	else:
+		_start_fade(idx)
+	_update_progress()
+
+
+func _start_fade(idx: int) -> void:
+	var cue := cues[idx]
+	_fading = idx
+	ArtNet.start_fade(_targets_from_state(_fold(idx)), cue.fade_up, cue.fade_down)
 
 
 func _on_fade_finished() -> void:
-	if _current >= 0 and _current < cues.size():
+	if _fading < 0 or _fading != _current or _current >= cues.size():
+		return
+	_fading = -1
+	var cue := cues[_current]
+	if cue.follow and _current < cues.size() - 1:
+		_follow_left = cue.follow_wait      # GOes on the next advance(), even at 0
+		status_label.text = "Cue %d complete — following on to cue %d." % [_current + 1, _current + 2]
+	else:
 		status_label.text = "Cue %d complete." % (_current + 1)
+
+
+func _process(delta: float) -> void:
+	advance(delta)
+
+
+## Run the cue list's timers on by `delta` seconds: a delay ending starts
+## its cue's fade, a follow's wait ending GOes the next cue.
+func advance(delta: float) -> void:
+	if _delay_left >= 0.0:
+		_delay_left -= delta
+		if _delay_left <= 0.0:
+			_delay_left = -1.0
+			if _current >= 0 and _current < cues.size():
+				_start_fade(_current)
+	elif _follow_left >= 0.0:
+		_follow_left -= delta
+		if _follow_left <= 0.0:
+			_follow_left = -1.0
+			if _current >= 0 and _current < cues.size() - 1:
+				_fire(_current + 1)
+	_update_progress()
+
+
+## Whether a cue is waiting out its delay, or a follow its wait.
+func is_waiting() -> bool:
+	return _delay_left >= 0.0 or _follow_left >= 0.0
+
+
+## The bar under the transport: the delay counting down, the fade's
+## progress, the follow's wait.
+func _update_progress() -> void:
+	if progress_bar == null:
+		return
+	var text := ""
+	var value := 0.0
+	if _delay_left >= 0.0 and _current >= 0 and _current < cues.size():
+		var d := cues[_current].delay
+		value = 1.0 - _delay_left / d if d > 0.0 else 1.0
+		text = "Delay %.1fs" % maxf(_delay_left, 0.0)
+	elif _fading >= 0 and ArtNet.is_fading():
+		value = ArtNet.fade_progress()
+		text = "Cue %d  %d%%  %.1fs" % [_fading + 1, roundi(value * 100.0), ArtNet.fade_remaining()]
+	elif _follow_left >= 0.0 and _current >= 0 and _current < cues.size():
+		var w := cues[_current].follow_wait
+		value = 1.0 - _follow_left / w if w > 0.0 else 1.0
+		text = "Follow in %.1fs" % maxf(_follow_left, 0.0)
+	elif _current >= 0:
+		value = 1.0
+	progress_bar.value = value
+	progress_label.text = text
 
 
 # ----------------------------------------------------------------- EDITING --
@@ -350,6 +486,7 @@ func delete_cue() -> void:
 	cues.remove_at(at)
 	if _current == at:
 		_current = -1
+		_cancel_timers()
 	elif _current > at:
 		_current -= 1
 	_next = clampi(_next, 0, max(cues.size() - 1, 0))
@@ -368,6 +505,10 @@ func _on_cue_selected(idx: int) -> void:
 	label_edit.text = cues[idx].label
 	fade_up_spin.value = cues[idx].fade_up
 	fade_down_spin.value = cues[idx].fade_down
+	delay_spin.value = cues[idx].delay
+	follow_check.button_pressed = cues[idx].follow
+	follow_spin.value = cues[idx].follow_wait
+	follow_spin.editable = cues[idx].follow
 	track_check.button_pressed = cues[idx].tracking
 	_syncing = false
 
@@ -422,6 +563,21 @@ func _set_selected_tracking(on: bool) -> void:
 	cues_changed.emit()
 
 
+## Set one of the selected cue's timing fields ("delay", "follow",
+## "follow_wait").
+func _set_selected_field(field: String, v) -> void:
+	if _syncing:
+		return
+	var i := _selected_index()
+	if i == -1:
+		return
+	cues[i].set(field, v)
+	var keep := i
+	_refresh_list()
+	cue_list.select(keep)
+	cues_changed.emit()
+
+
 func _set_selected_fade(is_up: bool, v: float) -> void:
 	if _syncing:
 		return
@@ -445,8 +601,13 @@ func _refresh_list() -> void:
 		var c := cues[i]
 		var marker := "> " if i == _current else "  "
 		var flag := "T" if c.tracking else "B"
-		cue_list.add_item("%s%d [%s] %s   %.1f/%.1fs" % [
-			marker, i + 1, flag, c.label, c.fade_up, c.fade_down])
+		var timing := ""
+		if c.delay > 0.0:
+			timing += "  d%.1f" % c.delay
+		if c.follow:
+			timing += "  → %.1fs" % c.follow_wait
+		cue_list.add_item("%s%d [%s] %s   %.1f/%.1fs%s" % [
+			marker, i + 1, flag, c.label, c.fade_up, c.fade_down, timing])
 	if sel >= 0 and sel < cue_list.item_count:
 		cue_list.select(sel)
 	if cues.is_empty():
@@ -476,6 +637,7 @@ func from_dict(d: Dictionary) -> void:
 			cues.append(Cue.from_dict(e))
 	_current = clampi(int(d.get("current", -1)), -1, cues.size() - 1)
 	_next = clampi(int(d.get("next", 0)), 0, max(cues.size() - 1, 0))
+	_cancel_timers()
 	tracking_enabled = bool(d.get("tracking", true))
 	if tracking_check:
 		tracking_check.button_pressed = tracking_enabled

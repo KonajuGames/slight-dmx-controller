@@ -939,7 +939,7 @@ func _update_universe_buttons() -> void:
 
 
 func _on_blackout_all() -> void:
-	ArtNet.stop_fade()
+	cue_panel.halt()                      # its fade, and any delay / follow waiting
 	Fx.stop_all()
 	chase_panel.sync_ui()
 	fx_panel.sync_ui()

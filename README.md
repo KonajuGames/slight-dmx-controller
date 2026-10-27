@@ -365,10 +365,11 @@ technical reference.
 - `xy_pad.gd` — the `XYPad` control: the draggable pan / tilt trackpad
   used for moving-head fixtures in the patch.
 - `cue.gd` — the `Cue` class: a stored look (every universe's non-zero
-  channels) plus split fade-in / fade-out times; captures from and
-  renders back to the live buffers.
+  channels) plus split fade-in / fade-out times, a delay and an
+  optional follow; captures from and renders back to the live buffers.
 - `cue_list_panel.gd` — the `CueListPanel` class: an ordered cue list
-  with GO / Back / Halt, record / update / delete.
+  with GO / Back / Halt, record / update / delete, delays and
+  auto-follows, and a progress bar for what's running.
 - `chase.gd` / `chase_list_panel.gd` — the `Chase` class and its tab: a
   tempo-cycled list of captured steps with crossfade and direction, and
   an optional beat-sync (steps on each beat of the tempo clock, or of
@@ -772,9 +773,23 @@ Stepping through them crossfades the whole rig.
   time, channels falling use *fade down*; a channel that doesn't change
   doesn't move.
 - **Back** fades to the previous cue; **Halt** freezes a running fade
-  where it is.
-- Select a cue to edit its **label**, **fade up / down** seconds and
-  **Tracking** flag inline. **Update** overwrites the selected cue with
+  where it is, and stops a delay or follow that's waiting.
+- **Delay (s)** holds a cue's fade back that long after its GO. The cue
+  is live (marked `>`) at once; the previous cue's fade runs on through
+  the delay.
+- **Follow** — *then GO next after* — makes a cue GO the next one by
+  itself once its own fade finishes and the wait set beside it (0 for
+  straight away) has passed. Chain follows to play a run of cues as a
+  sequence: it carries on until a cue without Follow (or the end of the
+  list). Pressing GO, Back or a MIDI / OSC Go-to while a delay or follow
+  is waiting takes over from it; Halt and Blackout All cancel it.
+- The **bar under the transport** shows what's running: a delay counting
+  down (`Delay 1.2s`), then the fade's progress (`Cue 3  40%  1.8s` —
+  over the longer of the fade times its moves use), then a follow's wait
+  (`Follow in 2.0s`). The list marks a cue's delay as `d1.5` and a follow
+  as `→ 2.0s`.
+- Select a cue to edit its **label**, **fade up / down** seconds, delay,
+  follow and **Tracking** flag inline. **Update** overwrites the selected cue with
   the current live output; **Duplicate** and **Delete** do what they say.
 - **Load to Patch** sets every fixture control to the selected cue's
   standing look — colour pickers, sliders, gobo dropdowns and all — so
@@ -1195,9 +1210,9 @@ on a machine without the extension falls back to Art-Net.
   mode and light the controller's pads back — mirroring the action, or a
   standalone beat / sending / run-mode indicator (MIDI feedback native via
   the optional `addons/native` GDExtension, or a small UDP bridge script
-  without it; OSC feedback direct). Room to grow: cue-to-cue
-  auto-follow / wait times, a fade progress bar, per-channel track flags
-  in the cue editor.
+  without it; OSC feedback direct). Cues have delays and auto-follows,
+  with a progress bar for what's running. Room to grow: per-channel
+  track flags in the cue editor.
 - **Run modes**: **Cue Mode** (cue list drives playback), **Sound
   Reactive** (an audio input drives band → role reactors and beat-synced
   chases over the standing base look). Songs' light shows live in DJ
