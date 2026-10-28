@@ -78,5 +78,19 @@ func _run() -> void:
 	ok(wide.spot_angle >= 15.0 and (fv._heads[0]["light"] as SpotLight3D).spot_angle < 15.0,
 		"...a moving wash still wide (%.0f°), a beam narrow (%.0f°)" % [wide.spot_angle, (fv._heads[0]["light"] as SpotLight3D).spot_angle])
 
+	# The profile's pan / tilt range and beam angle set the travel and spread.
+	var lim := _profile("lim", moving, "moving_head")
+	lim.physical["pan_range"] = 180.0
+	lim.physical["tilt_range"] = 90.0
+	lim.physical["beam_deg"] = 40.0
+	var lv := _view(lim)
+	for _i in range(20):
+		lv._process(1.0)
+	ok(is_equal_approx(snappedf(rad_to_deg(lv._cur_pan), 0.1), 90.0)
+		and is_equal_approx(snappedf(rad_to_deg(lv._cur_tilt), 0.1), 45.0),
+		"full pan / tilt reach half the profile's range (%.1f°, %.1f°)" % [rad_to_deg(lv._cur_pan), rad_to_deg(lv._cur_tilt)])
+	ok(is_equal_approx((lv._heads[0]["light"] as SpotLight3D).spot_angle, 20.0),
+		"the beam spreads to the profile's angle (half %.1f°)" % (lv._heads[0]["light"] as SpotLight3D).spot_angle)
+
 	print("== %d passed, %d failed ==" % [_p, _f])
 	quit(1 if _f > 0 else 0)

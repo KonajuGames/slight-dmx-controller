@@ -2849,7 +2849,18 @@ func _open_profile_dialog(existing: FixtureProfile = null) -> void:
 			else:
 				available_profiles.append(profile)
 			_refresh_all_profile_options(false)
-			status_label.text = "Updated profile '%s' — re-patch fixtures to use the changes." % pname
+			# Patched fixtures hold their own copy of the profile. Its physical
+			# side (beam, pan/tilt range, category, heads) doesn't touch the
+			# patch footprint, so it goes to them now; channels and modes
+			# still need a re-patch.
+			for panel in _panels:
+				for fx in panel.patched_fixtures:
+					var fp: FixtureProfile = fx["profile"]
+					if fp.id == existing.id:
+						fp.physical = profile.physical.duplicate(true)
+			if viz_panel:
+				viz_panel.rebuild()
+			status_label.text = "Updated profile '%s' — beam and pan/tilt apply now; re-patch fixtures for channel changes." % pname
 		else:
 			available_profiles.append(profile)
 			_refresh_all_profile_options(true)

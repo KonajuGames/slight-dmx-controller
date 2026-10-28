@@ -30,7 +30,6 @@ var _head_rest := Basis.IDENTITY   # tilt-axis basis before DMX tilt
 var _ring: MeshInstance3D
 var _geo_nodes := {}
 var _geo_beam_nodes: Array = []    # every <Beam> geometry node, in tree order
-var _geo_beam_deg := 0.0
 
 ## GDTF beams emit along -Z of their geometry; after the Z-up -> Y-up
 ## change of basis that becomes -Y. A Godot SpotLight emits -Z, so under a
@@ -128,8 +127,6 @@ func _build_from_geometry() -> bool:
 		_yoke_rest = _yoke.transform.basis
 	if _head:
 		_head_rest = _head.transform.basis
-	if _geo_beam_deg > 0.0:
-		profile.physical["beam_deg"] = _geo_beam_deg
 
 	# one light + cone per <Beam> geometry, oriented by that geometry's
 	# (already converted) world transform
@@ -156,7 +153,6 @@ func _spawn_geo(node: Dictionary, parent: Node3D, mdir: String, mmap: Dictionary
 
 	if String(node.get("kind", "")) == "beam":
 		_geo_beam_nodes.append(n)
-		_geo_beam_deg = maxf(_geo_beam_deg, float(node.get("beam_deg", 0.0)))
 
 	for c in node.get("children", []):
 		_spawn_geo(c, n, mdir, mmap)
@@ -313,7 +309,9 @@ func _build_geo_head(beam_node: Node3D) -> void:
 	emitter.rotation = _GEO_EMIT_ROT
 	beam_node.add_child(emitter)
 
-	var lt := _mk_spot(_geo_beam_deg)
+	# The profile's beam angle, not the geometry's: the import already took
+	# it from the GDTF, and the editor may have changed it since.
+	var lt := _mk_spot()
 	emitter.add_child(lt)
 	var beam := _mk_beam()
 	emitter.add_child(beam)
