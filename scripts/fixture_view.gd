@@ -239,7 +239,12 @@ func _build_schematic() -> void:
 			_head.position.y = 0.22
 			_yoke.add_child(_head)
 			_head.add_child(_box(Vector3(0.24, 0.20, 0.24), metal))
-			_build_heads(_head, Vector3(0, 0, -0.13), true, false, 32.0 if _category == "wash" else 0.0)
+			# Centre (pan/tilt at DMX 128) aims along the pan axis, out of
+			# the yoke — as the GDTF geometry does — so pitch -Z up to +Y.
+			var face := Node3D.new()
+			face.rotation_degrees.x = 90.0
+			_head.add_child(face)
+			_build_heads(face, Vector3(0, 0, -0.13), true, false, 32.0 if _category == "wash" else 0.0)
 		"blinder", "strobe":
 			add_child(_box(Vector3(0.55, 0.38, 0.12), metal))
 			_build_heads(self, Vector3(0, 0, -0.07), false, true, 65.0)

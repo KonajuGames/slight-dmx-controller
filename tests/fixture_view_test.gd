@@ -68,6 +68,11 @@ func _run() -> void:
 		fv._process(1.0)
 	var pan0: float = fv._cur_pan
 	var tilt0: float = fv._cur_tilt
+	# Centred (128 / 128) it aims along the pan axis, out of the yoke.
+	var aim: Vector3 = -(fv._heads[0]["light"] as SpotLight3D).global_transform.basis.z
+	var pan_axis: Vector3 = fv._yoke.global_transform.basis.y
+	ok(aim.normalized().dot(pan_axis.normalized()) > 0.99,
+		"centred, the beam points along the pan axis (aim %s)" % aim)
 	uni.output[0] = 255
 	uni.output[1] = 255
 	for _i in range(10):
