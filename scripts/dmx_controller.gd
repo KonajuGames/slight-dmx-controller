@@ -291,10 +291,20 @@ func _ready() -> void:
 	# the app (a test that adds this scene itself loads nothing).
 	(func():
 		if get_tree().current_scene == self:
+			get_tree().auto_accept_quit = false   # closing asks about unsaved changes
 			restore_last_show()
 			_restore_ui_state()
 			_start_autosave()
+		if _saved_show == "":
+			_mark_saved()                     # nothing reopened: the empty show
 	).call_deferred()
+
+	# The title bar's unsaved-changes "*", checked a few times a second.
+	_title_timer = Timer.new()
+	_title_timer.wait_time = 0.5
+	_title_timer.timeout.connect(_update_title)
+	add_child(_title_timer)
+	_title_timer.start()
 
 
 # ---------------------------------------------------------------- UI BUILD --
@@ -512,12 +522,10 @@ func _restore_ui_state() -> void:
 
 
 func _notification(what: int) -> void:
-	# quitting: keep where the floating visualizer was last moved / sized to
+	# Closing the window: offer to save unsaved changes, then quit (the app
+	# doesn't quit by itself — auto_accept_quit is off).
 	if what == NOTIFICATION_WM_CLOSE_REQUEST and get_tree().current_scene == self:
-		_save_ui_state()
-		if music_panel:
-			music_panel.timeline().flush()    # the open song's edits
-		autosave.end()                        # a clean quit: nothing to recover
+		confirm_unsaved("quitting", _quit)
 
 
 ## Wrap a playback panel so it gets a vertical scrollbar when the window
@@ -1941,6 +1949,101 @@ var last_show_store := "user://last_show.json"
 ## this is added to the tree, as tests do).
 var autosave := Autosave.new()
 var _autosave_timer: Timer
+## The show as last saved / loaded (_authored_show()) — what unsaved
+## changes are measured against.
+var _saved_show := ""
+var _title_timer: Timer
+
+
+## The show without the state of playing it — the stage's live levels, the
+## faders' positions, the run mode and the visualizer's camera all change
+## just by running a show, so they aren't unsaved changes (they're still
+## saved with it).
+func _authored_show() -> String:
+	var d := show_dict()
+	d.erase("live")
+	d.erase("run_mode")
+	for f in d["faders"].get("faders", []):
+		f.erase("level")
+	d["viz"].erase("cam")
+	return JSON.stringify(d)
+
+
+## Whether the show has changed since it was last saved or loaded.
+func has_unsaved_changes() -> bool:
+	return _authored_show() != _saved_show
+
+
+## The show as it stands is the saved one.
+func _mark_saved() -> void:
+	_saved_show = _authored_show()
+	_update_title()
+
+
+## The show's name for the title bar and prompts: its file's, or
+## "Untitled" (a new show, or the built-in default file).
+func show_name() -> String:
+	return "Untitled" if show_path in ["", SHOW_PATH] else show_path.get_file().get_basename()
+
+
+## "*name — sLight" while the show has unsaved changes, else "name — sLight".
+func _update_title() -> void:
+	get_window().title = "%s%s — sLight" % ["*" if has_unsaved_changes() else "", show_name()]
+
+
+## Run `then` once the show's unsaved changes are dealt with: at once if
+## there are none, else after asking — Save (then go on), Don't Save (go
+## on) or Cancel (stop). `action` finishes "Save the changes to … before".
+func confirm_unsaved(action: String, then: Callable) -> void:
+	if not has_unsaved_changes():
+		then.call()
+		return
+	var dlg := ConfirmationDialog.new()
+	dlg.title = "Unsaved Changes"
+	dlg.dialog_text = "Save the changes to %s before %s?" % [show_name(), action]
+	dlg.ok_button_text = "Save"
+	dlg.add_button("Don't Save", true, "discard")
+	add_child(dlg)
+	dlg.confirmed.connect(func():
+		dlg.queue_free()
+		_save_then(then))
+	dlg.custom_action.connect(func(a: StringName):
+		if a == &"discard":
+			dlg.queue_free()
+			then.call())
+	dlg.canceled.connect(func(): dlg.queue_free())
+	dlg.popup_centered()
+
+
+## Save the show (asking where if it's new), then run `then` — not if the
+## save is cancelled or fails.
+func _save_then(then: Callable) -> void:
+	if show_path == "":
+		_show_file_dialog(FileDialog.FILE_MODE_SAVE_FILE, "Save Show As", func(path: String):
+			if path.get_extension() == "":
+				path += "." + SHOW_EXT
+			var e := save_show_to(path)
+			if e != "":
+				status_label.text = "Show save failed: " + e
+				return
+			then.call()
+		)
+		return
+	var err := save_show_to(show_path)
+	if err != "":
+		status_label.text = "Show save failed: " + err
+		return
+	then.call()
+
+
+## Quit as the app: keep the UI state and the open song's edits, and
+## clear the autosave (a clean quit: nothing to recover).
+func _quit() -> void:
+	_save_ui_state()
+	if music_panel:
+		music_panel.timeline().flush()
+	autosave.end()
+	get_tree().quit()
 
 
 ## The show file remembered from last time ("" if none).
@@ -2021,6 +2124,7 @@ func save_show_to(path: String) -> String:
 	show_path = path
 	_remember_show(path)
 	autosave.mark_saved(data)
+	_mark_saved()
 	return ""
 
 
@@ -2045,6 +2149,7 @@ func load_show_from(path: String) -> String:
 	show_path = path
 	_remember_show(path)
 	autosave.mark_saved(show_dict())
+	_mark_saved()
 	return ""
 
 
@@ -2186,23 +2291,16 @@ func restore_autosave(snap: Dictionary) -> String:
 	show_path = path
 	if path != "":
 		_remember_show(path)
+	_update_title()                           # unsaved: the saved show is the file's
 	status_label.text = "Restored %s as it was autosaved at %s — not saved yet." % [
 		path.get_file() if path != "" else "the unsaved show", Autosave.when(snap)]
 	return ""
 
 
-## New Show (Ctrl+N): after a confirmation, start an empty show.
+## New Show (Ctrl+N): start an empty show, offering to save unsaved
+## changes first.
 func _on_new_show() -> void:
-	var dlg := ConfirmationDialog.new()
-	dlg.title = "New Show"
-	dlg.dialog_text = "Start a new, empty show?\n\nAnything in the current show that hasn't been saved will be lost (the open song's timelines are saved)."
-	dlg.ok_button_text = "New Show"
-	add_child(dlg)
-	dlg.confirmed.connect(func():
-		dlg.queue_free()
-		new_show())
-	dlg.canceled.connect(func(): dlg.queue_free())
-	dlg.popup_centered()
+	confirm_unsaved("starting a new show", new_show)
 
 
 ## Replace the current show with an empty one: no fixtures (one
@@ -2221,6 +2319,7 @@ func new_show() -> void:
 		music_panel.timeline().set_timeline_store(null)
 	show_path = ""
 	autosave.mark_saved(show_dict())          # nothing in it worth an autosave yet
+	_mark_saved()
 	status_label.text = "New show (not saved yet)."
 
 
@@ -2247,8 +2346,13 @@ func _on_save_show_as() -> void:
 	)
 
 
-## Load Show…: pick a show file and load it.
+## Load Show…: offer to save unsaved changes, then pick a show file and
+## load it.
 func _on_load_show() -> void:
+	confirm_unsaved("opening another show", _pick_show_to_load)
+
+
+func _pick_show_to_load() -> void:
 	_show_file_dialog(FileDialog.FILE_MODE_OPEN_FILE, "Load Show", func(path: String):
 		var err := load_show_from(path)
 		if err != "":

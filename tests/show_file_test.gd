@@ -495,21 +495,22 @@ func _test_new_show() -> void:
 	main.save_show_to(path)
 	ok(main.remembered_show() == path, "(a saved show)")
 
-	# Ctrl+N asks first.
+	# Ctrl+N with unsaved changes asks first.
+	main.cue_panel.record_cue()
 	var kn := InputEventKey.new()
 	kn.keycode = KEY_N
 	kn.ctrl_pressed = true
 	kn.pressed = true
 	root.push_input(kn)
 	var dlgs: Array = main.find_children("*", "ConfirmationDialog", false, false)
-	ok(dlgs.size() == 1 and dlgs[0].title == "New Show" and main._panels[0].patched_fixtures.size() == 1,
+	ok(dlgs.size() == 1 and dlgs[0].title == "Unsaved Changes" and main._panels[0].patched_fixtures.size() == 1,
 		"Ctrl+N asks before starting a new show")
 	dlgs[0].canceled.emit()
 	await process_frame
 	ok(main._panels[0].patched_fixtures.size() == 1, "cancelled: the show's untouched")
 	root.push_input(kn)
 	dlgs = main.find_children("*", "ConfirmationDialog", false, false)
-	dlgs[-1].confirmed.emit()
+	dlgs[-1].custom_action.emit(&"discard")      # Don't Save
 	await process_frame
 	panel = main._panels[0]
 	ok(main._panels.size() == 1 and panel.patched_fixtures.is_empty(), "confirmed: one universe, no fixtures")
