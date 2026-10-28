@@ -222,6 +222,7 @@ func _ready() -> void:
 	# The 3D Visualizer is full-bleed, so the right-hand tabs aren't padded
 	# as a whole: each other page is (TabPadding.page()).
 	dmx_output_panel = DmxOutputPanel.new()
+	dmx_output_panel.panels = _panels
 	_right_tabs.add_child(TabPadding.page(dmx_output_panel))
 
 	var faders_page := TabPadding.page(_scrollable(faders_panel))

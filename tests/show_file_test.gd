@@ -661,6 +661,14 @@ func _test_model_colours() -> void:
 		if "body_colour" in fv and not fv.is_queued_for_deletion():
 			bodies.append(fv.body_colour)
 	ok(bodies == [C[0], C[1], C[0], C[2], C[1]], "the 3D Visualiser's bodies")
+	var out_panel = main.dmx_output_panel
+	var tints: Array = out_panel.tint_map(out_panel.panels, 2)
+	ok(tints[0].get(0) == C[0] and tints[0].get(2) == C[0] and tints[0].get(3) == C[1]
+		and tints[0].get(9) == C[0] and tints[0].get(12) == null and tints[1].get(0) == C[2],
+		"the DMX Output grid tints each fixture's channels in its colour")
+	ok(out_panel.cell_colour(0, null) == Color.BLACK and out_panel.cell_colour(255, null) == Color.WHITE
+		and out_panel.cell_colour(0, C[0]) != Color.BLACK and out_panel.cell_colour(255, C[0]) != Color.WHITE,
+		"...a hint of it, over the value's grey")
 	# Removing the first RGB par leaves the bar first: the colours follow.
 	panel._on_remove_fixture(panel.patched_fixtures[0]["id"])
 	await process_frame
