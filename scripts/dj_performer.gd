@@ -308,18 +308,20 @@ func _load(d: Deck) -> void:
 		var path := d.path
 		var id: int = d.load_id
 		var num: int = d.num
-		# A fresh store per read: nothing shared with the main thread.
+		# A fresh store per read: nothing shared with the main thread. The
+		# tracks are made here too — a big show's take a frame or more
+		# (tens of thousands of dimmer nodes), which would stall the lights.
 		_tasks.append(WorkerThreadPool.add_task(func():
 			var data := TimelineStore.new(dir).load_song(path)
-			_loaded.call_deferred(num, id, data)))
+			var tracks := tracks_from_saved(data)
+			_loaded.call_deferred(num, id, {"temporary": data.get("temporary", false)}, tracks)))
 	state_changed.emit()
 
 
-func _loaded(num: int, id: int, data: Dictionary) -> void:
-	_reap_tasks()
-	var d: Deck = decks[num - 1]
-	if id != d.load_id:
-		return                              # superseded
+## A song's saved timelines (TimelineStore.load_song()) as a deck's
+## tracks: only those with something on them (or muted / soloed). Pure, so
+## it runs on a worker thread.
+static func tracks_from_saved(data: Dictionary) -> Dictionary:
 	var tracks := {}
 	var saved = data.get("tracks", {})
 	if saved is Dictionary:
@@ -337,6 +339,19 @@ func _loaded(num: int, id: int, data: Dictionary) -> void:
 					or not moves.is_empty() or muted or soloed:
 				tracks[String(key)] = {"dimmer": nodes, "colour": segs, "strobe": strobes, "position": places,
 					"movement": moves, "mute": muted, "solo": soloed}
+	return tracks
+
+
+## A load finished: `data` the song's saved timelines (its "temporary"
+## flag at least), `tracks` made from them (tracks_from_saved(); null:
+## made here).
+func _loaded(num: int, id: int, data: Dictionary, tracks = null) -> void:
+	_reap_tasks()
+	var d: Deck = decks[num - 1]
+	if id != d.load_id:
+		return                              # superseded
+	if tracks == null:
+		tracks = tracks_from_saved(data)
 	d.tracks = tracks
 	d.temporary = bool(data.get("temporary", false)) and not tracks.is_empty()
 	d.load_state = Load.LOADED if not tracks.is_empty() else Load.NO_TIMELINES
