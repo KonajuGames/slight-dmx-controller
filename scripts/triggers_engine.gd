@@ -45,12 +45,14 @@ var _midi_opened := false
 var _fb_state := {}
 var _fb_refresh := 0.0
 var _fb_pulse := {}          ## binding id -> seconds left holding the "on" value
+var _bend_down := {}         ## pitch-bend binding -> whether its bend is past BEND_PRESS
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	set_process(true)
 	_open_midi()
+	get_tree().root.window_input.connect(_on_window_input)
 	Sound.beat.connect(func():
 		if not Tempo.running:            # the tempo clock's beats win
 			_on_ext_beat())
@@ -66,6 +68,15 @@ func _open_midi() -> void:
 func midi_devices() -> PackedStringArray:
 	_open_midi()
 	return OS.get_connected_midi_inputs()
+
+
+## Close and reopen every MIDI input, so a device plugged in since they
+## were opened is listened to too.
+func reopen_midi() -> void:
+	if _midi_opened:
+		OS.close_midi_inputs()
+		_midi_opened = false
+	_open_midi()
 
 
 # ------------------------------------------------------------------ LEARN --
@@ -98,13 +109,17 @@ func set_osc(enabled: bool, port: int) -> void:
 
 # ---------------------------------------------------------------- INTAKE --
 
-func _input(event: InputEvent) -> void:
+## MIDI arrives as the root window's input, taken here before the window
+## passes it on: Godot forwards it only to a focused dialog (an embedded
+## window) then — a root-level _input() would miss every message while the
+## Triggers dialog is open, Learn included.
+func _on_window_input(event: InputEvent) -> void:
 	if not (event is InputEventMIDI) or not midi_enabled:
 		return
 	var ev: InputEventMIDI = event
 	# ignore the constant stream of clock / active-sensing / aftertouch
 	if ev.message not in [MIDI_MESSAGE_NOTE_ON, MIDI_MESSAGE_NOTE_OFF,
-			MIDI_MESSAGE_CONTROL_CHANGE, MIDI_MESSAGE_PROGRAM_CHANGE]:
+			MIDI_MESSAGE_CONTROL_CHANGE, MIDI_MESSAGE_PROGRAM_CHANGE, MIDI_MESSAGE_PITCH_BEND]:
 		return
 
 	if _learning:
@@ -120,6 +135,9 @@ func _input(event: InputEvent) -> void:
 			number = ev.controller_number
 		elif ev.message == MIDI_MESSAGE_PROGRAM_CHANGE:
 			kind = Trigger.MIDI_PROGRAM
+		elif ev.message == MIDI_MESSAGE_PITCH_BEND:
+			kind = Trigger.MIDI_PITCH_BEND
+			number = 0
 		learned.emit({
 			"source": Trigger.SRC_MIDI, "kind": kind,
 			"channel": ev.channel, "number": number,
@@ -130,6 +148,13 @@ func _input(event: InputEvent) -> void:
 	for t in triggers:
 		if not (t.enabled and t.fires_action()):
 			continue
+		if t.midi_kind == Trigger.MIDI_PITCH_BEND and ev.message == MIDI_MESSAGE_PITCH_BEND \
+				and t.source == Trigger.SRC_MIDI and (t.midi_channel < 0 or ev.channel == t.midi_channel):
+			# A bend streams values as it moves: only crossing BEND_PRESS counts.
+			var down := t.matches_midi(ev)
+			if down == bool(_bend_down.get(t, false)):
+				continue
+			_bend_down[t] = down
 		if t.matches_midi(ev):
 			# A Program Change has no release: its flash toggles instead.
 			var toggles := t.is_flash() and t.midi_kind == Trigger.MIDI_PROGRAM
@@ -245,7 +270,14 @@ func _exit_tree() -> void:
 func _send_feedback(t: Trigger, value: int) -> void:
 	if t.source == Trigger.SRC_MIDI:
 		var ch: int = maxi(t.midi_channel, 0)
-		if MidiOut.is_open():
+		if t.midi_kind == Trigger.MIDI_PITCH_BEND:
+			# 0..127 scaled to the 14-bit bend (a motor fader goes there)
+			var bend := clampi(roundi(value / 127.0 * 16383.0), 0, 16383)
+			if MidiOut.is_open():
+				MidiOut.send(0xE0 | (ch & 0x0F), bend & 0x7F, bend >> 7)
+			else:
+				FeedbackOut.send_midi(midi_out_host, midi_out_port, 0xE0 | (ch & 0x0F), bend & 0x7F, bend >> 7)
+		elif MidiOut.is_open():
 			# native path (midi_out extension) -- no UDP hop, no bridge script
 			if t.midi_kind == Trigger.MIDI_CC:
 				MidiOut.cc(ch, t.midi_number, value)
@@ -280,6 +312,8 @@ func _report_midi(ev: InputEventMIDI) -> void:
 			activity.emit("MIDI  CC %d = %d  ch %d" % [ev.controller_number, ev.controller_value, ch])
 		MIDI_MESSAGE_PROGRAM_CHANGE:
 			activity.emit("MIDI  PC %d  ch %d" % [ev.pitch, ch])
+		MIDI_MESSAGE_PITCH_BEND:
+			activity.emit("MIDI  Pitch Bend %d  ch %d" % [ev.pitch, ch])
 		MIDI_MESSAGE_NOTE_ON:
 			activity.emit("MIDI  Note %d  vel %d  ch %d" % [ev.pitch, ev.velocity, ch])
 

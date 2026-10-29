@@ -177,6 +177,7 @@ func _ready() -> void:
 	faders.fixtures_provider = _perform_fixtures
 	faders.groups_provider = func(): return groups
 	faders.cue_look_provider = cue_panel.standing_look
+	faders.effect_runner = fx_panel.set_running_by_name
 	add_child(faders)
 	faders_panel = FadersPanel.new()
 	faders_panel.bank = faders
@@ -195,6 +196,8 @@ func _ready() -> void:
 	cue_panel.cues_changed.connect(faders_panel.refresh_targets)
 	chase_panel.chases_changed.connect(faders_panel.refresh_targets)
 	faders.chases_changed.connect(chase_panel.sync_ui)
+	fx_panel.effects_changed.connect(faders_panel.refresh_targets)
+	faders.effects_changed.connect(fx_panel.sync_ui)
 	playback_tabs.tab_changed.connect(func(i: int):
 		if i == 4:
 			groups_panel.sync_to_patch()
@@ -998,7 +1001,7 @@ func _update_universe_buttons() -> void:
 
 func _on_blackout_all() -> void:
 	cue_panel.halt()                      # its fade, and any delay / follow waiting
-	faders.pull_down_playback()           # cue and chase faders to 0
+	faders.pull_down_playback()           # cue, chase and effect faders to 0
 	Fx.stop_all()
 	chase_panel.sync_ui()
 	fx_panel.sync_ui()

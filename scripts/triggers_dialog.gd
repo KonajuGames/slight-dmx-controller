@@ -114,7 +114,10 @@ func _build_io_section() -> Control:
 	grid.add_child(_midi_devices_label)
 	var rescan := Button.new()
 	rescan.text = "Rescan"
-	rescan.pressed.connect(_refresh_midi_devices)
+	rescan.tooltip_text = "Reopen the MIDI inputs (picks up a device plugged in since) and list them."
+	rescan.pressed.connect(func():
+		Triggers.reopen_midi()
+		_refresh_midi_devices())
 	grid.add_child(rescan)
 
 	_osc_on = CheckBox.new()
@@ -544,6 +547,8 @@ func _sync_editor() -> void:
 	_midi_kind.selected = t.midi_kind
 	_midi_channel.selected = t.midi_channel + 1
 	_midi_number.value = t.midi_number
+	_midi_number.editable = t.uses_number()
+	_midi_number.tooltip_text = "" if t.uses_number() else "A pitch bend has no number: it's the channel's own."
 	_osc_addr.text = t.osc_address
 	_action_option.selected = t.action
 

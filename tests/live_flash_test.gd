@@ -38,6 +38,7 @@ func _run() -> void:
 	_test_press_latch()
 	_test_top_layer()
 	_test_trigger_release()
+	await _test_learn_in_dialog()
 	await _test_shell()
 	print("== %d passed, %d failed ==" % [_p, _f])
 	quit(1 if _f > 0 else 0)
@@ -209,6 +210,73 @@ func _test_trigger_release() -> void:
 	ok(t.matches_osc(msg) and not t.matches_osc_release(msg), "OSC 1: pressed")
 	msg.args = []
 	ok(not t.matches_osc_release(msg), "OSC without arguments: a press only")
+
+
+## Learn with the Triggers dialog open: Godot forwards MIDI only to the
+## focused dialog, so Triggers takes it as the root window's input.
+func _test_learn_in_dialog() -> void:
+	print("- Learn with a dialog focused")
+	var triggers: Node = root.get_node("Triggers")
+	var dialog := Window.new()
+	dialog.size = Vector2i(200, 200)
+	root.add_child(dialog)
+	dialog.popup()
+	dialog.grab_focus()
+	await process_frame
+	var got := []
+	var on_learned := func(d: Dictionary): got.append(d)
+	triggers.learned.connect(on_learned)
+	triggers.start_learn()
+	var ev := InputEventMIDI.new()
+	ev.message = MIDI_MESSAGE_CONTROL_CHANGE
+	ev.channel = 3
+	ev.controller_number = 21
+	ev.controller_value = 90
+	root.window_input.emit(ev)      # as the OS window delivers it, before forwarding
+	ok(dialog.has_focus() and got.size() == 1 and got[0].get("kind") == Trigger.MIDI_CC
+		and got[0].get("number") == 21 and got[0].get("channel") == 3, "a CC learned while a dialog has focus (%s)" % str(got))
+	# A pitch bend (a fader on some controllers): its channel, no number.
+	got.clear()
+	triggers.start_learn()
+	var bend := InputEventMIDI.new()
+	bend.message = MIDI_MESSAGE_PITCH_BEND
+	bend.channel = 5
+	bend.pitch = 9000
+	root.window_input.emit(bend)
+	ok(got.size() == 1 and got[0].get("kind") == Trigger.MIDI_PITCH_BEND and got[0].get("channel") == 5,
+		"a pitch bend learned (%s)" % str(got))
+	var t := Trigger.new()
+	t.learn_from(got[0] if got.size() > 0 else {})
+	t.action = Trigger.ACT_FLASH_WHITE
+	ok(t.source_summary() == "MIDI  Pitch Bend  ch 6" and not t.uses_number(), "...summary: %s" % t.source_summary())
+	triggers.cancel_learn()
+	triggers.learned.disconnect(on_learned)
+
+	# Swept up and back down: one press, one release, however many values.
+	var saved: Array = triggers.triggers.duplicate()
+	triggers.triggers.clear()
+	triggers.triggers.append(t)
+	var events := []
+	var on_fired := func(a, _tg): events.append("fired %d" % a)
+	var on_released := func(a, _tg): events.append("released %d" % a)
+	triggers.fired.connect(on_fired)
+	triggers.released.connect(on_released)
+	for v in [8192, 10000, 12288, 14000, 16383, 13000, 12000, 4000, 0]:
+		bend.pitch = v
+		root.window_input.emit(bend)
+	ok(events == ["fired %d" % Trigger.ACT_FLASH_WHITE, "released %d" % Trigger.ACT_FLASH_WHITE],
+		"a bend swept up and down: pressed once, released once (%s)" % str(events))
+	events.clear()
+	bend.channel = 2
+	bend.pitch = 16383
+	root.window_input.emit(bend)
+	ok(events.is_empty(), "...not another channel's bend")
+	triggers.fired.disconnect(on_fired)
+	triggers.released.disconnect(on_released)
+	triggers.triggers.assign(saved)
+	ok(Trigger.from_dict(t.to_dict()).midi_kind == Trigger.MIDI_PITCH_BEND, "a pitch-bend binding saved and loaded")
+	dialog.queue_free()
+	await process_frame
 
 
 func _key(code: Key, down: bool) -> InputEventKey:

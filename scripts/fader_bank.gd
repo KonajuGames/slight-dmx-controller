@@ -1,8 +1,8 @@
 class_name FaderBank
 extends Node
-## Playback faders (the console's Faders tab): each puts a cue, a chase or
-## a fixture group on a fader, 0..1, which a MIDI controller's fader or
-## knob (a CC, learned) can move.
+## Playback faders (the console's Faders tab): each puts a cue, a chase, a
+## fixture group or an effect on a fader, 0..1, which a MIDI controller's
+## fader or knob (a CC or a pitch bend, learned) can move.
 ##
 ##   CUE    a submaster: the cue's standing look (as GO would leave it)
 ##          brought up by the fader. Its intensity channels (a fixture's
@@ -19,8 +19,12 @@ extends Node
 ##          scaled by the fader, whatever's driving them (an ArtNet scale
 ##          layer: after everything but the live flashes, before the grand
 ##          master). Up full, it does nothing.
+##   EFFECT the fader runs the effect while it's up at its strength
+##          (WaveEffect.level: a dimmer / colour effect's output scaled,
+##          a movement's swing); down to 0, it stops and is the Effects
+##          tab's again.
 ##
-## Targets are by cue number (1-based) or chase / group name.
+## Targets are by cue number (1-based) or chase / group / effect name.
 
 ## A fader moved (by MIDI, or from code) — the panel follows.
 signal levels_changed
@@ -30,9 +34,11 @@ signal faders_changed
 signal learned(index: int)
 ## A fader started or stopped a chase (the Chases tab follows).
 signal chases_changed
+## A fader started or stopped an effect (the Effects tab follows).
+signal effects_changed
 
-enum { KIND_CUE, KIND_CHASE, KIND_GROUP }
-const KINDS := ["Cue", "Chase", "Group"]
+enum { KIND_CUE, KIND_CHASE, KIND_GROUP, KIND_EFFECT }
+const KINDS := ["Cue", "Chase", "Group", "Effect"]
 const MAX_FADERS := 24
 
 const _INTENSITY_ROLES := ["RED", "GREEN", "BLUE", "WHITE", "AMBER", "UV"]
@@ -45,10 +51,19 @@ class Fader:
 	var level := 0.0            # 0..1
 	var midi_channel := -1      # -1: any
 	var midi_cc := -1           # -1: not mapped
+	var midi_bend := false      # mapped to its channel's pitch bend instead
 
 	func to_dict() -> Dictionary:
 		return {"name": name, "kind": KINDS[kind].to_lower(), "target": target,
-			"level": level, "midi_channel": midi_channel, "midi_cc": midi_cc}
+			"level": level, "midi_channel": midi_channel, "midi_cc": midi_cc, "midi_bend": midi_bend}
+
+	func is_mapped() -> bool:
+		return midi_cc >= 0 or midi_bend
+
+	func forget_midi() -> void:
+		midi_cc = -1
+		midi_bend = false
+		midi_channel = -1
 
 	static func from_dict(d: Dictionary) -> Fader:
 		var f := Fader.new()
@@ -59,10 +74,13 @@ class Fader:
 		f.level = clampf(float(d.get("level", 0.0)), 0.0, 1.0)
 		f.midi_channel = clampi(int(d.get("midi_channel", -1)), -1, 15)
 		f.midi_cc = clampi(int(d.get("midi_cc", -1)), -1, 127)
+		f.midi_bend = bool(d.get("midi_bend", false))
 		return f
 
-	## "CC 7 · ch 1", or "" when it isn't mapped.
+	## "CC 7 · ch 1", "Bend · ch 2", or "" when it isn't mapped.
 	func midi_text() -> String:
+		if midi_bend:
+			return "Bend · ch %s" % ("any" if midi_channel < 0 else str(midi_channel + 1))
 		if midi_cc < 0:
 			return ""
 		return "CC %d · ch %s" % [midi_cc, "any" if midi_channel < 0 else str(midi_channel + 1)]
@@ -77,15 +95,21 @@ var faders: Array[Fader] = []
 var fixtures_provider := Callable()
 var groups_provider := Callable()
 var cue_look_provider := Callable()
+## Set by the shell: func(name: String, on: bool) — start (resolving its
+## targets from the patch) or stop an effect. Unset: `running` is set
+## directly.
+var effect_runner := Callable()
 
 var _learning := -1          # the fader whose MIDI Learn is armed
 var _chase_held := {}        # chase instance id -> true: started by a fader
+var _effect_held := {}       # effect instance id -> true: run by a fader
 
 
 func _ready() -> void:
 	ArtNet.layer_providers.append(layer)
 	ArtNet.scale_providers.append(scale_layer)
 	Fx.intensity_provider = intensity_channels
+	get_tree().root.window_input.connect(_on_window_input)
 
 
 func _exit_tree() -> void:
@@ -134,6 +158,8 @@ func set_level(i: int, v: float) -> void:
 	f.level = clampf(v, 0.0, 1.0)
 	if f.kind == KIND_CHASE:
 		_drive_chase(f)
+	elif f.kind == KIND_EFFECT:
+		_drive_effect(f)
 	levels_changed.emit()
 
 
@@ -156,6 +182,40 @@ func _drive_chase(f: Fader) -> void:
 		chases_changed.emit()
 
 
+func _drive_effect(f: Fader) -> void:
+	var e := _effect(f.target)
+	if e == null:
+		return
+	var key := e.get_instance_id()
+	if f.level > 0.0:
+		if not e.running:
+			if effect_runner.is_valid():
+				effect_runner.call(e.name, true)
+			else:
+				e.running = true
+			if not e.running:
+				return                        # nothing patched for it to run on
+			effects_changed.emit()
+		_effect_held[key] = true
+		e.level = f.level
+	elif _effect_held.has(key):
+		_effect_held.erase(key)
+		if effect_runner.is_valid():
+			effect_runner.call(e.name, false)
+		else:
+			e.running = false
+		e.level = 1.0
+		effects_changed.emit()
+
+
+func _effect(name_: String) -> WaveEffect:
+	var low := name_.strip_edges().to_lower()
+	for e in Fx.effects:
+		if e.name.to_lower() == low:
+			return e
+	return null
+
+
 func _chase(name_: String) -> Chase:
 	var low := name_.strip_edges().to_lower()
 	for c in Fx.chases:
@@ -164,7 +224,7 @@ func _chase(name_: String) -> Chase:
 	return null
 
 
-## Blackout: every cue and chase fader to 0 (group masters only ever
+## Blackout: every cue, chase and effect fader to 0 (group masters only ever
 ## take light away, so they're left).
 func pull_down_playback() -> void:
 	for i in range(faders.size()):
@@ -179,13 +239,14 @@ func clear() -> void:
 	faders.clear()
 	_learning = -1
 	_chase_held.clear()
+	_effect_held.clear()
 	faders_changed.emit()
 
 
 # ------------------------------------------------------------------ MIDI --
 
-## Arm MIDI Learn for fader `i`: the next CC that arrives maps it (-1
-## cancels).
+## Arm MIDI Learn for fader `i`: the next CC or pitch bend that arrives
+## maps it (-1 cancels).
 func learn(i: int) -> void:
 	_learning = i if i >= 0 and i < faders.size() else -1
 
@@ -194,31 +255,38 @@ func is_learning(i: int) -> bool:
 	return _learning == i
 
 
-func _input(event: InputEvent) -> void:
+## The root window's input, before it's forwarded (MIDI goes only to a
+## focused dialog after that; see Triggers._on_window_input()).
+func _on_window_input(event: InputEvent) -> void:
 	if event is InputEventMIDI:
 		handle_midi(event)
 
 
-## A MIDI message: completes a Learn, or moves the faders mapped to it.
+## A MIDI message: completes a Learn, or moves the faders mapped to it — a
+## CC's 0..127, or a pitch bend's 0..16383 (0 = out, 16383 = full).
 ## Returns whether it was used.
 func handle_midi(ev: InputEventMIDI) -> bool:
-	if ev.message != MIDI_MESSAGE_CONTROL_CHANGE:
+	var bend := ev.message == MIDI_MESSAGE_PITCH_BEND
+	if not bend and ev.message != MIDI_MESSAGE_CONTROL_CHANGE:
 		return false
+	var value := ev.pitch / 16383.0 if bend else ev.controller_value / 127.0
 	if _learning >= 0:
 		var f := faders[_learning]
-		f.midi_cc = ev.controller_number
+		f.midi_bend = bend
+		f.midi_cc = -1 if bend else ev.controller_number
 		f.midi_channel = ev.channel
 		var i := _learning
 		_learning = -1
-		set_level(i, ev.controller_value / 127.0)
+		set_level(i, value)
 		learned.emit(i)
 		faders_changed.emit()
 		return true
 	var used := false
 	for i in range(faders.size()):
 		var f := faders[i]
-		if f.midi_cc == ev.controller_number and (f.midi_channel < 0 or f.midi_channel == ev.channel):
-			set_level(i, ev.controller_value / 127.0)
+		var hit := f.midi_bend if bend else (not f.midi_bend and f.midi_cc == ev.controller_number)
+		if hit and (f.midi_channel < 0 or f.midi_channel == ev.channel):
+			set_level(i, value)
 			used = true
 	return used
 

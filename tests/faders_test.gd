@@ -14,6 +14,7 @@ const DIR := "user://_faders_test"
 var Bank: GDScript
 var CueScript: GDScript
 var ChaseScript: GDScript
+var WaveScript: GDScript
 
 
 func ok(cond: bool, label: String) -> void:
@@ -34,6 +35,7 @@ func _run() -> void:
 	Bank = load("res://scripts/fader_bank.gd")
 	CueScript = load("res://scripts/cue.gd")
 	ChaseScript = load("res://scripts/chase.gd")
+	WaveScript = load("res://scripts/wave_effect.gd")
 	_test_intensity_map()
 	_test_cue_output()
 	await _test_app()
@@ -197,6 +199,58 @@ func _test_app() -> void:
 	ok(bank.faders[0].level == 0.0 and bank.faders[1].level == 0.0 and not chase.running,
 		"Blackout All pulls the cue and chase faders down")
 	ok(bank.faders[2].level == 0.25, "...not the group master")
+
+	# An effect fader on a pitch bend (a controller's fader): 0 out, 16383 full.
+	var fx = WaveScript.new()
+	fx.name = "Glow"
+	fx.role = "DIMMER"
+	fx.size = 0.0                           # a steady 200, so the level is plain to see
+	fx.center = 200.0
+	fx_node.effects.append(fx)
+	main.fx_panel.effects_changed.emit()
+	bank.add_fader()
+	bank.set_target(3, Bank.KIND_EFFECT, "glow")
+	ok(not fx.running, "an effect fader at 0: the effect isn't running")
+	ok(main.faders_panel._rows[3]["target"].get_item_text(main.faders_panel._rows[3]["target"].selected) == "Glow",
+		"...its target picked from the Effects tab's")
+	bank.learn(3)
+	var bend := InputEventMIDI.new()
+	bend.message = MIDI_MESSAGE_PITCH_BEND
+	bend.channel = 1
+	bend.pitch = 16383
+	ok(bank.handle_midi(bend) and bank.faders[3].midi_bend and bank.faders[3].midi_channel == 1
+		and bank.faders[3].level == 1.0, "Learn: a pitch bend maps the fader")
+	ok(fx.running and fx.target_count() > 0, "...up full: the effect runs (its targets from the patch)")
+	u.set_all(0)
+	art.tick(false)
+	ok(u.output[0] == 200, "full: the effect's whole output (%d)" % u.output[0])
+	bend.pitch = 8192
+	bank.handle_midi(bend)
+	art.tick(false)
+	ok(absf(bank.faders[3].level - 8192.0 / 16383.0) < 0.001 and u.output[0] == 100, "half way: faded to half (%d)" % u.output[0])
+	ok(main.faders_panel._rows[3]["learn"].text == "Bend · ch 2", "its Learn button: %s" % main.faders_panel._rows[3]["learn"].text)
+	ev.message = MIDI_MESSAGE_CONTROL_CHANGE
+	ev.channel = 1
+	ev.controller_number = 7
+	ev.controller_value = 0
+	bank.handle_midi(ev)
+	ok(bank.faders[3].level > 0.4, "...a CC doesn't move a pitch-bend fader")
+	bend.pitch = 0
+	bank.handle_midi(bend)
+	art.tick(false)
+	ok(not fx.running and fx.level == 1.0 and u.output[0] == 0, "pitch bend 0: faded out, stopped, the Effects tab's again")
+	var swing = WaveScript.new()
+	swing.role = "PAN"
+	swing.waveform = WaveScript.SQUARE
+	swing.size = 100.0
+	swing.center = 128.0
+	swing.set_targets([{"u": 0, "ch": 1}])
+	swing.level = 0.5
+	var layers := [{}]
+	swing.write_into(layers)
+	ok(layers[0][1] == 153, "a movement effect faded: its swing shrinks toward its centre (%d)" % layers[0][1])
+	bank.remove_fader(3)
+	fx_node.effects.erase(fx)
 
 	# The show file.
 	bank.set_level(1, 0.6)

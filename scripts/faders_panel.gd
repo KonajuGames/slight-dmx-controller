@@ -2,9 +2,9 @@ class_name FadersPanel
 extends VBoxContainer
 ## The console's Faders tab (beside Patch, 3D Visualizer and DMX
 ## Output): the playback faders (FaderBank), one strip each — its name, the
-## fader and its level, what it's on (a cue, a chase or a group, and which)
-## and its MIDI mapping (Learn) — in a row like a desk's, wrapping when
-## there are more than fit across.
+## fader and its level, what it's on (a cue, a chase, a group or an effect,
+## and which) and its MIDI mapping (Learn) — in a row like a desk's,
+## wrapping when there are more than fit across.
 
 const _STRIP_W := 104
 const _DIM := Color(1, 1, 1, 0.55)
@@ -52,7 +52,8 @@ func _ready() -> void:
 	_hint.text = "A Cue fader brings that cue's look up as a submaster (its intensity scaled by the fader, highest wins). " \
 		+ "A Chase fader runs the chase while it's up, at the fader's intensity. " \
 		+ "A Group fader is a group master: it scales the group's intensity down from full. " \
-		+ "Learn, then move a fader or knob on a MIDI controller, to control it from there."
+		+ "An Effect fader runs the effect while it's up, faded by the fader (a movement's swing shrinks). " \
+		+ "Learn, then move a fader or knob on a MIDI controller (a CC or a pitch bend), to control it from there."
 	add_child(_hint)
 
 	bank.faders_changed.connect(rebuild)
@@ -83,6 +84,9 @@ func _targets(kind: int) -> Array:
 			var names: Array = group_names_provider.call() if group_names_provider.is_valid() else []
 			for name_ in names:
 				out.append([String(name_), String(name_)])
+		FaderBank.KIND_EFFECT:
+			for e in Fx.effects:
+				out.append([e.name, e.name])
 	return out
 
 
@@ -171,14 +175,13 @@ func _build_strip(i: int) -> Control:
 	var learn := Button.new()
 	learn.clip_text = true
 	learn.custom_minimum_size = Vector2(_STRIP_W, 0)
-	learn.tooltip_text = "MIDI Learn: click, then move a fader or knob on your controller. Right-click to forget the mapping."
+	learn.tooltip_text = "MIDI Learn: click, then move a fader or knob on your controller (a CC or a pitch bend). Right-click to forget the mapping."
 	learn.pressed.connect(func():
 		bank.learn(-1 if bank.is_learning(i) else i)
 		sync_learn())
 	learn.gui_input.connect(func(ev: InputEvent):
 		if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_RIGHT:
-			f.midi_cc = -1
-			f.midi_channel = -1
+			f.forget_midi()
 			sync_learn())
 	col.add_child(learn)
 
@@ -227,7 +230,7 @@ func sync_learn() -> void:
 		var b: Button = _rows[i]["learn"]
 		if bank.is_learning(i):
 			b.text = "Move it…"
-		elif f.midi_cc >= 0:
+		elif f.is_mapped():
 			b.text = f.midi_text()
 		else:
 			b.text = "Learn"

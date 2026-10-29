@@ -8,8 +8,12 @@ extends RefCounted
 enum { SRC_MIDI, SRC_OSC }
 const SOURCES := ["MIDI", "OSC"]
 
-enum { MIDI_NOTE, MIDI_CC, MIDI_PROGRAM }
-const MIDI_KINDS := ["Note", "Control Change", "Program Change"]
+enum { MIDI_NOTE, MIDI_CC, MIDI_PROGRAM, MIDI_PITCH_BEND }
+const MIDI_KINDS := ["Note", "Control Change", "Program Change", "Pitch Bend"]
+## A pitch bend (14-bit, 0..16383, 8192 = centre) counts as pressed from
+## here up — three-quarters of the way — so a pitch wheel resting at
+## centre, or a fader sending pitch bend at the bottom, is up.
+const BEND_PRESS := 12288
 
 enum {
 	ACT_CUE_GO, ACT_CUE_BACK, ACT_CUE_HALT, ACT_CUE_GOTO,
@@ -59,7 +63,7 @@ var source: int = SRC_MIDI
 # MIDI match
 var midi_kind: int = MIDI_NOTE
 var midi_channel: int = -1     # -1 = any channel
-var midi_number: int = 60      # note pitch / CC number / program number
+var midi_number: int = 60      # note pitch / CC number / program number (unused for pitch bend)
 
 # OSC match
 var osc_address: String = "/go"
@@ -128,11 +132,18 @@ func source_summary() -> String:
 	match midi_kind:
 		MIDI_CC: return "MIDI  CC %d  ch %s" % [midi_number, ch]
 		MIDI_PROGRAM: return "MIDI  PC %d  ch %s" % [midi_number, ch]
+		MIDI_PITCH_BEND: return "MIDI  Pitch Bend  ch %s" % ch
 		_: return "MIDI  Note %d  ch %s" % [midi_number, ch]
 
 
+## Whether the match uses midi_number (a pitch bend is the channel's own).
+func uses_number() -> bool:
+	return midi_kind != MIDI_PITCH_BEND
+
+
 ## Does this incoming MIDI event fire the trigger? Notes fire on note-on
-## with velocity; CC / PC fire on a "pressed" value (>= 64 / any).
+## with velocity; CC / PC / pitch bend on a "pressed" value (>= 64 / any /
+## >= BEND_PRESS).
 func matches_midi(ev: InputEventMIDI) -> bool:
 	if source != SRC_MIDI:
 		return false
@@ -146,11 +157,14 @@ func matches_midi(ev: InputEventMIDI) -> bool:
 				and ev.controller_number == midi_number and ev.controller_value >= 64
 		MIDI_PROGRAM:
 			return ev.message == MIDI_MESSAGE_PROGRAM_CHANGE and ev.pitch == midi_number
+		MIDI_PITCH_BEND:
+			return ev.message == MIDI_MESSAGE_PITCH_BEND and ev.pitch >= BEND_PRESS
 	return false
 
 
 ## Is this incoming MIDI event this trigger's pad coming back up — a
-## note-off (or a note-on at velocity 0) for its note, its CC below 64?
+## note-off (or a note-on at velocity 0) for its note, its CC below 64,
+## its channel's pitch bend below BEND_PRESS?
 ## (A Program Change has no release.)
 func matches_midi_release(ev: InputEventMIDI) -> bool:
 	if source != SRC_MIDI:
@@ -164,6 +178,8 @@ func matches_midi_release(ev: InputEventMIDI) -> bool:
 		MIDI_CC:
 			return ev.message == MIDI_MESSAGE_CONTROL_CHANGE \
 				and ev.controller_number == midi_number and ev.controller_value < 64
+		MIDI_PITCH_BEND:
+			return ev.message == MIDI_MESSAGE_PITCH_BEND and ev.pitch < BEND_PRESS
 	return false
 
 

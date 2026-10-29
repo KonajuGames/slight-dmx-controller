@@ -23,6 +23,9 @@ const BASE_MODES := ["Absolute", "Pickup"]
 ## fast waveform, so their rate is capped.
 const MOTOR_ROLES := ["PAN", "PAN_FINE", "TILT", "TILT_FINE", "ZOOM"]
 const MOTOR_MAX_BPM := 60.0
+## Roles whose output a `level` below full scales (it fades the light);
+## any other role's swing is scaled instead (a pan circle shrinks).
+const INTENSITY_ROLES := ["DIMMER", "RED", "GREEN", "BLUE", "WHITE", "AMBER", "UV"]
 
 var name: String = "Effect"
 var role: String = "DIMMER": set = _set_role
@@ -40,6 +43,9 @@ var phase_deg: float = 0.0    # global phase offset
 ## this many beats — kept in phase with its beats. 0 = always `bpm`.
 var tempo_beats: float = 0.0
 var running: bool = false
+## Its strength, 0..1: set by a playback fader (FaderBank) that runs it;
+## see INTENSITY_ROLES. Not saved.
+var level: float = 1.0
 
 var _phase := 0.0             # elapsed cycles
 var _targets: Array = []      # [{ "u": int, "ch": int }]
@@ -121,6 +127,9 @@ func _wave(x: float) -> float:
 func write_into(layers: Array, bases: Array = []) -> void:
 	if _targets.is_empty():
 		return
+	var lvl := clampf(level, 0.0, 1.0)
+	var intensity := role in INTENSITY_ROLES
+	var swing := size * 0.5 * (1.0 if intensity else lvl)
 
 	if waveform == RANDOM:
 		var step := int(floorf(_phase))
@@ -147,7 +156,10 @@ func write_into(layers: Array, bases: Array = []) -> void:
 			var buf: PackedByteArray = bases[u]
 			mid = float(buf[c]) if c >= 0 and c < buf.size() else 0.0
 
-		var v := clampi(int(round(mid + (size * 0.5) * w)), 0, 255)
+		var out := mid + swing * w
+		if intensity:
+			out *= lvl
+		var v := clampi(int(round(out)), 0, 255)
 		layers[u][c] = maxi(int(layers[u].get(c, 0)), v)
 
 

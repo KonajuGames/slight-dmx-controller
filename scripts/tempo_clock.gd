@@ -59,6 +59,7 @@ var _external: int = Source.NONE
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	get_tree().root.window_input.connect(_on_window_input)
 
 
 ## Seconds on the clock the tempo runs by (overridable by tests through
@@ -204,7 +205,9 @@ func advance(now: float) -> void:
 		beat.emit()
 
 
-func _input(event: InputEvent) -> void:
+## The root window's input, before it's forwarded (MIDI goes only to a
+## focused dialog after that; see Triggers._on_window_input()).
+func _on_window_input(event: InputEvent) -> void:
 	if not midi_clock_enabled or not (event is InputEventMIDI):
 		return
 	match (event as InputEventMIDI).message:
