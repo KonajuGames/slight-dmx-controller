@@ -2,17 +2,17 @@
 
 A step-by-step walkthrough for a new user, from opening the app for the
 first time to running a show. For a complete technical reference of every
-feature, see the [README](../README.md) — this guide focuses on the
+feature, see the [README](https://github.com/KonajuGames/slight-dmx-controller/blob/master/README.md) — this guide focuses on the
 essential workflow, in order, with screenshots.
 
 ## What you need
 
 sLight controls real (or simulated) DMX lighting fixtures. You don't need
 any hardware to follow this guide — see
-[Testing without real hardware](../README.md#testing-without-real-hardware)
+[Testing without real hardware](https://github.com/KonajuGames/slight-dmx-controller/blob/master/README.md#testing-without-real-hardware)
 in the README for a free way to watch the DMX output live (QLC+ or an
 Art-Net monitor). When you're ready to control real lights, see
-[Going to real fixtures](../README.md#going-to-real-fixtures).
+[Going to real fixtures](https://github.com/KonajuGames/slight-dmx-controller/blob/master/README.md#going-to-real-fixtures).
 
 Launch the sLight application — there's no separate setup step, no
 account, and no configuration file to edit first. The whole window
@@ -20,7 +20,7 @@ you'll see below is what opens.
 
 ## The window, at a glance
 
-![The Patch tab with two moving heads patched and lit](img/01-patch-tab.png)
+![The Patch tab with a five-fixture rig, its two moving heads opened up](img/01-patch-tab.png)
 
 The window is split into three areas:
 
@@ -130,7 +130,7 @@ GO. The bar under GO shows what's happening: the delay counting down, the
 fade's progress and the follow's wait.
 **Load to Patch** pulls a cue's stored look back into the fixture
 controls so you can tweak it and **Update** to re-record. See the
-README's [Cue list](../README.md#cue-list) section for the tracking vs.
+README's [Cue list](https://github.com/KonajuGames/slight-dmx-controller/blob/master/README.md#cue-list) section for the tracking vs.
 block distinction, which matters once you're editing a list of cues that
 build on each other.
 
@@ -201,7 +201,7 @@ The **Groups** tab holds named sets of patched fixtures, so an effect or
 reactor can target just "the movers" or "the front truss" instead of a
 whole universe.
 
-![The Groups tab with a two-fixture "Movers" group](img/08-groups-tab.png)
+![The Groups tab with a two-fixture "Movers" group, and the Faders tab with a cue, a group and an effect fader](img/08-groups-tab.png)
 
 **New Group**, then tick which patched fixtures belong to it. Pick that
 group's name in an effect's or reactor's **Group** field instead of a
@@ -537,7 +537,7 @@ click a flash on and click it off again.
 editor, so a MIDI controller or an OSC app like TouchOSC can fire cues,
 toggle chases/effects, or trigger a blackout.
 
-![The MIDI/OSC Triggers dialog](img/10-triggers-dialog.png)
+![The MIDI/OSC Triggers dialog with a note and a pitch-bend binding](img/10-triggers-dialog.png)
 
 Turn on **MIDI input** or **OSC input**, click **Add**, then **Learn** and
 play the pad / move the fader / send the message you want bound — the
@@ -603,7 +603,7 @@ DJ Edit Mode's timeline editing shortcuts are listed in Step 10.
 ## Where to go next
 
 This guide covers the everyday path from an empty patch to a running
-show. The [README](../README.md) is the complete reference — fixture
+show. The [README](https://github.com/KonajuGames/slight-dmx-controller/blob/master/README.md) is the complete reference — fixture
 profile details (multi-mode personalities, 16-bit fine channels, named
 value ranges for gobo/colour wheels), sACN and USB DMX output, cue
 tracking vs. blocks, MVR import/export, every run mode's exact
