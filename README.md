@@ -64,7 +64,10 @@ technical reference.
 - `triggers_engine.gd` — the `Triggers` autoload: listens for MIDI
   (Godot's `InputEventMIDI`) and OSC (a UDP listener), fires console
   actions, and sends feedback (LED updates) when a binding's target is
-  active.
+  active. MIDI is taken from the root window's `window_input`, before
+  Godot forwards it to a focused dialog, so it's heard with the Triggers
+  dialog (or any other) open; the fader bank and the tempo clock's MIDI
+  clock take it the same way.
 - `osc.gd` / `trigger.gd` / `triggers_dialog.gd` / `feedback_out.gd` — a
   minimal OSC 1.0 reader/writer, the `Trigger` binding class (match +
   action + feedback), the config dialog with a Learn mode, and the
@@ -170,9 +173,11 @@ technical reference.
   figure 8 (loudest) — only over a position (with none named yet,
   Generate adds a "Centre" one, every fixture centred).
 - `dj_performer.gd` — the `DjPerformer` class: DJ Perform Mode's engine.
-  Runs an `Os2lServer` (subscribed to four decks), follows each deck's
-  song, play state, volume fader and position, loads a new song's
-  timelines from the show's `TimelineStore` on a worker thread, and
+  Runs an `Os2lServer` (subscribed to four decks and to VirtualDJ's
+  `get_decks`, following only the decks its skin shows), follows each
+  deck's song, play state, volume fader and position, loads a new song's
+  timelines from the show's `TimelineStore` and makes them into the
+  deck's tracks on a worker thread (`tracks_from_saved()`), and
   every refresh mixes the live decks' timelines (`song_output()`, then
   `mix()`: HTP, pan / tilt averaged) into an `ArtNet.layer_providers`
   layer.
@@ -385,8 +390,9 @@ technical reference.
   palettes (channel values per fixture), which cues refer to instead of
   holding the values.
 - `fader_bank.gd` / `faders_panel.gd` — the `FaderBank` class and the
-  Faders tab: playback faders putting a cue (a submaster), a chase or a
-  group (a group master) on a fader, with MIDI CC Learn.
+  Faders tab: playback faders putting a cue (a submaster), a chase, a
+  group (a group master) or an effect on a fader, with MIDI Learn of a
+  CC, a pitch bend or a note.
 - `fixture_import.gd` — the `FixtureImport` class: reads GDTF (`.gdtf`
   ZIP, including its `<Geometries>` tree + glTF models) and Open Fixture
   Library (`.json`) definitions into `FixtureProfile` — best-effort role
@@ -514,9 +520,14 @@ Global controls live in the top bar:
   VirtualDJ's `os2lDirectIp` at this machine) and plays the lighting
   timelines of the songs on its decks into the lights. The panel shows
   the connection and, for each of up to four decks, the song, whether
-  it's playing, its position and its timelines' state. When a deck gets
+  it's playing, its position and its timelines' state. Only the decks
+  VirtualDJ's skin shows are followed (it reports how many,
+  `get_decks`): behind a two-deck skin, decks 3 and 4 still hold — and
+  report — songs loaded on them earlier, so they show "not in the skin"
+  and drive nothing until a four-deck skin shows them. When a deck gets
   a new song, its timelines (from DJ Edit Mode, in the show's timelines
-  folder) load in the background, so nothing stalls. A deck drives the
+  folder) are read and made into the deck's tracks in the background,
+  so the lights don't stall. A deck drives the
   lights while it's playing with its volume fader up — a deck being
   cued in the headphones with its fader down doesn't — following
   VirtualDJ's position (reported every 100 ms, run on smoothly between
@@ -719,10 +730,12 @@ Reactive mode.
 **Triggers…** in the top bar opens the binding editor. Each **binding**
 maps one incoming message to one console action:
 
-- **Source** — **MIDI** (a Note, Control Change or Program Change, on a
-  chosen channel or *Any*) or **OSC** (an address like `/cue/go`). Turn
-  **MIDI input** / **OSC input** on at the top; OSC listens on a UDP port
-  you set (default 9000).
+- **Source** — **MIDI** (a Note, Control Change, Program Change or Pitch
+  Bend, on a chosen channel or *Any*) or **OSC** (an address like
+  `/cue/go`). Turn **MIDI input** / **OSC input** on at the top; OSC
+  listens on a UDP port you set (default 9000). The MIDI inputs open when
+  sLight starts; **Rescan** reopens them, for a controller plugged in
+  since.
 - **Learn** — click it, then play the pad / move the fader / send the OSC
   message, and the match fields fill in from what arrived.
 - **Action** — *Cue GO / Back / Halt / Go to #*, *Chase toggle*,
@@ -735,7 +748,11 @@ maps one incoming message to one console action:
   populated from what's programmed.
 
 A note fires on note-on; a CC fires when its value crosses 64 (so a
-momentary button works, a slider mostly won't); an OSC message fires
+momentary button works, a slider mostly won't); a pitch bend (14-bit,
+centre 8192) fires once as it rises past three-quarters (12288) and
+releases as it falls back below — once per crossing, however many values
+a fader streams, and a pitch wheel resting at centre is up (to fade
+something with one, use a playback fader); an OSC message fires
 unless its first argument is `0` (so TouchOSC's press-then-release
 buttons only trigger on press). The bottom of the dialog shows the last
 message received.
@@ -929,9 +946,9 @@ Edit Mode's timelines.
 The **Faders** tab — on the right, beside Patch, 3D Visualizer and DMX
 Output, where there's room for a row of them — is a bank of playback
 faders (up to 24). **Add
-Fader**, then on its strip pick what it's on — **Cue**, **Chase** or
-**Group** — and which one; name it in the box at the top and remove it
-with **✕**.
+Fader**, then on its strip pick what it's on — **Cue**, **Chase**,
+**Group** or **Effect** — and which one; name it in the box at the top
+and remove it with **✕**.
 
 - **Cue** — a submaster: the cue's standing look (what GO to it would
   leave, tracking and all) brought up by the fader. Its intensity
@@ -951,13 +968,30 @@ with **✕**.
   are scaled by the fader, whatever is driving them — cues, chases,
   effects, song timelines. Full does nothing; it only takes light away.
   The live flashes still go over it, and the grand master under it.
+- **Effect** — raising the fader starts the effect (its targets resolved
+  from the patch) at the fader's strength: a dimmer or colour effect's
+  output (DIMMER, RED, GREEN, BLUE, WHITE, AMBER, UV) is scaled by it,
+  any other role's swing is (a pan circle shrinks toward its centre).
+  Taking it to zero stops it and hands it back to the Effects tab.
 
-**Learn** on a strip, then move a fader or knob on a MIDI controller, maps
-that CC (on that channel) to the fader; the button then shows the
-mapping (`CC 7 · ch 1`), and right-clicking it forgets it. The faders,
-their levels and mappings are saved with the show; a chase fader saved
-up starts its chase again when the show loads. **Blackout All** pulls the
-cue and chase faders down (not the group masters).
+**Learn** on a strip, then move a fader or knob or press a pad on a MIDI
+controller, maps what arrived (on that channel) to the fader; the button
+then shows the mapping, and right-clicking it forgets it:
+
+- a **CC** (`CC 7 · ch 1`) — its 0–127;
+- a **pitch bend** (`Bend · ch 2`), which some controllers' faders send
+  — its 0–16383, 0 fully out and 16383 fully in;
+- a **note** (`Note 36 · ch 1`) — a hold button: note-on takes the fader
+  to full, note-off (or a note-on at velocity 0) to 0. Learn maps the
+  press, never a note-off.
+
+A CC or pitch bend's bottom and top 2 % of travel (`MIDI_END_ZONE`) read
+as 0 and full, the rest stretched evenly between them, so a controller's
+fader that stops just short of an end still gets there without a jump
+anywhere; the on-screen faders are exact. The faders, their levels and
+mappings are saved with the show; a chase or effect fader saved up
+starts it again when the show loads. **Blackout All** pulls the cue,
+chase and effect faders down (not the group masters).
 
 ## Fixture profiles
 
@@ -1083,9 +1117,15 @@ profile picker immediately — no restart needed.
 
 **Edit...** opens the same dialog pre-filled with the selected profile.
 Its id and file stay put, so the edit sticks across restarts; editing a
-built-in writes an editable copy that shadows it. Editing a profile does
-*not* retroactively change fixtures already patched from it — re-patch
-those to pick up the changes.
+built-in writes an editable copy that shadows it. Patched fixtures hold
+their own copy of their profile (it's embedded in the show), so **Save
+Changes** passes the edit on to the ones patched from it: each whose mode
+keeps its channel count — the patch footprint unchanged — takes the
+whole edited profile (ranges, channel names, roles, defaults, physical),
+its controls rebuilt with its live values kept. One whose mode's channel
+count changed takes only the physical side (beam, pan/tilt range,
+category, heads) and needs a re-patch for the channels, since it could
+now overlap its neighbour. The status line says how many of each.
 
 **Delete...** asks for confirmation, then removes the profile's JSON
 file. Deleting an edited built-in resets it to its code default; a
@@ -1300,7 +1340,8 @@ on a machine without the extension falls back to Art-Net.
   the optional `addons/native` GDExtension, or a small UDP bridge script
   without it; OSC feedback direct). Cues have delays and auto-follows,
   with a progress bar for what's running. Playback faders put cues
-  (submasters), chases and groups (group masters) on faders, MIDI-learnable.
+  (submasters), chases, groups (group masters) and effects on faders,
+  MIDI-learnable from a CC, a pitch bend or a note.
   Room to grow: per-channel track flags in the cue editor, motorised
   fader feedback.
 - **Run modes**: **Cue Mode** (cue list drives playback), **Sound
