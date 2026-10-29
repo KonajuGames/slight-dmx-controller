@@ -88,6 +88,9 @@ var _mdns_status := "not advertised"
 ## loaded, tempo and beat phase, transport, and the mix position. What
 ## VirtualDJ reports for each (checked against a live VirtualDJ):
 ##   crossfader                 0..1 (0 = left)
+##   get_decks                  how many decks the skin shows. VirtualDJ
+##                              keeps decks 3 and 4 behind a 2-deck skin,
+##                              still reporting the songs left on them
 ##   deck N get_filepath        Windows path with backslashes; empty decks
 ##                              aren't reported. VirtualDjDatabase.find_song()
 ##                              accepts it as is.
@@ -104,7 +107,7 @@ var _mdns_status := "not advertised"
 ## Values are only re-sent when they change, at most every
 ## `subscription_frequency_ms`.
 static func default_subscriptions(decks: int) -> PackedStringArray:
-	var out := PackedStringArray(["crossfader"])
+	var out := PackedStringArray(["crossfader", "get_decks"])
 	for i in range(1, decks + 1):
 		for q in ["get_filepath", "get_bpm", "get_beatpos", "get_firstbeat",
 				"play", "level", "get_time elapsed absolute", "loop", "get_loop"]:
@@ -336,7 +339,7 @@ func handle_message(msg: Dictionary, peer: String = "") -> void:
 	if msg.has("trigger") and msg.has("value"):
 		var t := str(msg["trigger"])
 		var v: Variant = msg["value"]
-		if not values.has(t) or values[t] != v:
+		if not values.has(t) or typeof(values[t]) != typeof(v) or values[t] != v:
 			values[t] = v
 			value_changed.emit(t, v)
 	message.emit(msg, peer)

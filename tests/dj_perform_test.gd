@@ -431,6 +431,16 @@ func _test_performer() -> void:
 	perf.reload_all()
 	await _wait_loads(perf)
 	ok(perf.deck(1).load_state == P.Load.LOADED, "the show's folder back: reloaded")
+	# Decks 3 and 4 behind a 2-deck skin still report what was left on them.
+	ok(perf.deck(3).hidden and perf.deck(4).hidden and not perf.deck(2).hidden, "decks 3 and 4 hidden until the skin shows them")
+	_vdj(perf, "deck 3 get_filepath", song1)
+	_vdj(perf, "deck 3 play", "on")
+	ok(perf.deck(3).path == "" and not perf.deck(3).playing, "a hidden deck's song isn't followed")
+	_vdj(perf, "get_decks", 4)
+	ok(not perf.deck(3).hidden and perf.deck(3).path == song1 and perf.deck(3).playing, "a 4-deck skin: deck 3 picks up what VirtualDJ reported")
+	await _wait_loads(perf)
+	_vdj(perf, "get_decks", "2")
+	ok(perf.deck(3).hidden and perf.deck(3).path == "" and not perf.deck(3).live(), "back to 2 decks: deck 3 forgotten")
 
 	# The panel.
 	var panel = PanelScript.new()
@@ -444,7 +454,10 @@ func _test_performer() -> void:
 	ok(rows[0]["song"].text == "one" and rows[0]["state"].text == "playing" and rows[0]["timelines"].text == "playing (1 track)"
 		and rows[0]["position"].text.begins_with("0:0"), "panel: deck 1 (%s / %s / %s)" % [rows[0]["state"].text, rows[0]["timelines"].text, rows[0]["position"].text])
 	ok(rows[1]["state"].text == "paused" and rows[1]["timelines"].text == "none for this song", "panel: deck 2")
-	ok(rows[2]["state"].text == "empty" and rows[2]["song"].text == "", "panel: an empty deck")
+	ok(rows[2]["state"].text == "not in the skin" and rows[2]["song"].text == "", "panel: a deck the skin doesn't show")
+	perf.set_skin_decks(4)
+	panel.refresh()
+	ok(rows[3]["state"].text == "empty" and rows[3]["song"].text == "", "panel: an empty deck")
 	# Stop.
 	perf.stop()
 	ok(not perf.is_active() and not artnet.layer_providers.has(perf.layer) and perf.deck(1).path == "", "stop(): listener and playback stopped, decks forgotten")
@@ -518,6 +531,7 @@ func _test_temporary() -> void:
 	perf.timeline = tl
 	root.add_child(perf)
 	perf.start()
+	_vdj(perf, "get_decks", 4)
 
 	# Analysed already: its show at once, saved flagged temporary.
 	_vdj(perf, "deck 1 get_filepath", cached)

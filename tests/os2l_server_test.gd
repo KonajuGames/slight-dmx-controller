@@ -184,8 +184,8 @@ func _test_tcp() -> void:
 	var sub = JSON.parse_string(subs[0]) if subs.size() > 0 else null
 	ok(sub is Dictionary and sub["evt"] == "subscribe" and sub["frequency"] == "100",
 		"subscribe sent on connect")
-	ok(sub is Dictionary and sub["trigger"].size() == 19 and "deck 2 get_filepath" in sub["trigger"],
-		"default subscriptions: crossfader + 9 per deck")
+	ok(sub is Dictionary and sub["trigger"].size() == 20 and "get_decks" in sub["trigger"] and "deck 2 get_filepath" in sub["trigger"],
+		"default subscriptions: crossfader, get_decks + 9 per deck")
 
 	# A message split across two writes, then two in one write.
 	client.put_data('{"evt":"beat","change":false,"pos":1,"bp'.to_utf8_buffer())

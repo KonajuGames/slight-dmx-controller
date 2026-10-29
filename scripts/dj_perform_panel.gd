@@ -173,8 +173,8 @@ func refresh() -> void:
 	for i in range(_rows.size()):
 		var row: Dictionary = _rows[i]
 		var d: DjPerformer.Deck = performer.deck(i + 1) if performer != null else null
-		if d == null or d.path == "":
-			row["state"].text = "empty"
+		if d == null or d.hidden or d.path == "":
+			row["state"].text = "not in the skin" if d != null and d.hidden else "empty"
 			row["song"].text = ""
 			row["position"].text = ""
 			row["timelines"].text = ""

@@ -33,6 +33,10 @@ signal state_changed
 
 ## Decks followed (VirtualDJ has up to four).
 const DECKS := 4
+## Decks shown until VirtualDJ reports its skin's (get_decks): its default
+## skin's two. Behind a 2-deck skin decks 3 and 4 still hold whatever was
+## last loaded on them, so they're only followed once the skin shows them.
+const DEFAULT_SKIN_DECKS := 2
 ## Channel roles merged by averaging across decks; every other role is
 ## HTP.
 const AVERAGE_ROLES := ["PAN", "PAN_FINE", "TILT", "TILT_FINE"]
@@ -44,6 +48,7 @@ enum Load { NONE, LOADING, LOADED, NO_TIMELINES, NO_FOLDER }
 
 class Deck:
 	var num := 0
+	var hidden := false             # not in VirtualDJ's skin: not followed
 	var path := ""                  # the song (forward slashes); "" = empty
 	var playing := false
 	var level = null                # volume fader 0..1, null = not reported
@@ -87,6 +92,8 @@ var song_lookup := Callable()
 
 var os2l: Os2lServer
 var decks: Array = []
+## How many decks VirtualDJ's skin shows; the rest are hidden.
+var skin_decks := DEFAULT_SKIN_DECKS
 var _status := "off"
 var _batch: TimelineBatch           # songs being analysed for their temporary timelines
 var _pending := 0                   # shows being generated on worker threads
@@ -101,6 +108,7 @@ func _init() -> void:
 	for i in range(DECKS):
 		var d := Deck.new()
 		d.num = i + 1
+		d.hidden = d.num > skin_decks
 		decks.append(d)
 
 
@@ -166,13 +174,19 @@ func stop() -> void:
 	_status = "off"
 	if _batch != null:
 		_batch.cancel()
+	skin_decks = DEFAULT_SKIN_DECKS
 	for d in decks:
-		var n: int = d.num
-		var fresh := Deck.new()
-		fresh.num = n
-		fresh.load_id = d.load_id + 1          # drop any load still under way
-		decks[n - 1] = fresh
+		_forget(d.num)
 	state_changed.emit()
+
+
+## Empty deck `num` (hidden if the skin doesn't show it).
+func _forget(num: int) -> void:
+	var fresh := Deck.new()
+	fresh.num = num
+	fresh.hidden = num > skin_decks
+	fresh.load_id = decks[num - 1].load_id + 1  # drop any load still under way
+	decks[num - 1] = fresh
 
 
 func _exit_tree() -> void:
@@ -200,6 +214,9 @@ func reload_all() -> void:
 # --------------------------------------------------------------- DECKS --
 
 func _on_value(trigger: String, value: Variant) -> void:
+	if trigger == "get_decks":
+		set_skin_decks(str(value).to_int())
+		return
 	# "deck N <query>"
 	if not trigger.begins_with("deck "):
 		return
@@ -208,6 +225,8 @@ func _on_value(trigger: String, value: Variant) -> void:
 		return
 	var query := trigger.substr(("deck %d " % num).length())
 	var d: Deck = decks[num - 1]
+	if d.hidden:
+		return
 	match query:
 		"get_filepath":
 			var p := str(value).replace("\\", "/")
@@ -228,6 +247,30 @@ func _on_value(trigger: String, value: Variant) -> void:
 			d.level = float(value)
 		"get_time elapsed absolute":
 			report_time(d, float(value) / 1000.0, Time.get_ticks_msec())
+
+
+## VirtualDJ's skin shows `n` decks: the ones past it are emptied and no
+## longer followed; ones it shows again pick up what VirtualDJ last
+## reported for them.
+func set_skin_decks(n: int) -> void:
+	n = clampi(n, 1, DECKS)
+	if n == skin_decks:
+		return
+	skin_decks = n
+	for d in decks:
+		var hide: bool = d.num > n
+		if hide == d.hidden:
+			continue
+		_forget(d.num)
+		if not hide and os2l != null:
+			var prefix := "deck %d " % d.num
+			var song = os2l.values.get(prefix + "get_filepath")
+			if song != null:
+				_on_value(prefix + "get_filepath", song)   # first: it resets the position
+			for t in os2l.values:
+				if str(t).begins_with(prefix) and not str(t).ends_with("get_filepath"):
+					_on_value(t, os2l.values[t])
+	state_changed.emit()
 
 
 ## A position report for deck `d`: `t` seconds into the song at `now`
