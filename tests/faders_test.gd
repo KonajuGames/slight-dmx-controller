@@ -178,7 +178,7 @@ func _test_app() -> void:
 	ok(bank.faders[0].level == 1.0 and not bank.is_learning(0), "...moves it, and Learn ends")
 	ev.controller_value = 64
 	bank.handle_midi(ev)
-	ok(absf(bank.faders[0].level - 64.0 / 127.0) < 0.001, "the CC moves it")
+	ok(absf(bank.faders[0].level - Bank.midi_level(64.0 / 127.0)) < 0.001, "the CC moves it")
 	ev.channel = 3
 	ev.controller_value = 0
 	ok(not bank.handle_midi(ev) and bank.faders[0].level > 0.4, "...not the same CC on another channel")
@@ -186,7 +186,7 @@ func _test_app() -> void:
 	# The panel.
 	var panel = main.faders_panel
 	ok(panel._rows.size() == 3, "a strip per fader")
-	ok(absf(panel._rows[0]["slider"].value - 64.0 / 127.0) < 0.001 and panel._rows[0]["level"].text == "50%",
+	ok(absf(panel._rows[0]["slider"].value - Bank.midi_level(64.0 / 127.0)) < 0.001 and panel._rows[0]["level"].text == "50%",
 		"its fader follows MIDI (%s)" % panel._rows[0]["level"].text)
 	ok(panel._rows[0]["learn"].text == "CC 7 · ch 3", "its Learn button shows the mapping: %s" % panel._rows[0]["learn"].text)
 	ok(panel._rows[1]["target"].get_item_text(panel._rows[1]["target"].selected) == "Pulse", "its target picked")
@@ -227,7 +227,7 @@ func _test_app() -> void:
 	bend.pitch = 8192
 	bank.handle_midi(bend)
 	art.tick(false)
-	ok(absf(bank.faders[3].level - 8192.0 / 16383.0) < 0.001 and u.output[0] == 100, "half way: faded to half (%d)" % u.output[0])
+	ok(absf(bank.faders[3].level - 0.5) < 0.001 and u.output[0] == 100, "half way: faded to half (%d)" % u.output[0])
 	ok(main.faders_panel._rows[3]["learn"].text == "Bend · ch 2", "its Learn button: %s" % main.faders_panel._rows[3]["learn"].text)
 	ev.message = MIDI_MESSAGE_CONTROL_CHANGE
 	ev.channel = 1
@@ -249,6 +249,25 @@ func _test_app() -> void:
 	var layers := [{}]
 	swing.write_into(layers)
 	ok(layers[0][1] == 153, "a movement effect faded: its swing shrinks toward its centre (%d)" % layers[0][1])
+	# The ends of a MIDI fader's travel: a bend just short of an end gets there.
+	for pair in [[200, 0.0], [16200, 1.0], [0, 0.0], [16383, 1.0]]:
+		bend.pitch = pair[0]
+		bank.handle_midi(bend)
+		ok(bank.faders[3].level == pair[1], "a pitch bend of %d: %d%%" % [pair[0], roundi(bank.faders[3].level * 100.0)])
+	var prev := 0.0
+	var smooth := true
+	for v in range(0, 16384, 64):
+		var lvl: float = Bank.midi_level(v / 16383.0)
+		if lvl < prev or lvl - prev > 0.01:
+			smooth = false
+		prev = lvl
+	ok(smooth, "...in between, it climbs evenly: no jump off either end")
+	ok(Bank.midi_level(1.0 / 127.0) == 0.0 and Bank.midi_level(126.0 / 127.0) == 1.0 and Bank.midi_level(3.0 / 127.0) > 0.0,
+		"a CC's bottom and top values: 0 and full")
+	main.faders_panel._rows[3]["slider"].value = 0.01
+	ok(absf(bank.faders[3].level - 0.01) < 0.0001, "the on-screen fader still sets exactly 1%")
+	bank.set_level(3, 0.0)
+
 	# A note (a pad or key): on is full, off is 0.
 	var note := InputEventMIDI.new()
 	note.message = MIDI_MESSAGE_NOTE_OFF

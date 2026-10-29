@@ -41,6 +41,9 @@ signal effects_changed
 enum { KIND_CUE, KIND_CHASE, KIND_GROUP, KIND_EFFECT }
 const KINDS := ["Cue", "Chase", "Group", "Effect"]
 const MAX_FADERS := 24
+## The share of a MIDI fader's travel at each end that reads as 0 / full
+## (midi_level()).
+const MIDI_END_ZONE := 0.02
 
 const _INTENSITY_ROLES := ["RED", "GREEN", "BLUE", "WHITE", "AMBER", "UV"]
 
@@ -271,9 +274,18 @@ func _on_window_input(event: InputEvent) -> void:
 		handle_midi(event)
 
 
+## A CC's or pitch bend's 0..1, as a fader level: the ends of the travel
+## (MIDI_END_ZONE each) read as fully out / fully in, so a controller's
+## fader that stops just short of an end still gets there; the rest is
+## stretched evenly between them, so nothing jumps.
+static func midi_level(v: float) -> float:
+	return clampf((v - MIDI_END_ZONE) / (1.0 - 2.0 * MIDI_END_ZONE), 0.0, 1.0)
+
+
 ## A MIDI message: completes a Learn, or moves the faders mapped to it — a
-## CC's 0..127, a pitch bend's 0..16383 (0 = out, 16383 = full), a note
-## on (full) or off (0: a note-off, or a note-on at velocity 0).
+## CC's 0..127, a pitch bend's 0..16383 (0 = out, 16383 = full; both
+## through midi_level()), a note on (full) or off (0: a note-off, or a
+## note-on at velocity 0).
 ## Returns whether it was used.
 func handle_midi(ev: InputEventMIDI) -> bool:
 	var bend := ev.message == MIDI_MESSAGE_PITCH_BEND
@@ -284,9 +296,9 @@ func handle_midi(ev: InputEventMIDI) -> bool:
 		return false
 	var value: float
 	if bend:
-		value = ev.pitch / 16383.0
+		value = midi_level(ev.pitch / 16383.0)
 	elif cc:
-		value = ev.controller_value / 127.0
+		value = midi_level(ev.controller_value / 127.0)
 	else:
 		value = 1.0 if note_on else 0.0
 	if _learning >= 0:
