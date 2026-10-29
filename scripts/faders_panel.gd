@@ -53,7 +53,7 @@ func _ready() -> void:
 		+ "A Chase fader runs the chase while it's up, at the fader's intensity. " \
 		+ "A Group fader is a group master: it scales the group's intensity down from full. " \
 		+ "An Effect fader runs the effect while it's up, faded by the fader (a movement's swing shrinks). " \
-		+ "Learn, then move a fader or knob on a MIDI controller (a CC or a pitch bend), to control it from there."
+		+ "Learn, then move a fader or knob on a MIDI controller (a CC or a pitch bend) or press a pad or key (a note: on full, off 0), to control it from there."
 	add_child(_hint)
 
 	bank.faders_changed.connect(rebuild)
@@ -175,7 +175,7 @@ func _build_strip(i: int) -> Control:
 	var learn := Button.new()
 	learn.clip_text = true
 	learn.custom_minimum_size = Vector2(_STRIP_W, 0)
-	learn.tooltip_text = "MIDI Learn: click, then move a fader or knob on your controller (a CC or a pitch bend). Right-click to forget the mapping."
+	learn.tooltip_text = "MIDI Learn: click, then move a fader or knob on your controller (a CC or a pitch bend), or press a pad or key (a note: on is full, off is 0). Right-click to forget the mapping."
 	learn.pressed.connect(func():
 		bank.learn(-1 if bank.is_learning(i) else i)
 		sync_learn())

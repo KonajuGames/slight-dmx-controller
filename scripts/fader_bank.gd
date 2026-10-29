@@ -2,7 +2,8 @@ class_name FaderBank
 extends Node
 ## Playback faders (the console's Faders tab): each puts a cue, a chase, a
 ## fixture group or an effect on a fader, 0..1, which a MIDI controller's
-## fader or knob (a CC or a pitch bend, learned) can move.
+## fader or knob (a CC or a pitch bend, learned) can move — or a pad or
+## key (a note: on = full, off = 0).
 ##
 ##   CUE    a submaster: the cue's standing look (as GO would leave it)
 ##          brought up by the fader. Its intensity channels (a fixture's
@@ -52,17 +53,20 @@ class Fader:
 	var midi_channel := -1      # -1: any
 	var midi_cc := -1           # -1: not mapped
 	var midi_bend := false      # mapped to its channel's pitch bend instead
+	var midi_note := -1         # ...or to a note (-1: not)
 
 	func to_dict() -> Dictionary:
 		return {"name": name, "kind": KINDS[kind].to_lower(), "target": target,
-			"level": level, "midi_channel": midi_channel, "midi_cc": midi_cc, "midi_bend": midi_bend}
+			"level": level, "midi_channel": midi_channel, "midi_cc": midi_cc, "midi_bend": midi_bend,
+			"midi_note": midi_note}
 
 	func is_mapped() -> bool:
-		return midi_cc >= 0 or midi_bend
+		return midi_cc >= 0 or midi_bend or midi_note >= 0
 
 	func forget_midi() -> void:
 		midi_cc = -1
 		midi_bend = false
+		midi_note = -1
 		midi_channel = -1
 
 	static func from_dict(d: Dictionary) -> Fader:
@@ -75,15 +79,20 @@ class Fader:
 		f.midi_channel = clampi(int(d.get("midi_channel", -1)), -1, 15)
 		f.midi_cc = clampi(int(d.get("midi_cc", -1)), -1, 127)
 		f.midi_bend = bool(d.get("midi_bend", false))
+		f.midi_note = clampi(int(d.get("midi_note", -1)), -1, 127)
 		return f
 
-	## "CC 7 · ch 1", "Bend · ch 2", or "" when it isn't mapped.
+	## "CC 7 · ch 1", "Bend · ch 2", "Note 60 · ch 1", or "" when it isn't
+	## mapped.
 	func midi_text() -> String:
+		var ch := "any" if midi_channel < 0 else str(midi_channel + 1)
 		if midi_bend:
-			return "Bend · ch %s" % ("any" if midi_channel < 0 else str(midi_channel + 1))
+			return "Bend · ch %s" % ch
+		if midi_note >= 0:
+			return "Note %d · ch %s" % [midi_note, ch]
 		if midi_cc < 0:
 			return ""
-		return "CC %d · ch %s" % [midi_cc, "any" if midi_channel < 0 else str(midi_channel + 1)]
+		return "CC %d · ch %s" % [midi_cc, ch]
 
 
 var faders: Array[Fader] = []
@@ -245,8 +254,8 @@ func clear() -> void:
 
 # ------------------------------------------------------------------ MIDI --
 
-## Arm MIDI Learn for fader `i`: the next CC or pitch bend that arrives
-## maps it (-1 cancels).
+## Arm MIDI Learn for fader `i`: the next CC, pitch bend or note-on that
+## arrives maps it (-1 cancels).
 func learn(i: int) -> void:
 	_learning = i if i >= 0 and i < faders.size() else -1
 
@@ -263,17 +272,30 @@ func _on_window_input(event: InputEvent) -> void:
 
 
 ## A MIDI message: completes a Learn, or moves the faders mapped to it — a
-## CC's 0..127, or a pitch bend's 0..16383 (0 = out, 16383 = full).
+## CC's 0..127, a pitch bend's 0..16383 (0 = out, 16383 = full), a note
+## on (full) or off (0: a note-off, or a note-on at velocity 0).
 ## Returns whether it was used.
 func handle_midi(ev: InputEventMIDI) -> bool:
 	var bend := ev.message == MIDI_MESSAGE_PITCH_BEND
-	if not bend and ev.message != MIDI_MESSAGE_CONTROL_CHANGE:
+	var cc := ev.message == MIDI_MESSAGE_CONTROL_CHANGE
+	var note_on := ev.message == MIDI_MESSAGE_NOTE_ON and ev.velocity > 0
+	var note := note_on or ev.message == MIDI_MESSAGE_NOTE_OFF or ev.message == MIDI_MESSAGE_NOTE_ON
+	if not (bend or cc or note):
 		return false
-	var value := ev.pitch / 16383.0 if bend else ev.controller_value / 127.0
+	var value: float
+	if bend:
+		value = ev.pitch / 16383.0
+	elif cc:
+		value = ev.controller_value / 127.0
+	else:
+		value = 1.0 if note_on else 0.0
 	if _learning >= 0:
+		if note and not note_on:
+			return false                    # a note's learned by its press
 		var f := faders[_learning]
 		f.midi_bend = bend
-		f.midi_cc = -1 if bend else ev.controller_number
+		f.midi_cc = ev.controller_number if cc else -1
+		f.midi_note = ev.pitch if note else -1
 		f.midi_channel = ev.channel
 		var i := _learning
 		_learning = -1
@@ -284,7 +306,13 @@ func handle_midi(ev: InputEventMIDI) -> bool:
 	var used := false
 	for i in range(faders.size()):
 		var f := faders[i]
-		var hit := f.midi_bend if bend else (not f.midi_bend and f.midi_cc == ev.controller_number)
+		var hit: bool
+		if bend:
+			hit = f.midi_bend
+		elif cc:
+			hit = f.midi_cc == ev.controller_number and not f.midi_bend and f.midi_note < 0
+		else:
+			hit = f.midi_note == ev.pitch and not f.midi_bend
 		if hit and (f.midi_channel < 0 or f.midi_channel == ev.channel):
 			set_level(i, value)
 			used = true

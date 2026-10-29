@@ -249,6 +249,38 @@ func _test_app() -> void:
 	var layers := [{}]
 	swing.write_into(layers)
 	ok(layers[0][1] == 153, "a movement effect faded: its swing shrinks toward its centre (%d)" % layers[0][1])
+	# A note (a pad or key): on is full, off is 0.
+	var note := InputEventMIDI.new()
+	note.message = MIDI_MESSAGE_NOTE_OFF
+	note.channel = 0
+	note.pitch = 36
+	bank.learn(3)
+	ok(not bank.handle_midi(note) and bank.is_learning(3), "Learn: a note-off doesn't map it")
+	note.message = MIDI_MESSAGE_NOTE_ON
+	note.velocity = 100
+	ok(bank.handle_midi(note) and bank.faders[3].midi_note == 36 and not bank.faders[3].midi_bend
+		and bank.faders[3].midi_cc == -1 and bank.faders[3].level == 1.0, "Learn: a note-on maps it, up full")
+	ok(fx.running and main.faders_panel._rows[3]["learn"].text == "Note 36 · ch 1",
+		"...the effect runs; its Learn button: %s" % main.faders_panel._rows[3]["learn"].text)
+	note.message = MIDI_MESSAGE_NOTE_OFF
+	bank.handle_midi(note)
+	ok(bank.faders[3].level == 0.0 and not fx.running, "note-off: 0, the effect stopped")
+	note.message = MIDI_MESSAGE_NOTE_ON
+	bank.handle_midi(note)
+	note.velocity = 0
+	bank.handle_midi(note)
+	ok(bank.faders[3].level == 0.0, "...a note-on at velocity 0 is a note-off")
+	note.velocity = 100
+	note.pitch = 37
+	ok(not bank.handle_midi(note) and bank.faders[3].level == 0.0, "...not another note")
+	bend.channel = 0
+	bend.pitch = 16383
+	bank.handle_midi(bend)
+	ok(bank.faders[3].level == 0.0, "...nor a pitch bend")
+	var saved = Bank.Fader.from_dict(bank.faders[3].to_dict())
+	ok(saved.midi_note == 36 and saved.is_mapped(), "a note mapping saved and loaded")
+	saved.forget_midi()
+	ok(not saved.is_mapped() and saved.midi_note == -1, "...forgotten")
 	bank.remove_fader(3)
 	fx_node.effects.erase(fx)
 
