@@ -469,8 +469,13 @@ func to_dict() -> Dictionary:
 	}
 
 
+## A show's sound settings. One with no reactors saved at all — a new show,
+## or one from before the Sound tab — gets the starter set
+## (SoundReactor.defaults()); one saved with none keeps none.
 func from_dict(d: Dictionary) -> void:
 	Fx.reactors.clear()
+	if not d.has("reactors"):
+		Fx.reactors.assign(SoundReactor.defaults())
 	for entry in d.get("reactors", []):
 		if entry is Dictionary:
 			Fx.reactors.append(SoundReactor.from_dict(entry))

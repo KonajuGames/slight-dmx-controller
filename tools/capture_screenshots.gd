@@ -261,8 +261,6 @@ func _05_effects_tab() -> void:
 func _06_sound_tab() -> void:
 	_playback_tab(3)
 	_right_tab(0)
-	var fx_node := root.get_node("Fx")
-	fx_node.reactors.assign(load("res://scripts/sound_reactor.gd").defaults())
 	var sp = main.sound_panel
 	sp.sync_ui()
 	sp.rx_list.select(0)

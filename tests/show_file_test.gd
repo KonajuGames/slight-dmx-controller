@@ -517,6 +517,12 @@ func _test_new_show() -> void:
 	ok(main._panels.size() == 1 and panel.patched_fixtures.is_empty(), "confirmed: one universe, no fixtures")
 	ok(panel.sender.get_channel(0) == 0 and panel.sender.get_channel(1) == 0, "everything dark")
 	ok(main.cue_panel.cues.is_empty() and main.groups.is_empty() and fx.effects.is_empty(), "no cues, groups or effects")
+	var starters: Array = fx.reactors.map(func(r): return r.name)
+	ok(starters == ["Bass Pulse", "Mid Glow", "Treble Sparkle", "Beat Strobe"]
+		and main.sound_panel.rx_list.item_count == 4, "the Sound tab's starter reactors, as at launch (%s)" % str(starters))
+	main.sound_panel.from_dict({"reactors": []})
+	ok(fx.reactors.is_empty(), "...but a show saved with none keeps none")
+	main.sound_panel.from_dict({})
 	ok(panel.ip_edit.text == "10.1.2.3", "universe 1's output settings kept")
 	ok(main.show_path == "" and "New show" in main.status_label.text, "untitled: %s" % main.status_label.text)
 	ok(main.remembered_show() == path, "the last saved show is still the one reopened at start")
