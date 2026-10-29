@@ -28,6 +28,10 @@ var patch_names_cb := Callable()
 ## colour is the same show-wide. Unset: this universe alone.
 var panels_cb := Callable()
 
+## The inset inside each fixture row, so its controls clear the row's
+## coloured edge.
+const ROW_PAD := 6
+
 ## Backgrounds that tell fixture models apart — in the fixture list, behind
 ## a fixture's timelines and on its body in the 3D Visualiser. Dark and
 ## muted so light text stays readable on them, ordered so neighbours
@@ -664,6 +668,7 @@ func recolour() -> void:
 			if not sb is StyleBoxFlat:
 				sb = StyleBoxFlat.new()
 			sb.bg_color = colours.get(String(row.get_meta("model")), MODEL_COLOURS[0])
+			sb.set_content_margin_all(ROW_PAD)
 			row.add_theme_stylebox_override("panel", sb)
 
 
