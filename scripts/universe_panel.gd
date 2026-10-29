@@ -1430,6 +1430,34 @@ func apply_patch_dict(d: Dictionary) -> void:
 	_refresh_fixtures_vbox()
 
 
+## An edited profile, to the fixtures patched with it (each holds its own
+## copy): those whose mode still has as many channels — the patch
+## footprint unchanged — take it all (ranges, names, roles, defaults,
+## physical), their controls rebuilt and the live values kept. The rest
+## take its physical side only (beam, pan / tilt range, heads) and need a
+## re-patch for the channels. Returns {updated, repatch} fixture counts.
+func update_profile(profile: FixtureProfile) -> Dictionary:
+	var updated := 0
+	var repatch := 0
+	for fixture in patched_fixtures:
+		var old: FixtureProfile = fixture["profile"]
+		if old.id != profile.id:
+			continue
+		var mode := int(fixture.get("mode", 0))
+		if mode < profile.mode_count() and profile.channel_count(mode) == old.channel_count(mode):
+			fixture["profile"] = FixtureProfile.from_dict(profile.to_dict())
+			updated += 1
+		else:
+			old.physical = profile.physical.duplicate(true)
+			repatch += 1
+	if updated > 0:
+		var live := live_dict()
+		_refresh_fixtures_vbox()
+		apply_live_dict(live)
+		patch_changed.emit()
+	return {"updated": updated, "repatch": repatch}
+
+
 ## The fixtures' live state, for a show file: the universe's buffer
 ## (non-zero channels) and each fixture's virtual dimmer level, by patch
 ## index (null where it has none).

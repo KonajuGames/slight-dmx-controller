@@ -35,6 +35,7 @@ func _run() -> void:
 	await _test_new_show()
 	await _test_default_names()
 	await _test_model_colours()
+	await _test_profile_update()
 	await _test_viz_ui_state()
 	print("== %d passed, %d failed, %d skipped ==" % [_p, _f, _s])
 	quit(1 if _f > 0 else 0)
@@ -674,6 +675,69 @@ func _test_model_colours() -> void:
 	await process_frame
 	ok(_row_colours(panel) == [C[0], C[1]] and _row_colours(main._panels[1]) == [C[2], C[0]],
 		"removing a fixture recolours every universe")
+	main.queue_free()
+	await process_frame
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(STORE))
+
+
+## A gobo spot: mode 0 dimmer + gobo, mode 1 just the gobo.
+func _gobo_spot(gobo_ranges: Array, mode1_channels: int = 1) -> FixtureProfile:
+	var gobo := {"name": "Gobo", "role": "GOBO", "ranges": gobo_ranges}
+	var m1 := [gobo]
+	for i in range(mode1_channels - 1):
+		m1.append({"name": "Dimmer", "role": "DIMMER"})
+	return FixtureProfile.new("gobospot", "Gobo Spot", [], [
+		{"name": "Basic", "channels": [{"name": "Dimmer", "role": "DIMMER"}, gobo]},
+		{"name": "Gobo only", "channels": m1},
+	], {"beam_deg": 15.0})
+
+
+## The slot labels in a fixture row's range dropdowns.
+func _slot_labels(panel, index: int) -> Array:
+	var out: Array = []
+	for o in panel.fixtures_vbox.get_child(index).find_children("*", "OptionButton", true, false):
+		for i in range(o.item_count):
+			out.append(o.get_item_text(i))
+	return out
+
+
+func _test_profile_update() -> void:
+	print("- An edited profile to its patched fixtures")
+	var main: Control = load("res://main.tscn").instantiate()
+	main.last_show_store = STORE
+	root.add_child(main)
+	await process_frame
+	var panel = main._panels[0]
+	var old_ranges := [{"lo": 0, "hi": 127, "label": "Open"}, {"lo": 128, "hi": 255, "label": "Star"}]
+	panel.add_patched(_gobo_spot(old_ranges), 0, 0, "A", Vector3.ZERO, Vector3.ZERO)
+	panel.add_patched(_gobo_spot(old_ranges), 10, 1, "B", Vector3.ZERO, Vector3.ZERO)
+	panel.add_patched(_rgb(), 20, 0, "Par", Vector3.ZERO, Vector3.ZERO)
+	panel.sender.set_channel(0, 200)
+	panel.sender.set_channel(1, 140)
+	panel.sender.set_channel(20, 90)
+	main._mark_saved()
+	await process_frame
+
+	# The gobo slots edited; mode 1 gets an extra channel (a new footprint).
+	var edited := _gobo_spot([{"lo": 0, "hi": 63, "label": "Open"}, {"lo": 64, "hi": 191, "label": "Star"},
+		{"lo": 192, "hi": 255, "label": "Shake"}], 2)
+	edited.physical["beam_deg"] = 30.0
+	var r: Dictionary = panel.update_profile(edited)
+	await process_frame
+	ok(r == {"updated": 1, "repatch": 1}, "one fixture updated, one to re-patch (%s)" % str(r))
+	var a: FixtureProfile = panel.patched_fixtures[0]["profile"]
+	ok(a.channels_for_mode(0)[1]["ranges"].size() == 3 and a != edited, "the same footprint: its own copy of the edited profile")
+	ok("Shake (192-255)" in _slot_labels(panel, 0) and not "Star (128-255)" in _slot_labels(panel, 0),
+		"...its controls rebuilt with the new slots (%s)" % str(_slot_labels(panel, 0)))
+	ok(panel.sender.get_channel(0) == 200 and panel.sender.get_channel(1) == 140 and panel.sender.get_channel(20) == 90,
+		"...the live values kept")
+	var b: FixtureProfile = panel.patched_fixtures[1]["profile"]
+	ok(b.channel_count(1) == 1 and b.channels_for_mode(1)[0]["ranges"].size() == 2 and float(b.physical["beam_deg"]) == 30.0,
+		"a changed channel count: its channels kept, the physical side taken")
+	ok(main.has_unsaved_changes(), "the show's changed (its fixtures carry the profile)")
+	ok(main.profile_update_text("Gobo Spot", 1, 1) == "Updated profile 'Gobo Spot' — 1 patched fixture updated; 1 needs a re-patch for the channel count change (beam and pan/tilt apply now).",
+		"status: %s" % main.profile_update_text("Gobo Spot", 1, 1))
+	ok(main.profile_update_text("Gobo Spot", 2, 0) == "Updated profile 'Gobo Spot' — 2 patched fixtures updated.", "...all updated")
 	main.queue_free()
 	await process_frame
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(STORE))

@@ -2553,6 +2553,19 @@ func _carry_slot_images(edited: Array, originals: Array) -> void:
 ## Pass `existing` to edit it in place (its id and file stay put; editing
 ## a built-in writes an editable copy under the same id that shadows the
 ## built-in). Pass null to create a new profile.
+## The status line after an edited profile is saved: how many patched
+## fixtures took it, and how many need a re-patch (their mode's channel
+## count changed).
+static func profile_update_text(pname: String, updated: int, repatch: int) -> String:
+	var text := "Updated profile '%s'" % pname
+	if updated > 0:
+		text += " — %d patched fixture%s updated" % [updated, "" if updated == 1 else "s"]
+	if repatch > 0:
+		text += "%s %d need%s a re-patch for the channel count change (beam and pan/tilt apply now)" % [
+			";" if updated > 0 else " —", repatch, "s" if repatch == 1 else ""]
+	return text + "."
+
+
 func _open_profile_dialog(existing: FixtureProfile = null) -> void:
 	var editing := existing != null
 
@@ -2957,18 +2970,18 @@ func _open_profile_dialog(existing: FixtureProfile = null) -> void:
 			else:
 				available_profiles.append(profile)
 			_refresh_all_profile_options(false)
-			# Patched fixtures hold their own copy of the profile. Its physical
-			# side (beam, pan/tilt range, category, heads) doesn't touch the
-			# patch footprint, so it goes to them now; channels and modes
-			# still need a re-patch.
+			# Patched fixtures hold their own copy of the profile: it goes to
+			# every one whose mode keeps its channel count (UniversePanel.
+			# update_profile()); the others take its physical side only.
+			var updated := 0
+			var repatch := 0
 			for panel in _panels:
-				for fx in panel.patched_fixtures:
-					var fp: FixtureProfile = fx["profile"]
-					if fp.id == existing.id:
-						fp.physical = profile.physical.duplicate(true)
+				var r: Dictionary = panel.update_profile(profile)
+				updated += int(r["updated"])
+				repatch += int(r["repatch"])
 			if viz_panel:
 				viz_panel.rebuild()
-			status_label.text = "Updated profile '%s' — beam and pan/tilt apply now; re-patch fixtures for channel changes." % pname
+			status_label.text = profile_update_text(pname, updated, repatch)
 		else:
 			available_profiles.append(profile)
 			_refresh_all_profile_options(true)
