@@ -78,6 +78,16 @@ preview a fixture's modes and channel layout, then **Add to Patch**. If
 you have a GDTF or Open Fixture Library file for something not in the
 bundle, **Import…** reads it directly.
 
+**Edit…** opens the selected profile for changes — for example, renaming a
+gobo wheel's slots or fixing the value ranges it was imported with. **Save
+Changes** applies the edit to fixtures you've already patched with that
+profile too: their controls are rebuilt with the new ranges and names, and
+their current values stay as they were. A patched fixture whose mode now
+has a different number of channels can't be updated in place, because it
+might overlap the next fixture's addresses. It takes the new beam and
+pan/tilt settings, and you re-patch it for the channel change. The status
+line says how many fixtures were updated and how many need a re-patch.
+
 ## Step 3 — Control a fixture by hand
 
 Every patched fixture gets purpose-built controls (visible in the
@@ -198,13 +208,31 @@ group's name in an effect's or reactor's **Group** field instead of a
 universe filter. **Sync to patch** refreshes the checklist after you add
 or remove fixtures.
 
-Groups and cues can also go on **faders**: in the **Faders** tab (on the
-right, beside **Patch**), **Add
-Fader** and pick **Cue**, **Chase** or **Group** and which one. A cue
-fader brings that cue's look up as you raise it, mixed with whatever else
-is on stage. A chase fader runs the chase at the fader's brightness, and
-a group fader dims that group, whatever is lighting it. Click **Learn**
-and move a fader on a MIDI controller to drive it from there.
+Groups, cues, chases and effects can also go on **faders**: in the
+**Faders** tab (on the right, beside **Patch**), **Add Fader** and pick
+**Cue**, **Chase**, **Group** or **Effect** and which one.
+
+- A **cue** fader brings that cue's look up as you raise it, mixed with
+  whatever else is on stage.
+- A **chase** fader runs the chase at the fader's brightness.
+- A **group** fader dims that group, whatever is lighting it.
+- An **effect** fader runs the effect while it's up. A dimmer or colour
+  effect fades with the fader; a movement effect's swing shrinks toward
+  its centre (a pan circle gets smaller). Pull a chase or effect fader
+  to 0 and it stops, and is the Chases or Effects tab's again.
+
+To drive a fader from a MIDI controller, click **Learn**, then move a
+fader or knob or press a pad. The button shows what it learned:
+
+- a **CC** (most faders and knobs), e.g. "CC 7 · ch 1";
+- a **pitch bend** (some controllers' faders send these), e.g. "Bend ·
+  ch 2": fully down is 0%, fully up is 100%;
+- a **note** (a pad or key), e.g. "Note 36 · ch 1": pressing it takes the
+  fader to 100%, releasing it to 0%, so it works as a hold button.
+
+A controller's fader that stops just short of its end still reaches 0% or
+100%: the last 2% of travel at each end counts as the end. Right-click
+**Learn** to forget the mapping.
 
 ## Step 9 — See it in 3D
 
@@ -462,7 +490,11 @@ for VirtualDJ over OS2L. It's advertised on the network as "sLight"
 (port 9960), so VirtualDJ normally finds it on its own; otherwise point
 VirtualDJ's `os2lDirectIp` setting at this computer. The panel shows the
 connection and, for each of up to four decks, the song loaded, whether
-it's playing, its position and whether its timelines have loaded.
+it's playing, its position and whether its timelines have loaded. Only
+the decks your VirtualDJ skin shows are followed: with a two-deck skin,
+decks 3 and 4 read "not in the skin". VirtualDJ keeps decks 3 and 4 behind
+a two-deck skin, still holding songs loaded on them earlier, and they
+shouldn't light anything. Switch to a four-deck skin and they're picked up.
 
 ![DJ Perform Mode with VirtualDJ connected and one deck playing its light show](img/14-dj-perform.png)
 
@@ -510,7 +542,16 @@ toggle chases/effects, or trigger a blackout.
 Turn on **MIDI input** or **OSC input**, click **Add**, then **Learn** and
 play the pad / move the fader / send the message you want bound — the
 match fields fill in automatically. Pick an **Action** (Cue GO, a chase or
-effect toggle, blackout, …). **Feedback (LEDs)** can light a pad back
+effect toggle, blackout, …). If you plug a controller in after starting
+sLight, click **Rescan** first so it's listened to.
+
+A MIDI binding can be a **Note**, a **Control Change**, a **Program
+Change** or a **Pitch Bend**. A pitch bend (which some controllers' faders
+send) has no number, just its channel: it counts as pressed once it's
+three-quarters of the way up and released when it drops back below. It
+fires once as it crosses that point, not on every value as you move the
+fader. To fade something smoothly with a pitch bend instead, put it on a
+fader (see Step 8). **Feedback (LEDs)** can light a pad back
 based on what it controls, or as a standalone beat/sending/run-mode
 indicator. This is entirely optional — most of the app works fine with
 just a mouse and keyboard.
